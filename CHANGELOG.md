@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
 ### Added
 
 - A terminal installer, `scripts/install.sh`, that fetches the latest release, checks its signature and installs it without the Gatekeeper prompt.
@@ -61,6 +63,7 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bamboozledkitty/queen-bee/releases/tag/v0.1.0
