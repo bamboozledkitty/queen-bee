@@ -10,7 +10,7 @@ All notable changes to Queen Bee are listed here. The format follows
 
 - A terminal installer, `scripts/install.sh`, that fetches the latest release, checks its signature and installs it without the Gatekeeper prompt.
 - A first-run walk-through of agents, logic cards and the orchestrator, which also checks that Claude Code is installed and new enough. **Help → Welcome to Queen Bee** shows it again.
-- Undo and redo for every change to a flow, including the orchestrator's, from the Edit menu while the canvas has the keyboard.
+- Undo and redo for every change to a flow, including the orchestrator's, from the Edit menu.
 - Selecting several cards with Shift-click or a dragged box. Selected cards move, nudge with the arrow keys, duplicate, copy, paste and delete together.
 - Dragged cards line up with nearby cards, with a guide line, or settle on the grid. Option places a card freely.
 - Right-click menus on cards, links and the canvas.

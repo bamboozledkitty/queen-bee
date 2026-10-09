@@ -107,10 +107,10 @@ enum TestHarness {
             controller.nudgeSelection(dx: payload["dx"]?.doubleValue ?? 0, dy: payload["dy"]?.doubleValue ?? 0)
             return [:]
         case "undo":
-            controller.undoManager.undo()
+            controller.undo()
             return [:]
         case "redo":
-            controller.undoManager.redo()
+            controller.redo()
             return [:]
         default:
             return ["error": "unknown op"]

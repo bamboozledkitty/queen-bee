@@ -56,7 +56,7 @@ open build/Build/Products/Debug/QueenBee.app
 - The **palette** at the canvas's top-left holds the card types. Click one to add it, or drag it to where you want it. Each agent card starts its own Claude Code session.
 - Drag a card by its title bar. Drag its bottom-right corner to resize it. A dragged card lines up with its neighbours or settles on the grid; hold Option to place it freely. Pinch to zoom and two-finger scroll to pan, or use the zoom control at the bottom-right.
 - Shift-click cards, or drag a box on empty canvas, to select several. They move, duplicate (⌘D), copy, paste and delete together, and the arrow keys nudge them. Escape deselects.
-- Click the canvas, then ⌘Z undoes the last change to the flow, including changes the orchestrator made.
+- ⌘Z undoes the last change to the flow, including changes the orchestrator made. With the cursor in a text box, it undoes typing there first.
 - Right-click a card, a link or empty canvas for a menu.
 - Zoomed out below 50%, each card shows its name and state in large type in place of its contents.
 - Drag from a dot on a card's right edge onto another card to link them. Click a link to change its max passes or delete it.

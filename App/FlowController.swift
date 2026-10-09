@@ -108,8 +108,10 @@ final class FlowController: ToolHost {
     /// Hand-offs given to a plugin to send, by the receiving session's id, until it says how they went.
     @ObservationIgnored private var inFlight: [String: Delivery] = [:]
     @ObservationIgnored private var runLogStart = 0
-    /// Undo and redo for the graph. The canvas hands this to the Edit menu.
+    /// Undo and redo for the graph, driven by the Edit menu.
     @ObservationIgnored let undoManager = UndoManager()
+    /// Bumped whenever the undo stack changes, so the Edit menu's titles keep up.
+    private(set) var undoRevision = 0
     /// The last change given an undo step, so a run of the same kind of change shares one.
     @ObservationIgnored private var lastUndo: (key: String, at: Date)?
     /// The flow as it was when a drag began. While set, the drag's steps don't each get an undo.
@@ -252,7 +254,30 @@ final class FlowController: ToolHost {
         undoManager.registerUndo(withTarget: self) { $0.restore(old, name) }
         undoManager.setActionName(name)
         undoManager.endUndoGrouping()
+        undoRevision += 1
     }
+
+    /// The Edit menu's Undo and Redo. Text being typed keeps its own: with the cursor in a
+    /// text box that has something to take back, the command goes there. Everywhere else,
+    /// wherever the keyboard happens to be, it works on the flow.
+    func undo() {
+        if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.undoManager?.canUndo == true {
+            text.undoManager?.undo()
+        } else if undoManager.canUndo {
+            undoManager.undo()
+        }
+    }
+
+    func redo() {
+        if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.undoManager?.canRedo == true {
+            text.undoManager?.redo()
+        } else if undoManager.canRedo {
+            undoManager.redo()
+        }
+    }
+
+    var undoTitle: String { _ = undoRevision; return undoManager.canUndo ? undoManager.undoMenuItemTitle : "Undo" }
+    var redoTitle: String { _ = undoRevision; return undoManager.canRedo ? undoManager.redoMenuItemTitle : "Redo" }
 
     /// Puts the graph back to `old`, and makes that undoable in turn. Sessions are not part
     /// of the graph: a card that is still there keeps the session it has now.
@@ -267,6 +292,7 @@ final class FlowController: ToolHost {
         flow = back
         undoManager.registerUndo(withTarget: self) { $0.restore(current, name) }
         undoManager.setActionName(name)
+        undoRevision += 1
         reconcile()
     }
 

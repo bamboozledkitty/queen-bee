@@ -47,6 +47,16 @@ struct QueenBeeApp: App {
                 }
                 .disabled(services.current == nil)
             }
+            // The app's own Undo and Redo, so they reach the flow wherever the keyboard is:
+            // after a click on the palette or a drag from a port, nothing on the canvas has it.
+            CommandGroup(replacing: .undoRedo) {
+                Button(services.current?.undoTitle ?? "Undo") { services.current?.undo() }
+                    .keyboardShortcut("z")
+                    .disabled(services.current == nil)
+                Button(services.current?.redoTitle ?? "Redo") { services.current?.redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .disabled(services.current == nil)
+            }
             CommandGroup(replacing: .help) {
                 Button("Welcome to Queen Bee") { services.showsWelcome = true }
             }

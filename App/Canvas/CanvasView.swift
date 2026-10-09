@@ -58,9 +58,6 @@ final class CanvasDocumentView: NSView {
 
     // MARK: The Edit menu
 
-    // While the canvas has the keyboard, Undo and Redo work on the flow's graph.
-    override var undoManager: UndoManager? { canvas?.controller?.undoManager ?? super.undoManager }
-
     @objc func copy(_ sender: Any?) { canvas?.controller?.copySelection() }
 
     @objc func cut(_ sender: Any?) {
