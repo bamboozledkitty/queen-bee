@@ -282,7 +282,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             }
         }
         if controller.focusedCardID != focused { controller.focusedCardID = focused }
-        if let focused, controller.selection != .card(focused) { controller.select(.card(focused)) }
+        // Clicking into a terminal is for typing, so it doesn't open that card's settings. It
+        // does put away another card's, which would otherwise sit beside the wrong terminal.
+        if let focused, controller.selection != .card(focused) { controller.select(.none) }
     }
 
     /// Takes the keyboard away from whichever terminal has it.

@@ -213,7 +213,10 @@ struct CanvasControls: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topLeading) { PaletteView(controller: controller) }
             .overlay(alignment: .topTrailing) {
-                if controller.selection != .none { InspectorView(controller: controller) }
+                if controller.selection != .none {
+                    InspectorView(controller: controller)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
+                }
             }
             .overlay(alignment: .top) {
                 if let message = services.problem ?? controller.banner {

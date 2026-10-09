@@ -1,12 +1,15 @@
 import QueenBeeCore
 import SwiftUI
 
-/// Settings for the selected card or link, floating over the canvas's corner.
+/// Settings for the selected card or link, floating over the canvas's corner. Every kind of
+/// card gets the same three parts: a header that names it, rows for what it is set to, and a
+/// footer with what you can do to it.
 struct InspectorView: View {
+    static let width: CGFloat = 300
     let controller: FlowController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             switch controller.selection {
             case .card(let id):
                 if let card = controller.flow.card(id) {
@@ -22,9 +25,9 @@ struct InspectorView: View {
                 EmptyView()
             }
         }
-        .padding(Theme.Space.m)
-        .frame(width: 300)
+        .frame(width: Self.width)
         .foregroundStyle(Theme.ink.ui)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         .floatingPanel()
     }
 }
@@ -35,134 +38,154 @@ private struct CardSettings: View {
     @State private var name = ""
 
     var body: some View {
-        HStack {
-            Label(card.kind.label, systemImage: CanvasGeometry.icon(for: card.kind))
-                .font(.dsMono(Theme.Size.title, .medium))
-            Spacer()
-            Button(role: .destructive) { controller.deleteSelection() } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless)
-                .help("Delete this card and its links")
-        }
+        let pending = card.kind == .agent ? controller.settingsAwaitingRestart(forCard: card.id) : []
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            switch card.kind {
+            case .agent: agent
+            case .start:
+                EditorField("Command the run begins with", text: card.command ?? "") { v in patch { $0.command = v } }
+            case .ifElse:
+                condition
+            case .loop:
+                condition
+                row("Give up after") {
+                    HStack(spacing: 4) {
+                        StepField(value: card.maxTries ?? 3, range: 1...20) { v in patch { $0.maxTries = v } }
+                        Text("tries").font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                    }
+                }
+            case .switchCard:
+                LineField("Branches, separated by commas", placeholder: "bug, feature, question",
+                          text: (card.branches ?? []).joined(separator: ", ")) { v in
+                    let names = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    patch { $0.branches = names }
+                }
+                note("Claude picks the branch a message belongs to. Anything else goes out Other.")
+            case .prompt:
+                EditorField("Rewrite the message as", text: card.template ?? "") { v in patch { $0.template = v } }
+                note("{{message}} is what came in and {{from}} is who sent it. Without {{message}}, the message is added underneath.")
+            case .end:
+                LineField("Save the answer to a file", placeholder: "output/answer.md", text: card.saveTo ?? "") { v in patch { $0.saveTo = v } }
+                if let result = controller.results[card.id] {
+                    section {
+                        field("Latest answer") {
+                            ScrollView {
+                                Text(result).font(.dsSans(Theme.Size.body)).textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(maxHeight: 160)
+                        }
+                    }
+                }
+            case .and:
+                note("Waits until every card linked into it has replied in this run, then passes their answers on together.")
+            case .or:
+                note("Passes on the first reply in a run and drops later ones.")
+            case .note:
+                EditorField("Note", text: card.text ?? "") { v in patch { $0.text = v } }
+            }
 
-        field("Name") {
-            TextField("Name", text: $name)
+            if let warning = controller.warnings[card.id] {
+                section {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.dsSans(Theme.Size.caption))
+                        .foregroundStyle(Theme.failInk.ui)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !pending.isEmpty {
+                // The session is still running on what it was started with. Say so beside
+                // the buttons that settle it.
+                Text("Not applied yet. The running session keeps its old \(Self.list(pending)) until it restarts.")
+                    .font(.dsSans(Theme.Size.caption))
+                    .foregroundStyle(Theme.liveInk.ui)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.Space.m)
+                    .padding(.vertical, 7)
+                    .background(Theme.liveTint.ui)
+                    .overlay(alignment: .top) { rule }
+                    .transition(.opacity)
+            }
+            footer(pending: pending)
+        }
+        .animation(Theme.Motion.standard, value: pending.isEmpty)
+    }
+
+    /// The card's kind, its name, and for an agent what its session is doing. The name is
+    /// edited where it stands.
+    private var header: some View {
+        HStack(spacing: Theme.Space.s) {
+            Image(systemName: CanvasGeometry.icon(for: card.kind))
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 16)
+                .help(card.kind.label)
+            TextField(card.kind.label, text: $name)
+                .textFieldStyle(.plain)
+                .font(.dsMono(Theme.Size.title, .medium))
                 .onSubmit(commitName)
                 .onAppear { name = card.name }
                 .onChange(of: card.name) { name = card.name }
-        }
-
-        switch card.kind {
-        case .agent: agent
-        case .start:
-            EditorField("Command the run begins with", text: card.command ?? "") { v in patch { $0.command = v } }
-        case .ifElse:
-            condition
-        case .loop:
-            condition
-            Stepper("Give up after \(card.maxTries ?? 3) tries", value: binding(card.maxTries ?? 3) { v in patch { $0.maxTries = v } }, in: 1...20)
-        case .switchCard:
-            field("Branches, separated by commas") {
-                TextField("bug, feature, question", text: binding((card.branches ?? []).joined(separator: ", ")) { v in
-                    let names = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                    patch { $0.branches = names }
-                })
+                .help("Rename this card")
+            if card.kind == .agent {
+                let session = controller.session(forCard: card.id)
+                Badge(text: session.state.label.lowercased(), tone: session.state.tone)
+            } else {
+                Text(card.kind.label)
+                    .font(.dsMono(Theme.Size.caption))
+                    .foregroundStyle(Theme.inkSecondary.ui)
             }
-            hint("Claude picks the branch a message belongs to. Anything else goes out Other.")
-        case .prompt:
-            EditorField("Rewrite the message as", text: card.template ?? "") { v in patch { $0.template = v } }
-            hint("{{message}} is what came in and {{from}} is who sent it. Without {{message}}, the message is added underneath.")
-        case .end:
-            field("Save the answer to a file") {
-                TextField("output/answer.md", text: binding(card.saveTo ?? "") { v in patch { $0.saveTo = v } })
-            }
-            if let result = controller.results[card.id] {
-                field("Latest answer") {
-                    ScrollView { Text(result).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                        .frame(maxHeight: 160)
-                }
-            }
-        case .and:
-            hint("Waits until every card linked into it has replied in this run, then passes their answers on together.")
-        case .or:
-            hint("Passes on the first reply in a run and drops later ones.")
-        case .note:
-            EditorField("Note", text: card.text ?? "") { v in patch { $0.text = v } }
         }
-
-        if let warning = controller.warnings[card.id] {
-            Label(warning, systemImage: "exclamationmark.triangle")
-                .font(.dsSans(Theme.Size.body))
-                .foregroundStyle(Theme.failInk.ui)
-        }
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.s)
+        .background(Theme.bar.ui)
     }
 
-    @ViewBuilder private var agent: some View {
-        let session = controller.session(forCard: card.id)
-        EditorField("Instructions", text: card.instructions ?? "") { v in patch { $0.instructions = v } }
-        field("Model") {
-            Picker("Model", selection: binding(card.model ?? "") { v in patch { $0.model = v } }) {
-                Text("Your default").tag("")
-                ForEach(["fable", "opus", "sonnet", "haiku"], id: \.self) { Text($0.capitalized).tag($0) }
-                if let custom = card.model, !custom.isEmpty, !["fable", "opus", "sonnet", "haiku"].contains(custom) {
-                    Text(custom).tag(custom)
-                }
-            }
-            .labelsHidden()
-        }
-        field("Effort") {
-            Picker("Effort", selection: binding(card.effort ?? "") { v in patch { $0.effort = v } }) {
-                Text("Model default").tag("")
-                ForEach(["low", "medium", "high", "xhigh", "max"], id: \.self) { Text($0).tag($0) }
-            }
-            .labelsHidden()
-        }
-        field("Permissions") {
-            Picker("Permissions", selection: binding(card.permissionMode ?? "") { v in patch { $0.permissionMode = v } }) {
-                Text("Your default").tag("")
-                Text("Ask each time").tag("manual")
-                Text("Accept edits").tag("acceptEdits")
-                Text("Plan only").tag("plan")
-                Text("Auto").tag("auto")
-            }
-            .labelsHidden()
-        }
-        let pending = controller.settingsAwaitingRestart(forCard: card.id)
-        if pending.isEmpty {
-            HStack {
-                Badge(text: session.state.label.lowercased(), tone: session.state.tone)
-                Spacer()
-                Button(session.isLive ? "Restart" : "Start") { controller.startSession(forCard: card.id) }
-                    .controlSize(.small)
-            }
-            if !session.isLive {
-                hint("The session starts with the settings above.")
-            }
-        } else {
-            // The session is still running on what it was started with. Say so where the
-            // change was made, with the one button that fixes it.
-            VStack(alignment: .leading, spacing: Theme.Space.s) {
-                Label("Not applied yet", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.dsMono(Theme.Size.body, .medium))
-                Text("You changed the \(Self.list(pending)). The running session still has the old \(pending.count == 1 ? "one" : "ones") until it restarts.")
-                    .font(.dsSans(Theme.Size.caption))
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Badge(text: session.state.label.lowercased(), tone: session.state.tone)
-                    Spacer()
+    private func footer(pending: [String]) -> some View {
+        HStack(spacing: Theme.Space.s) {
+            Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }
+                .buttonStyle(.panel(.quiet))
+                .help("Delete this card and its links")
+            Spacer()
+            if card.kind == .agent {
+                let session = controller.session(forCard: card.id)
+                if pending.isEmpty {
+                    Button(session.isLive ? "Restart" : "Start") { controller.startSession(forCard: card.id) }
+                        .buttonStyle(.panel())
+                        .help(session.isLive ? "Restart the session. Its conversation is kept." : "Start the session with these settings")
+                } else {
                     Button("Undo") { controller.revertSettings(forCard: card.id) }
-                        .controlSize(.small)
+                        .buttonStyle(.panel())
                         .help("Put these settings back to what the running session has")
                     Button("Restart to apply") { controller.startSession(forCard: card.id) }
-                        .controlSize(.small)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.live.ui)
+                        .buttonStyle(.panel(.live))
                         .help(session.state == .working ? "Restarting interrupts what the agent is doing now. Its conversation is kept." : "The agent's conversation is kept.")
                 }
             }
-            .foregroundStyle(Theme.liveInk.ui)
-            .padding(Theme.Space.s)
-            .background(Theme.liveTint.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.live.ui, lineWidth: Theme.Stroke.card))
+        }
+        .padding(.horizontal, Theme.Space.s)
+        .padding(.vertical, 6)
+        .background(Theme.bar.ui)
+        .overlay(alignment: .top) { rule }
+    }
+
+    @ViewBuilder private var agent: some View {
+        EditorField("Instructions", text: card.instructions ?? "") { v in patch { $0.instructions = v } }
+        row("Model") {
+            let known = ["fable", "opus", "sonnet", "haiku"]
+            let custom = (card.model ?? "").isEmpty || known.contains(card.model ?? "") ? [] : [(value: card.model ?? "", label: card.model ?? "")]
+            MenuField(options: [(value: "", label: "Your default")] + known.map { (value: $0, label: $0.capitalized) } + custom,
+                      selection: card.model ?? "") { v in patch { $0.model = v } }
+        }
+        row("Effort") {
+            MenuField(options: [(value: "", label: "Model default")] + ["low", "medium", "high", "xhigh", "max"].map { (value: $0, label: $0) },
+                      selection: card.effort ?? "") { v in patch { $0.effort = v } }
+        }
+        row("Permissions") {
+            MenuField(options: [(value: "", label: "Your default"), (value: "manual", label: "Ask each time"),
+                                (value: "acceptEdits", label: "Accept edits"), (value: "plan", label: "Plan only"), (value: "auto", label: "Auto")],
+                      selection: card.permissionMode ?? "") { v in patch { $0.permissionMode = v } }
         }
     }
 
@@ -173,20 +196,15 @@ private struct CardSettings: View {
     }
 
     @ViewBuilder private var condition: some View {
-        field("Check") {
-            Picker("Check", selection: binding(card.check ?? .judge) { v in patch { $0.check = v } }) {
-                Text("Claude judges a statement").tag(CheckKind.judge)
-                Text("Message contains").tag(CheckKind.contains)
-                Text("Message doesn't contain").tag(CheckKind.notContains)
-                Text("Message matches a pattern").tag(CheckKind.regex)
-            }
-            .labelsHidden()
+        let check = card.check ?? .judge
+        row("Check") {
+            MenuField(options: [(value: CheckKind.judge, label: "Claude judges"), (value: .contains, label: "Contains"),
+                                (value: .notContains, label: "Doesn't contain"), (value: .regex, label: "Matches a pattern")],
+                      selection: check) { v in patch { $0.check = v } }
         }
-        field((card.check ?? .judge) == .judge ? "Statement, in plain English" : "Text or pattern") {
-            TextField((card.check ?? .judge) == .judge ? "The review approves the draft" : "APPROVED",
-                      text: binding(card.value ?? "") { v in patch { $0.value = v } }, axis: .vertical)
-                .lineLimit(1...4)
-        }
+        LineField(check == .judge ? "Statement, in plain English" : "Text or pattern",
+                  placeholder: check == .judge ? "The review approves the draft" : "APPROVED",
+                  text: card.value ?? "", lines: 1...4) { v in patch { $0.value = v } }
     }
 
     private func commitName() {
@@ -210,25 +228,66 @@ private struct LinkSettings: View {
     var body: some View {
         let from = controller.flow.card(link.from)?.name ?? "?"
         let to = controller.flow.card(link.to)?.name ?? "?"
-        HStack {
-            Label("Link", systemImage: "arrow.right")
-                .font(.dsMono(Theme.Size.title, .medium))
-            Spacer()
-            Button(role: .destructive) { controller.deleteSelection() } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless)
-                .help("Delete this link")
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Theme.Space.s) {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 16)
+                Text(link.port == "out" ? "\(from) → \(to)" : "\(from) · \(portLabel(link.port)) → \(to)")
+                    .font(.dsMono(Theme.Size.title, .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text("Link")
+                    .font(.dsMono(Theme.Size.caption))
+                    .foregroundStyle(Theme.inkSecondary.ui)
+            }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
+            .background(Theme.bar.ui)
+            row("Most passes per run") {
+                StepField(value: link.maxPasses, range: 1...50) { controller.setMaxPasses(link.id, $0) }
+            }
+            note("A link stops passing messages once it has fired this many times in one run, so loops always end.")
+            HStack {
+                Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }
+                    .buttonStyle(.panel(.quiet))
+                    .help("Delete this link")
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Space.s)
+            .padding(.vertical, 6)
+            .background(Theme.bar.ui)
+            .overlay(alignment: .top) { rule }
         }
-        Text(link.port == "out" ? "\(from) → \(to)" : "\(from) · \(portLabel(link.port)) → \(to)")
-        Stepper("At most \(link.maxPasses) passes per run",
-                value: binding(link.maxPasses) { controller.setMaxPasses(link.id, $0) }, in: 1...50)
-        hint("A link stops passing messages once it has fired this many times in one run, so loops always end.")
     }
 }
 
 // MARK: Small building blocks
 
-private func binding<T>(_ value: T, set: @escaping (T) -> Void) -> Binding<T> {
-    Binding(get: { value }, set: set)
+/// The hairline between a panel's parts.
+private var rule: some View {
+    Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+}
+
+/// One part of the panel, ruled off from the part above it.
+private func section<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    content()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.s)
+        .overlay(alignment: .top) { rule }
+}
+
+/// A one-line setting: what it is on the left, its value on the right.
+private func row<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    HStack(spacing: Theme.Space.s) {
+        Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+        Spacer(minLength: Theme.Space.s)
+        content()
+    }
+    .padding(.horizontal, Theme.Space.m)
+    .frame(minHeight: 30)
+    .overlay(alignment: .top) { rule }
 }
 
 private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -238,8 +297,44 @@ private func field<Content: View>(_ title: String, @ViewBuilder content: () -> C
     }
 }
 
-private func hint(_ text: String) -> some View {
-    Text(text).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui).fixedSize(horizontal: false, vertical: true)
+/// A sentence of help under the setting it explains.
+private func note(_ text: String) -> some View {
+    section {
+        Text(text).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A short text setting that keeps its own draft while you type and writes each change through.
+private struct LineField: View {
+    let title: String
+    let placeholder: String
+    let text: String
+    var lines: ClosedRange<Int> = 1...1
+    let commit: (String) -> Void
+    @State private var draft = ""
+
+    init(_ title: String, placeholder: String, text: String, lines: ClosedRange<Int> = 1...1, commit: @escaping (String) -> Void) {
+        self.title = title
+        self.placeholder = placeholder
+        self.text = text
+        self.lines = lines
+        self.commit = commit
+    }
+
+    var body: some View {
+        section {
+            field(title) {
+                TextField(placeholder, text: $draft, axis: .vertical)
+                    .lineLimit(lines)
+                    .textFieldStyle(.plain)
+                    .font(.dsSans(Theme.Size.body))
+                    .fieldBox()
+                    .onAppear { draft = text }
+                    .onChange(of: draft) { if draft != text { commit(draft) } }
+                    .onChange(of: text) { if text != draft { draft = text } }
+            }
+        }
+    }
 }
 
 /// A multi-line text box that keeps its own draft while you type and writes each change through.
@@ -256,17 +351,20 @@ private struct EditorField: View {
     }
 
     var body: some View {
-        field(title) {
-            TextEditor(text: $draft)
-                .font(.system(size: 12))
-                .frame(minHeight: 70, maxHeight: 150)
-                .scrollContentBackground(.hidden)
-                .padding(4)
-                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
-                .onAppear { draft = text }
-                .onChange(of: draft) { if draft != text { commit(draft) } }
-                .onChange(of: text) { if text != draft { draft = text } }
+        section {
+            field(title) {
+                TextEditor(text: $draft)
+                    .font(.dsSans(Theme.Size.body))
+                    .frame(height: 84)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 5)
+                    .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
+                    .onAppear { draft = text }
+                    .onChange(of: draft) { if draft != text { commit(draft) } }
+                    .onChange(of: text) { if text != draft { draft = text } }
+            }
         }
     }
 }
