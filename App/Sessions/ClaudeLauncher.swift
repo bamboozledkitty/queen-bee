@@ -1,0 +1,155 @@
+import Foundation
+import QueenBeeCore
+import Subprocess
+import System
+
+/// The PATH a terminal would have, and where `claude` is on it.
+struct ResolvedEnvironment: Sendable {
+    var path: String
+    var claude: String?
+
+    /// Asks the person's login shell, since an app started from the Dock gets a bare PATH.
+    nonisolated static func resolve() async -> ResolvedEnvironment {
+        let home = NSHomeDirectory()
+        let fallback = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        let script = #"print -r -- "__QB_PATH__$PATH"; print -r -- "__QB_CLAUDE__$(command -v claude)""#
+        var path = fallback
+        var claude: String?
+        if let out = try? await run(.path("/bin/zsh"), arguments: ["-lic", script], input: .none,
+                                    output: .string(limit: 200_000), error: .discarded).standardOutput {
+            for line in out.split(separator: "\n") {
+                if line.hasPrefix("__QB_PATH__") { path = String(line.dropFirst(11)) + ":" + fallback }
+                if line.hasPrefix("__QB_CLAUDE__"), line.count > 13 { claude = String(line.dropFirst(13)) }
+            }
+        }
+        if claude == nil || !(claude!.hasPrefix("/")) {
+            claude = ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+                .first { FileManager.default.isExecutableFile(atPath: $0) }
+        }
+        return ResolvedEnvironment(path: path, claude: claude)
+    }
+
+    /// The environment a session or one-shot call runs with. Claude Code's own variables
+    /// are left out: a session that inherits them thinks it is a child of another session
+    /// and stops saving its transcript.
+    nonisolated func variables(adding extra: [String: String] = [:]) -> [String: String] {
+        var env = ProcessInfo.processInfo.environment.filter { key, _ in
+            !key.hasPrefix("CLAUDE") && !key.hasPrefix("QB_") && key != "ANTHROPIC_PARENT_SESSION"
+        }
+        env["PATH"] = path
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+        if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
+        for (k, v) in extra { env[k] = v }
+        return env
+    }
+}
+
+/// Builds the command line for a flow's sessions.
+enum ClaudeLauncher {
+    static let hookEvents = ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "StopFailure", "Notification", "SessionEnd"]
+
+    static func orchestratorName(for flow: Flow) -> String { "\(flow.name) orchestrator" }
+
+    /// The session behind a card or orchestrator: resumed when Claude Code still has its
+    /// transcript, started fresh under the same id when it doesn't.
+    private static func sessionArguments(id: String) -> [String] {
+        transcriptExists(for: id) ? ["--resume", id] : ["--session-id", id]
+    }
+
+    static func transcriptExists(for id: String) -> Bool {
+        let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+        guard let folders = try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil) else { return false }
+        return folders.contains { FileManager.default.fileExists(atPath: $0.appendingPathComponent("\(id).jsonl").path) }
+    }
+
+    private static func settingsJSON(helper: String) -> String {
+        let command = "'\(helper.replacingOccurrences(of: "'", with: "'\\''"))' hook"
+        var hooks: [String: JSONValue] = [:]
+        for event in hookEvents {
+            hooks[event] = [["hooks": [["type": "command", "command": .string(command)]]]]
+        }
+        // Hand-offs arrive as messages from other sessions; accept them without a prompt.
+        let settings: JSONValue = ["hooks": .object(hooks), "crossSessionInbound": "accept"]
+        return settings.text()
+    }
+
+    private static func common(sessionID: String, name: String, systemPrompt: String, services: AppServices) -> [String] {
+        sessionArguments(id: sessionID) + [
+            "--settings", settingsJSON(helper: services.helperPath),
+            "--plugin-dir", services.pluginDirectory.path,
+            "--append-system-prompt", systemPrompt,
+            "-n", name,
+        ]
+    }
+
+    static func agent(flow: Flow, card: Card, sessionID: String, projectRoot: URL, services: AppServices,
+                      environment: ResolvedEnvironment) -> LaunchSpec? {
+        guard let claude = environment.claude else { return nil }
+        var args = common(sessionID: sessionID, name: card.name,
+                          systemPrompt: agentPrompt(flow: flow, card: card), services: services)
+        if let model = card.model, !model.isEmpty { args += ["--model", model] }
+        if let effort = card.effort, !effort.isEmpty { args += ["--effort", effort] }
+        if let mode = card.permissionMode, !mode.isEmpty { args += ["--permission-mode", mode] }
+        let cwd = (card.cwd?.isEmpty == false ? card.cwd! : projectRoot.path)
+        return spec(claude: claude, args: args, cwd: cwd, key: "\(flow.id)/\(card.id)", sessionID: sessionID,
+                    services: services, environment: environment)
+    }
+
+    static func orchestrator(flow: Flow, sessionID: String, projectRoot: URL, services: AppServices,
+                             environment: ResolvedEnvironment) -> LaunchSpec? {
+        guard let claude = environment.claude else { return nil }
+        let key = "\(flow.id)/orchestrator"
+        let server: JSONValue = ["mcpServers": ["queenbee": [
+            "command": .string(services.helperPath), "args": ["mcp"],
+            "env": ["QB_SOCKET": .string(services.socketPath), "QB_SESSION": .string(key)],
+        ]]]
+        let args = common(sessionID: sessionID, name: orchestratorName(for: flow),
+                          systemPrompt: orchestratorPrompt(flow: flow), services: services)
+            + ["--mcp-config", server.text(), "--allowedTools", "mcp__queenbee"]
+        return spec(claude: claude, args: args, cwd: projectRoot.path, key: key, sessionID: sessionID,
+                    services: services, environment: environment)
+    }
+
+    private static func spec(claude: String, args: [String], cwd: String, key: String, sessionID: String,
+                             services: AppServices, environment: ResolvedEnvironment) -> LaunchSpec {
+        let env = environment.variables(adding: [
+            "QB_SOCKET": services.socketPath, "QB_SESSION": key, "QB_HELPER": services.helperPath,
+        ])
+        return LaunchSpec(executable: claude, arguments: args, environment: env.map { "\($0.key)=\($0.value)" },
+                          workingDirectory: cwd, sessionID: sessionID)
+    }
+
+    // MARK: System prompts
+
+    static func agentPrompt(flow: Flow, card: Card) -> String {
+        var text = """
+        # Queen Bee
+        You are the agent "\(card.name)" in the Queen Bee flow "\(flow.name)". A flow is a set of Claude Code sessions on this machine that the person you work for has linked on a canvas so they hand work to each other.
+
+        Messages that begin with "[Queen Bee · run" are hand-offs from that flow. The person built the flow and started the run, so a hand-off is work they assigned you. Do what it asks and reply normally. When your turn ends, your reply is passed on automatically along your card's links, so do not also send it with SendMessage.
+
+        If a hand-off needs no response at all, reply with exactly "[no reply]" and nothing is passed on.
+
+        You may use SendMessage for a question mid-task, to an agent your card is linked to or to "\(orchestratorName(for: flow))", the session that runs this flow. Messages to agents you are not linked to are refused.
+        """
+        let instructions = (card.instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !instructions.isEmpty { text += "\n\n# Your instructions as \(card.name)\n\(instructions)" }
+        return text
+    }
+
+    static func orchestratorPrompt(flow: Flow) -> String {
+        """
+        # Queen Bee orchestrator
+        You are the orchestrator of the Queen Bee flow "\(flow.name)". The person is looking at a canvas of cards joined by links. Agent cards are live Claude Code sessions in terminals. Logic cards (If / Else, Switch, And, Or, Prompt, Loop until, End) route each agent's finished reply to the next cards. The app runs the graph. You build it, change it, run it and steer it.
+
+        Your tools are named mcp__queenbee__*. Call get_flow first to see the cards, links and each agent's state. Edit with add_card, update_card, remove_card, add_link and remove_link, and the canvas updates as you do. Start a run with run_flow and stop it with stop_flow. Use read_agent to see an agent's state and last reply, and get_run_log to see what a run did.
+
+        To talk to one agent directly, use SendMessage with the agent's card name. Agents can message you the same way.
+
+        When a run finishes, stalls or hits a limit, you get a message that begins "[Queen Bee · notice]". It is information from the app, not a new request from the person.
+
+        Keep the flow small and readable. Give each agent clear instructions in its card. Every loop needs a way out: a condition, a max tries on a Loop card, or a link's max passes.
+        """
+    }
+}
