@@ -6,6 +6,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A terminal installer, `scripts/install.sh`, that fetches the latest release, checks its signature and installs it without the Gatekeeper prompt.
+
 ## [0.1.1] - 2026-10-09
 
 ### Fixed

@@ -8,16 +8,26 @@ Each agent is a live `claude` session in a terminal that sits on the canvas. You
 
 ## Install
 
+**From a terminal** (opens straight away):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bamboozledkitty/queen-bee/main/scripts/install.sh | sh
+```
+
+This downloads the latest release, checks it is signed by the Queen Bee developer's certificate and puts it in Applications. You can [read the script](scripts/install.sh) first.
+
+**From the disk image:**
+
 1. Download `QueenBee-<version>.dmg` from the [latest release](https://github.com/bamboozledkitty/queen-bee/releases/latest).
 2. Open it and drag **QueenBee** onto the Applications folder beside it.
-3. Open Queen Bee from Applications, then add a project folder when the app asks.
+3. Open Queen Bee from Applications. macOS will say it could not verify the app; the steps below get past that.
 
 You need:
 
 - macOS 26 or later on Apple silicon.
 - [Claude Code](https://claude.com/claude-code) 2.1.287 or later, signed in. The app loads a small plugin into each session, which needs that version.
 
-Releases are signed with a Developer ID but not yet notarized by Apple, so the first time you open Queen Bee macOS says it could not verify the app. To open it:
+Releases are signed with a Developer ID but not yet notarized by Apple. A copy downloaded in a browser is blocked the first time you open it, with a message that Apple could not verify it. The terminal install doesn't hit this. To open a blocked copy:
 
 1. Click **Done** on that message.
 2. Open **System Settings → Privacy & Security** and scroll to the Security section.
