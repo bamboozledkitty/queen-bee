@@ -77,6 +77,7 @@ struct WorkspaceView: View {
         .navigationTitle(services.current?.flow.name ?? "Queen Bee")
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
+        .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 900, minHeight: 560)
     }
@@ -102,6 +103,13 @@ struct WorkspaceView: View {
             Button { showsSidebar.toggle() } label: { Label("Projects", systemImage: "sidebar.leading") }
                 .help("Show or hide projects and flows")
         }
+        // The flow's name sits in a toolbar item of its own, so it gets the same container
+        // the buttons have and doesn't float bare over the canvas.
+        ToolbarItem(placement: .navigation) {
+            TitlePlate(controller: services.current, subtitle: subtitle)
+        }
+        // With the system title gone nothing pushes the actions to the right, so a spacer does.
+        ToolbarSpacer(.flexible)
         ToolbarItemGroup(placement: .primaryAction) {
             if let controller = services.current {
                 let waiting = controller.cardsNeedingYou
@@ -140,6 +148,53 @@ struct WorkspaceView: View {
             let project = AppServices.shared.addProject(url)
             if project.controllers.isEmpty { project.newFlow() }
         }
+    }
+}
+
+/// The flow's name and its project, in the title bar. Click the name to rename the flow.
+private struct TitlePlate: View {
+    let controller: FlowController?
+    let subtitle: String
+    @State private var isRenaming = false
+    @State private var draft = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if isRenaming, let controller {
+                TextField("Flow name", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(minWidth: 140)
+                    .focused($isFocused)
+                    .onSubmit {
+                        controller.rename(to: draft)
+                        isRenaming = false
+                    }
+                    .onExitCommand { isRenaming = false }
+                    .onChange(of: isFocused) { if !isFocused { isRenaming = false } }
+            } else {
+                Text(controller?.flow.name ?? "Queen Bee")
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+            }
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let controller, !isRenaming else { return }
+            draft = controller.flow.name
+            isRenaming = true
+            isFocused = true
+        }
+        .help(controller == nil ? "" : "Click to rename this flow")
     }
 }
 
