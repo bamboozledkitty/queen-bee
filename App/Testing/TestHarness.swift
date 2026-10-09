@@ -52,6 +52,19 @@ enum TestHarness {
             guard let cardID else { return ["error": "restart needs card"] }
             controller.startSession(forCard: cardID)
             return [:]
+        case "edit":
+            // Changes a card's settings the way the settings panel does.
+            guard let cardID else { return ["error": "edit needs card"] }
+            var patch = CardPatch()
+            patch.instructions = payload["instructions"]?.stringValue
+            patch.model = payload["model"]?.stringValue
+            patch.effort = payload["effort"]?.stringValue
+            controller.update(cardID, patch)
+            return [:]
+        case "revert":
+            guard let cardID else { return ["error": "revert needs card"] }
+            controller.revertSettings(forCard: cardID)
+            return [:]
         case "focus":
             controller.canvas?.testFocus(cardID: cardID)
             return [:]
@@ -70,7 +83,12 @@ enum TestHarness {
     private static func state(of controller: FlowController) -> JSONValue {
         var sessions: [String: JSONValue] = [:]
         for card in controller.flow.cards where card.kind == .agent {
-            sessions[card.name] = describe(controller.sessions[card.id])
+            var described = describe(controller.sessions[card.id]).objectValue ?? [:]
+            described["awaitingRestart"] = .array(controller.settingsAwaitingRestart(forCard: card.id).map(JSONValue.string))
+            described["instructions"] = .string(card.instructions ?? "")
+            described["model"] = card.model.map(JSONValue.string) ?? .null
+            described["effort"] = card.effort.map(JSONValue.string) ?? .null
+            sessions[card.name] = .object(described)
         }
         var results: [String: JSONValue] = [:]
         for (id, text) in controller.results { results[controller.flow.card(id)?.name ?? id] = .string(text) }

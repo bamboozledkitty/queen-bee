@@ -8,7 +8,7 @@ Claude Code sessions on Haiku, and checks what the app did.
     ./scripts/build.sh && ./scripts/e2e.py            # every scenario
     ./scripts/e2e.py guard loop                        # some of them
 
-Scenarios: guard, scroll, fanout, switch, loop, exit, apifail, noclaude.
+Scenarios: guard, settings, scroll, fanout, switch, loop, exit, apifail, noclaude.
 """
 import json
 import os
@@ -241,6 +241,29 @@ def scenario_guard(app):
         check("the orchestrator can message any agent by its card name", False, "Carol never answered. The orchestrator said: " + said[:500])
 
 
+def scenario_settings(app):
+    print("settings: a changed card says it needs a restart, and Undo puts it back", flush=True)
+    fid = GUARD["id"]
+    app.open_flow(GUARD)
+    before = app.state(fid)["sessions"]["Alice"]
+    check("a freshly started session has nothing waiting", before["awaitingRestart"] == [], str(before["awaitingRestart"]))
+    app.op(fid, "edit", card="Alice", instructions="Something else entirely.", model="sonnet", effort="high")
+    changed = app.state(fid)["sessions"]["Alice"]
+    check("changing settings lists what the session doesn't have yet",
+          changed["awaitingRestart"] == ["instructions", "model", "effort"], str(changed["awaitingRestart"]))
+    app.op(fid, "revert", card="Alice")
+    after = app.state(fid)["sessions"]["Alice"]
+    check("Undo clears the list", after["awaitingRestart"] == [], str(after["awaitingRestart"]))
+    check("Undo restores the instructions, model and effort",
+          (after["instructions"], after["model"], after["effort"]) == (before["instructions"], before["model"], before["effort"]),
+          f"{after['instructions']!r} {after['model']} {after['effort']}")
+    app.op(fid, "edit", card="Alice", effort="high")
+    app.op(fid, "restart", card="Alice")
+    s = app.wait(fid, lambda s: s["sessions"]["Alice"]["state"] == "idle", 90, "Alice to come back")
+    check("after Restart to apply nothing is waiting", s["sessions"]["Alice"]["awaitingRestart"] == [], str(s["sessions"]["Alice"]["awaitingRestart"]))
+    app.op(fid, "edit", card="Alice", effort="")
+
+
 def scenario_scroll(app):
     print("scroll: wheel events pan the canvas unless a terminal has the keyboard", flush=True)
     fid = GUARD["id"]
@@ -415,7 +438,7 @@ def scenario_noclaude(project):
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "scroll", "fanout", "switch", "loop", "exit", "apifail", "noclaude"]
+    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "fanout", "switch", "loop", "exit", "apifail", "noclaude"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     project = tempfile.mkdtemp(prefix="qb-e2e-")
@@ -433,9 +456,10 @@ def main():
                     globals()[f"scenario_{name}"](app)
                 except Exception as e:  # one scenario failing shouldn't hide the others
                     check(f"{name} ran to the end", False, f"{type(e).__name__}: {e}"[:500])
-                flow_id = (GUARD if name == "scroll" else FLOWS[name])["id"]
-                # Keep Guard's sessions for the scroll scenario that follows it.
-                if not (name == "guard" and "scroll" in in_app):
+                flow_id = (GUARD if name in ("scroll", "settings") else FLOWS[name])["id"]
+                # Guard's sessions are shared by the scenarios that follow it on the same flow.
+                later = in_app[in_app.index(name) + 1:]
+                if not (name in ("guard", "settings") and ("settings" in later or "scroll" in later)):
                     app.op(flow_id, "close")
         finally:
             app.quit()

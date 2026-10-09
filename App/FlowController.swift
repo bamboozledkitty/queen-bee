@@ -278,6 +278,21 @@ final class FlowController: ToolHost {
         return AgentSettings(card).differences(from: launched)
     }
 
+    /// Puts a card's settings back to what its running session was started with, undoing
+    /// whatever has been changed since.
+    func revertSettings(forCard id: String) {
+        guard let session = sessions[id], session.isLive, let launched = session.launched else { return }
+        var patch = CardPatch()
+        patch.name = launched.name
+        patch.instructions = launched.instructions
+        // An empty string clears these back to "your default".
+        patch.model = launched.model
+        patch.effort = launched.effort
+        patch.permissionMode = launched.permissionMode
+        patch.cwd = launched.folder
+        update(id, patch)
+    }
+
     private func startMissingSessions() {
         for card in flow.cards where card.kind == .agent && session(forCard: card.id).state == .notStarted {
             startSession(forCard: card.id)

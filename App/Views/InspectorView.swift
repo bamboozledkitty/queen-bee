@@ -149,6 +149,9 @@ private struct CardSettings: View {
                 HStack {
                     Badge(text: session.state.label.lowercased(), tone: session.state.tone)
                     Spacer()
+                    Button("Undo") { controller.revertSettings(forCard: card.id) }
+                        .controlSize(.small)
+                        .help("Put these settings back to what the running session has")
                     Button("Restart to apply") { controller.startSession(forCard: card.id) }
                         .controlSize(.small)
                         .buttonStyle(.borderedProminent)
