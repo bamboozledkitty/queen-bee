@@ -3,7 +3,7 @@ import Observation
 import QueenBeeCore
 import SwiftTerm
 
-/// The surface cards sit on: drafting paper with a fine grid. Flipped so a card's y grows
+/// The surface cards sit on: drafting paper with a dot matrix. Flipped so a card's y grows
 /// downward, as the flow file stores it.
 final class CanvasDocumentView: NSView {
     /// What the add-card palette puts on the pasteboard when a row is dragged. Nothing else
@@ -17,22 +17,21 @@ final class CanvasDocumentView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         Theme.paper.setFill()
         dirtyRect.fill()
-        let zoom = canvas?.scrollView.magnification ?? 1
-        // Fine lines turn to noise when zoomed far out, so only every fifth is kept there.
-        if zoom >= 0.5 { strokeGrid(step: CanvasGeometry.gridStep, color: Theme.grid, in: dirtyRect) }
-        strokeGrid(step: CanvasGeometry.gridStep * 5, color: Theme.gridMajor, in: dirtyRect)
-    }
 
-    private func strokeGrid(step: CGFloat, color: NSColor, in rect: NSRect) {
-        color.setFill()
-        var x = (rect.minX / step).rounded(.down) * step
-        while x <= rect.maxX {
-            NSRect(x: x, y: rect.minY, width: 1, height: rect.height).fill(using: .sourceOver)
-            x += step
-        }
-        var y = (rect.minY / step).rounded(.down) * step
-        while y <= rect.maxY {
-            NSRect(x: rect.minX, y: y, width: rect.width, height: 1).fill(using: .sourceOver)
+        // Zoomed out, dots crowd together and shrink below a pixel. Every second or fourth
+        // dot is kept, drawn larger, so the matrix looks the same density on screen.
+        let zoom = max(canvas?.scrollView.magnification ?? 1, 0.01)
+        var step = CanvasGeometry.gridStep
+        while step * zoom < 14 { step *= 2 }
+        let size = max(1.6, 1.6 / zoom)
+        Theme.dot.setFill()
+        var y = (dirtyRect.minY / step).rounded(.down) * step
+        while y <= dirtyRect.maxY {
+            var x = (dirtyRect.minX / step).rounded(.down) * step
+            while x <= dirtyRect.maxX {
+                NSBezierPath(ovalIn: NSRect(x: x - size / 2, y: y - size / 2, width: size, height: size)).fill()
+                x += step
+            }
             y += step
         }
     }
@@ -83,6 +82,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     /// Room to pan left of and above the canvas's origin. Without it a card at the origin
     /// could never be moved out from under the palette, which floats over that corner.
     static let margin: CGFloat = 3000
+    /// The height of the window's title bar, which floats over the canvas's top edge.
+    static let titleBarHeight: CGFloat = 52
 
     let scrollView = NSScrollView()
     let document = CanvasDocumentView()
@@ -119,6 +120,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         scrollView.autoresizingMask = [.width, .height]
         scrollView.frame = bounds
         scrollView.drawsBackground = false
+        // The canvas runs under the window's transparent title bar, so it must not push its
+        // content down to make room for one.
+        scrollView.automaticallyAdjustsContentInsets = false
         addSubview(scrollView)
 
         let click = NSClickGestureRecognizer(target: self, action: #selector(handleBackgroundClick(_:)))
@@ -239,7 +243,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         if !didInitialScroll, bounds.width > 0 {
             didInitialScroll = true
             // Start with the canvas's origin just clear of the panels floating over its left edge.
-            document.scroll(CGPoint(x: -(AppServices.shared.canvasObstruction.left + 20), y: -30))
+            document.scroll(CGPoint(x: -(AppServices.shared.canvasObstruction.left + 20), y: -(CanvasView.titleBarHeight + 16)))
         }
     }
 
@@ -435,8 +439,11 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         for _ in 0..<3 {
             scrollView.magnify(toFit: inClip(wanted))
             let zoom = max(scrollView.magnification, 0.01)
-            wanted = CGRect(x: box.minX - covered.left / zoom, y: box.minY - 30 / zoom,
-                            width: box.width + (covered.left + covered.right) / zoom, height: box.height + 90 / zoom)
+            // The see-through title bar and its buttons sit over the canvas's top; the status
+            // line and zoom control over its foot.
+            wanted = CGRect(x: box.minX - covered.left / zoom, y: box.minY - CanvasView.titleBarHeight / zoom,
+                            width: box.width + (covered.left + covered.right) / zoom,
+                            height: box.height + (CanvasView.titleBarHeight + 50) / zoom)
         }
         scrollView.magnify(toFit: inClip(wanted))
         document.needsDisplay = true

@@ -31,7 +31,9 @@ struct WorkspaceView: View {
         ZStack {
             Theme.paper.ui.ignoresSafeArea()
             if let controller = services.current {
+                // Under the title bar too: the bar is see-through, so the canvas is the whole window.
                 CanvasRepresentable(controller: controller)
+                    .ignoresSafeArea()
                     .id(controller.flow.id)
             } else if services.projects.isEmpty {
                 WelcomeView()
@@ -75,6 +77,7 @@ struct WorkspaceView: View {
         .navigationTitle(services.current?.flow.name ?? "Queen Bee")
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 900, minHeight: 560)
     }
 

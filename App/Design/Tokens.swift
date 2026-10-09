@@ -17,8 +17,8 @@ enum Theme {
     static let ink = pair(0x1F3A5F, 0xCFE0F5)
     static let inkSecondary = pair(0x5A7190, 0x8AA3C2)
     static let hairline = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.22, 0.2)
-    static let grid = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.07, 0.055)
-    static let gridMajor = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.14, 0.11)
+    /// The canvas's dot matrix.
+    static let dot = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.26, 0.2)
 
     static let live = pair(0xFF6B2C, 0xFF8A4C)
     static let liveTint = pair(0xFFE4D6, 0x4A2413)
