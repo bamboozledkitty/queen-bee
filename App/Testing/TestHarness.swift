@@ -82,6 +82,18 @@ enum TestHarness {
         case "zoom":
             if let to = payload["to"]?.doubleValue { controller.canvas?.testSetMagnification(to) }
             return [:]
+        case "fit":
+            // The zoom control's fit button, or a double-click on a card's title.
+            if let cardID { controller.canvas?.zoom(toCard: cardID) } else { controller.canvas?.zoomToFit() }
+            return [:]
+        case "pick":
+            // A click on a card's title, or on bare canvas when no card is named.
+            controller.select(cardID.map { .card($0) } ?? .none)
+            return [:]
+        case "add":
+            guard let kind = payload["kind"]?.stringValue.flatMap(CardKind.init(rawValue:)) else { return ["error": "add needs kind"] }
+            controller.addCard(kind)
+            return [:]
         default:
             return ["error": "unknown op"]
         }

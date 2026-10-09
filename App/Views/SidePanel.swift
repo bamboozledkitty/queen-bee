@@ -8,6 +8,7 @@ struct SidePanel: View {
     @Binding var tab: PanelTab
     @Binding var width: Double
     @State private var startWidth: Double?
+    @Namespace private var tabs
 
     var body: some View {
         content
@@ -48,9 +49,13 @@ struct SidePanel: View {
                                     Text("\(count)").font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                                 }
                             }
-                            Rectangle()
-                                .fill(tab == item ? Theme.ink.ui : .clear)
-                                .frame(height: 2)
+                            // One rule shared by the tabs, so it slides to the tab you pick.
+                            ZStack {
+                                if tab == item {
+                                    Rectangle().fill(Theme.ink.ui).matchedGeometryEffect(id: "rule", in: tabs)
+                                }
+                            }
+                            .frame(height: 2)
                         }
                         .fixedSize()
                         .padding(.horizontal, Theme.Space.m)
@@ -64,6 +69,7 @@ struct SidePanel: View {
                 if tab == .orchestrator { orchestratorState }
             }
             .background(Theme.bar.ui)
+            .animation(Theme.Motion.standard, value: tab)
             Rectangle().fill(Theme.hairline.ui).frame(height: 1)
 
             // The orchestrator's terminal stays in place under the other tabs, so switching

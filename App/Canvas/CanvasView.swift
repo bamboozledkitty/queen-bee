@@ -201,7 +201,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                     || context.mark.arrivals > context.mark.passes
                 agentView.attach(terminal: session.view)
             }
-            view.update(card: card, context: context)
+            if !view.isCurrent(card: card, context: context) { view.update(card: card, context: context) }
         }
         for (id, view) in cardViews where !seen.contains(id) {
             view.removeFromSuperview()
@@ -312,15 +312,17 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     /// A link is being dragged out of a port. The card under the pointer shows whether the
     /// link would be taken there.
     func showPendingLink(from cardID: String, port: String, start: CGPoint, to point: CGPoint) {
-        linkLayer.pending = (start, point)
-        let target = card(at: point)
+        guard let flow = controller?.flow, let source = flow.card(cardID) else { return }
+        let target = card(at: point).flatMap { $0.id == cardID ? nil : $0 }
+        let accepts = target.map { flow.linkProblem(from: cardID, port: port, to: $0.id) == nil } ?? false
         for (id, view) in cardViews {
-            if id == target?.id, id != cardID, let flow = controller?.flow {
-                view.linkDrop = flow.linkProblem(from: cardID, port: port, to: id) == nil ? .accepts : .refuses
-            } else {
-                view.linkDrop = .none
-            }
+            view.linkDrop = id == target?.id ? (accepts ? .accepts : .refuses) : .none
         }
+        // The preview takes the route the link will have. Over a card that would take the
+        // link it lands on that card's input; anywhere else it follows the pointer.
+        let end = accepts ? target.map(CanvasGeometry.inputPoint(of:)) ?? point : point
+        let landing = accepts ? target.map(CanvasGeometry.frame(of:)) ?? CGRect(origin: point, size: .zero) : CGRect(origin: point, size: .zero)
+        linkLayer.pending = LinkRouter.route(from: start, to: end, source: CanvasGeometry.frame(of: source), target: landing)
     }
 
     func clearPendingLink() {
@@ -415,13 +417,31 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     func zoom(by factor: CGFloat) {
-        let target = min(scrollView.maxMagnification, max(scrollView.minMagnification, scrollView.magnification * factor))
-        scrollView.setMagnification(target, centeredAt: inClip(visibleCenter))
-        document.needsDisplay = true
+        // From where the zoom is headed, so quick presses add up instead of restarting.
+        let from = zoomTarget ?? scrollView.magnification
+        travel(to: min(scrollView.maxMagnification, max(scrollView.minMagnification, from * factor)))
     }
 
     func zoomToActualSize() {
-        scrollView.setMagnification(1, centeredAt: inClip(visibleCenter))
+        travel(to: 1)
+    }
+
+    /// Where an animated zoom is headed, while it is under way.
+    private var zoomTarget: CGFloat?
+
+    private func travel(to magnification: CGFloat) {
+        let centre = inClip(visibleCenter)
+        zoomTarget = magnification
+        Theme.Motion.travel {
+            scrollView.animator().setMagnification(magnification, centeredAt: centre)
+        } then: { [weak self] in
+            Task { @MainActor in self?.travelEnded(at: magnification) }
+        }
+    }
+
+    private func travelEnded(at magnification: CGFloat) {
+        if zoomTarget == magnification { zoomTarget = nil }
+        publishZoom()
         document.needsDisplay = true
     }
 
@@ -432,22 +452,29 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     /// Zooms so `box` fills the part of the canvas the floating panels leave uncovered.
-    /// The panels are a fixed size on screen, so their size in canvas points depends on the
-    /// zoom being solved for: fit once to find it, then again with the room they need.
+    /// The panels are a fixed size on screen, so the zoom is worked out from the room they
+    /// leave, and the rectangle shown is `box` plus what they cover at that zoom.
     private func fit(_ box: CGRect) {
         let covered = AppServices.shared.canvasObstruction
-        var wanted = box
-        for _ in 0..<3 {
-            scrollView.magnify(toFit: inClip(wanted))
-            let zoom = max(scrollView.magnification, 0.01)
-            // The see-through title bar and its buttons sit over the canvas's top; the status
-            // line and zoom control over its foot.
-            wanted = CGRect(x: box.minX - covered.left / zoom, y: box.minY - CanvasView.titleBarHeight / zoom,
+        // The see-through title bar and its buttons sit over the canvas's top; the status
+        // line and zoom control over its foot.
+        let top = CanvasView.titleBarHeight, foot: CGFloat = 50
+        let screen = scrollView.contentView.frame.size
+        let room = CGSize(width: max(80, screen.width - covered.left - covered.right), height: max(80, screen.height - top - foot))
+        let zoom = min(scrollView.maxMagnification, max(scrollView.minMagnification,
+                                                         min(room.width / box.width, room.height / box.height)))
+        let wanted = CGRect(x: box.minX - covered.left / zoom, y: box.minY - top / zoom,
                             width: box.width + (covered.left + covered.right) / zoom,
-                            height: box.height + (CanvasView.titleBarHeight + 50) / zoom)
+                            height: box.height + (top + foot) / zoom)
+        zoomTarget = nil
+        Theme.Motion.travel {
+            scrollView.animator().magnify(toFit: inClip(wanted))
+        } then: { [weak self] in
+            Task { @MainActor in
+                self?.publishZoom()
+                self?.document.needsDisplay = true
+            }
         }
-        scrollView.magnify(toFit: inClip(wanted))
-        document.needsDisplay = true
     }
 
     func zoom(toCard id: String) {

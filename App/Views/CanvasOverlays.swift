@@ -55,7 +55,7 @@ private struct PaletteRow: View {
             return provider
         }
         .help("Click to add a \(kind.label) card, or drag it onto the canvas")
-        .animation(.easeOut(duration: Theme.Motion.fast), value: isHovered)
+        .animation(Theme.Motion.quick, value: isHovered)
     }
 }
 
@@ -126,7 +126,7 @@ struct StatusStrip: View {
             .buttonStyle(.plain)
             .floatingPanel()
             .help("Show the run log")
-            .animation(.easeOut(duration: Theme.Motion.base), value: controller.handOffs)
+            .animation(Theme.Motion.standard, value: controller.handOffs)
         }
     }
 }

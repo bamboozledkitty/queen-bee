@@ -85,16 +85,30 @@ enum Theme {
 
     enum Motion {
         /// Hover, press, anything tied to the pointer.
-        static let fast: TimeInterval = 0.12
-        /// Selecting, panels opening, a count ticking up.
-        static let base: TimeInterval = 0.2
-        /// A new card drawing in.
-        static let slow: TimeInterval = 0.4
+        static let quickDuration: TimeInterval = 0.15
+        /// Selecting, panels opening, a panel changing height.
+        static let standardDuration: TimeInterval = 0.25
+        /// The canvas moving: zoom, fit, going to a card.
+        static let travelDuration: TimeInterval = 0.3
         /// One step of the dashes marching along a live link.
         static let march: TimeInterval = 0.8
 
         /// False when the person has asked the Mac for less motion.
         static var isAllowed: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+        /// The SwiftUI curves. Springs with no bounce, so a change that is interrupted
+        /// carries on from where it was. Nil, which is no animation, with motion off.
+        static var quick: Animation? { isAllowed ? .snappy(duration: quickDuration, extraBounce: 0) : nil }
+        static var standard: Animation? { isAllowed ? .snappy(duration: standardDuration, extraBounce: 0) : nil }
+
+        /// Runs AppKit changes made through `animator()` on the travel curve.
+        static func travel(_ changes: () -> Void, then done: (@Sendable () -> Void)? = nil) {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = isAllowed ? travelDuration : 0
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                changes()
+            }, completionHandler: done)
+        }
     }
 
     // MARK: Appearance
@@ -149,6 +163,23 @@ extension NSColor {
     }
 }
 
+extension CALayer {
+    /// Sets a colour, width or path, easing from what is on screen now. Layers that belong
+    /// to views don't animate by themselves, so the change is given its own animation.
+    func ease(_ keyPath: String, to value: Any?, animated: Bool = true, duration: TimeInterval = Theme.Motion.quickDuration) {
+        let shown = presentation()?.value(forKeyPath: keyPath) ?? self.value(forKeyPath: keyPath)
+        setValue(value, forKeyPath: keyPath)
+        guard animated, Theme.Motion.isAllowed, let shown, let value,
+              !CFEqual(shown as CFTypeRef, value as CFTypeRef) else { return }
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.fromValue = shown
+        animation.toValue = value
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        add(animation, forKey: keyPath)
+    }
+}
+
 extension Font {
     static func dsMono(_ size: CGFloat = Theme.Size.body, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
@@ -160,13 +191,13 @@ extension Font {
 }
 
 /// The look shared by the controls that float over the canvas: the palette, the settings
-/// panel, the zoom pill, the status strip. Drawn like a card, lifted by one soft shadow.
+/// panel, the zoom pill, the status strip. Drawn like a card: a surface and an ink outline,
+/// with no shadow.
 struct FloatingPanel: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.ink.ui, lineWidth: Theme.Stroke.card))
-            .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
     }
 }
 

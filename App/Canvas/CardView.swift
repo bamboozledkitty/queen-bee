@@ -5,29 +5,40 @@ import QueenBeeCore
 final class PortDotView: NSView {
     let port: String
     let isOutput: Bool
-    var isLinked = false { didSet { needsDisplay = true } }
-    private var isHovered = false { didSet { needsDisplay = true } }
+    var isLinked = false { didSet { if isLinked != oldValue { needsDisplay = true } } }
+    private var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
+    private let dot = CAShapeLayer()
+    private var hasDrawn = false
 
     init(port: String, isOutput: Bool) {
         self.port = port
         self.isOutput = isOutput
         let d = CanvasGeometry.portRadius * 2 + 6
         super.init(frame: NSRect(x: 0, y: 0, width: d, height: d))
+        wantsLayer = true
+        dot.lineWidth = Theme.Stroke.card
+        layer?.addSublayer(dot)
         toolTip = isOutput ? "\(portLabel(port)): drag to another card to link" : "Input"
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    override func draw(_ dirtyRect: NSRect) {
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
         // An output grows a little under the pointer, to say it can be dragged from.
         let r = CanvasGeometry.portRadius + (isHovered && isOutput ? 1.5 : 0)
-        let circle = NSRect(x: bounds.midX - r, y: bounds.midY - r, width: r * 2, height: r * 2)
-        let path = NSBezierPath(ovalIn: circle)
-        (isLinked || isHovered ? Theme.ink : Theme.surface).setFill()
-        path.fill()
-        Theme.ink.setStroke()
-        path.lineWidth = Theme.Stroke.card
-        path.stroke()
+        let circle = CGRect(x: bounds.midX - r, y: bounds.midY - r, width: r * 2, height: r * 2)
+        dot.frame = bounds
+        dot.strokeColor = Theme.ink.cgColor
+        dot.ease("path", to: CGPath(ellipseIn: circle, transform: nil), animated: hasDrawn)
+        dot.ease("fillColor", to: (isLinked || isHovered ? Theme.ink : Theme.surface).cgColor, animated: hasDrawn)
+        hasDrawn = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 
     override func updateTrackingAreas() {
@@ -140,6 +151,9 @@ class CardView: NSView {
     private var outputDots: [PortDotView] = []
     private var dragOrigin = CGPoint.zero
     private var dragSize = CGSize.zero
+    /// What the view last showed, so a sync that changes nothing for this card costs nothing.
+    private var shown: (card: Card, context: CardContext)?
+    private var hasDrawn = false
     var linkDrop: LinkDrop = .none { didSet { if linkDrop != oldValue { needsDisplay = true } } }
 
     override var isFlipped: Bool { true }
@@ -190,8 +204,16 @@ class CardView: NSView {
         CanvasGeometry.frame(of: card).insetBy(dx: -gutter, dy: 0)
     }
 
+    /// Whether `update` would change anything. Dragging one card re-syncs the whole canvas
+    /// on every move of the pointer; the cards that didn't move skip the work.
+    func isCurrent(card new: Card, context: CardContext) -> Bool {
+        guard let shown else { return false }
+        return shown.card == new && shown.context == context
+    }
+
     /// Brings the view in line with the model. Subclasses add their own state on top.
     func update(card new: Card, context: CardContext) {
+        shown = (new, context)
         let portsChanged = ports(of: new) != ports(of: card) || acceptsInput(new) != acceptsInput(card)
         card = new
         self.context = context
@@ -306,11 +328,13 @@ class CardView: NSView {
     // appearance in force, so they follow a change of mode.
     override func updateLayer() {
         body.layer?.backgroundColor = Theme.surface.cgColor
-        body.layer?.borderColor = outline.color.cgColor
-        body.layer?.borderWidth = outline.width
-        titleBar.layer?.backgroundColor = (titleBar.isHovered ? Theme.barHover : Theme.bar).cgColor
+        // The outline and the title's tint ease, so selecting and hovering don't snap.
+        body.layer?.ease("borderColor", to: outline.color.cgColor, animated: hasDrawn)
+        body.layer?.ease("borderWidth", to: outline.width, animated: hasDrawn)
+        titleBar.layer?.ease("backgroundColor", to: (titleBar.isHovered ? Theme.barHover : Theme.bar).cgColor, animated: hasDrawn)
         titleRule.layer?.backgroundColor = Theme.hairline.cgColor
         updateContentLayers()
+        hasDrawn = true
     }
 
     /// Subclasses colour their own layers here.
@@ -323,24 +347,25 @@ class CardView: NSView {
 
     // MARK: Appearing
 
-    /// A new card draws in like a line on a plan: its outline first, then what it holds.
+    /// A new card settles into place: it fades in while growing the last few percent.
     func playDrawIn() {
-        guard Theme.Motion.isAllowed else { return }
-        titleBar.alphaValue = 0
-        content.alphaValue = 0
-        alphaValue = 0
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Theme.Motion.base
-            animator().alphaValue = 1
-        } completionHandler: {
-            Task { @MainActor in
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = Theme.Motion.base
-                    self.titleBar.animator().alphaValue = 1
-                    self.content.animator().alphaValue = 1
-                }
-            }
-        }
+        guard Theme.Motion.isAllowed, let layer else { return }
+        // A view's layer is anchored at its corner, so the scale is taken about the middle by hand.
+        let middle = CGPoint(x: bounds.midX, y: bounds.midY)
+        var small = CATransform3DMakeTranslation(middle.x, middle.y, 0)
+        small = CATransform3DScale(small, 0.96, 0.96, 1)
+        small = CATransform3DTranslate(small, -middle.x, -middle.y, 0)
+        let grow = CABasicAnimation(keyPath: "transform")
+        grow.fromValue = small
+        grow.toValue = CATransform3DIdentity
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let group = CAAnimationGroup()
+        group.animations = [grow, fade]
+        group.duration = Theme.Motion.standardDuration
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(group, forKey: "drawIn")
     }
 
     // MARK: Gestures
@@ -408,7 +433,7 @@ class CardView: NSView {
 }
 
 /// What a card view needs to know beyond its own card.
-struct CardContext {
+struct CardContext: Equatable {
     var isSelected = false
     var isFocused = false
     /// The card is where the run is right now: an agent at work or waiting on a hand-off.

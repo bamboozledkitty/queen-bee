@@ -168,6 +168,6 @@ private struct FlowRow<Content: View>: View {
                     in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: Theme.Motion.fast), value: isHovered)
+        .animation(Theme.Motion.quick, value: isHovered)
     }
 }

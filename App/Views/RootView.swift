@@ -71,8 +71,8 @@ struct WorkspaceView: View {
             }
             .padding(Self.gap)
         }
-        .animation(.easeOut(duration: Theme.Motion.base), value: showsSidebar)
-        .animation(.easeOut(duration: Theme.Motion.base), value: showsPanel)
+        .animation(Theme.Motion.standard, value: showsSidebar)
+        .animation(Theme.Motion.standard, value: showsPanel)
         .onChange(of: obstruction, initial: true) { services.canvasObstruction = obstruction }
         .navigationTitle(services.current?.flow.name ?? "Queen Bee")
         .navigationSubtitle(subtitle)
@@ -227,7 +227,7 @@ struct CanvasControls: View {
                     BlankFlowPrompt(controller: controller, showOrchestrator: showOrchestrator)
                 }
             }
-            .animation(.easeOut(duration: Theme.Motion.base), value: controller.selection)
+            .animation(Theme.Motion.standard, value: controller.selection)
     }
 }
 
