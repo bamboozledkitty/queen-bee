@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import Sparkle
 import SwiftUI
 
 @main
@@ -15,6 +16,10 @@ struct QueenBeeApp: App {
         .defaultSize(width: 1500, height: 950)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { delegate.updater.checkForUpdates(nil) }
+                    .disabled(!delegate.updater.updater.canCheckForUpdates)
+            }
             CommandGroup(after: .newItem) {
                 Button("New Flow") { services.current?.project.newFlow() ?? services.projects.first?.newFlow() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -69,6 +74,14 @@ struct QueenBeeApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var termSignal: DispatchSourceSignal?
+    /// Checks the release feed and installs new versions. Left idle in a debug build, which isn't a release.
+    let updater: SPUStandardUpdaterController = {
+        #if DEBUG
+        SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+        #else
+        SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        #endif
+    }()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // A second copy would fight the first over the socket: hand over to the first and quit.

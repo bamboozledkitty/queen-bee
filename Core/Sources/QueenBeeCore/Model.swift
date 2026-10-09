@@ -48,6 +48,11 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     public var effort: String?
     /// manual, acceptEdits, plan or auto; nil for the person's default.
     public var permissionMode: String?
+    /// The only modes a card may ask for. A mode that skips permission checks is never one of them,
+    /// whether it comes from a flow file, the orchestrator's tools or the settings panel.
+    public static let permissionModes = ["manual", "acceptEdits", "plan", "auto"]
+    /// The only effort levels a card may ask for.
+    public static let effortLevels = ["low", "medium", "high", "xhigh", "max"]
     /// The folder the session runs in; nil for the project folder.
     public var cwd: String?
     /// The Claude Code session behind the card, set the first time it starts.

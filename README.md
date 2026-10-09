@@ -6,20 +6,31 @@ Each agent is a live `claude` session in a terminal that sits on the canvas. You
 
 ![A finished run: cards the run passed through carry a check and a count, and travelled links are green](docs/queen-bee-flight-plan-light.jpg)
 
-## Requirements
+## Install
 
-- macOS 26 or later, Apple silicon
-- Xcode 27 and [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
+1. Download `QueenBee-<version>.zip` from the [latest release](https://github.com/bamboozledkitty/queen-bee/releases/latest).
+2. Unzip it and drag **QueenBee** into your Applications folder.
+3. Open it, then add a project folder when the app asks.
+
+You need:
+
+- macOS 26 or later on Apple silicon.
 - [Claude Code](https://claude.com/claude-code) 2.1.287 or later, signed in. The app loads a small plugin into each session, which needs that version.
 
-## Build and run
+Releases are signed and notarized, so the app opens without a Gatekeeper warning. It checks for updates by itself, and **Queen Bee → Check for Updates…** checks straight away. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+
+Queen Bee starts Claude Code sessions as you and is not sandboxed. Read [SECURITY.md](SECURITY.md) before opening flows from someone else.
+
+Flows are saved in `<project>/.queenbee/flows/`, and agents work in the project folder.
+
+## Build from source
+
+You need Xcode 27 and [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
 
 ```sh
 ./scripts/build.sh
 open build/Build/Products/Debug/QueenBee.app
 ```
-
-Open a project folder when the app asks. Flows are saved in `<project>/.queenbee/flows/`, and agents work in the project folder.
 
 ## Use
 
@@ -41,8 +52,6 @@ Open a project folder when the app asks. Flows are saved in `<project>/.queenbee
 - `Helper/` builds `qb`, a small binary inside the app bundle. Claude Code hooks, the plugin and the orchestrator's tool server all run it, and it talks to the app over a unix socket in `~/Library/Application Support/QueenBee/`.
 - `Plugin/qb-link/` is the plugin the app loads into every session. When an agent's turn ends it asks the app where the reply goes and sends it there as a Claude Code session message.
 
-The design is in `docs/superpowers/specs/2026-10-09-queen-bee-design.md`.
-
 ## Tests
 
 ```sh
@@ -57,3 +66,20 @@ The end-to-end script starts a separate test copy of the app with its own suppor
 - `--open <folder>` opens that project folder in the first window.
 - `--float` keeps the window above others without taking focus. Terminals stop painting in a hidden window, so a check that looks at the window needs it.
 - `--testing` turns on the test harness and lets a second copy of the app run. `QB_SUPPORT_DIR` in the environment moves that copy's socket and plugin.
+
+`--testing` and `QB_SUPPORT_DIR` only work in a debug build.
+
+## Releasing
+
+For maintainers. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, add a section for the version to `CHANGELOG.md`, then:
+
+```sh
+./scripts/release.sh            # build, sign, notarize and write appcast.xml, into dist/
+./scripts/release.sh publish    # the same, then tag, push and create the GitHub release
+```
+
+The script's header lists the certificate, notarization profile and update key it needs.
+
+## License
+
+[MIT](LICENSE)

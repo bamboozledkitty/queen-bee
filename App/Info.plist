@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Updates: Sparkle reads the feed, and only installs a download signed with the key below. -->
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/bamboozledkitty/queen-bee/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>yY7DQmoNMLvc0wlsV3MUWNmagTIZ2hTFZG9RoZZA8RQ=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+</dict>
+</plist>

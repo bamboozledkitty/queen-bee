@@ -12,6 +12,9 @@ settings:
     CODE_SIGN_IDENTITY: "-"
     ENABLE_HARDENED_RUNTIME: NO
     ENABLE_USER_SCRIPT_SANDBOXING: NO
+  configs:
+    Release:
+      ENABLE_HARDENED_RUNTIME: YES
 packages:
   QueenBeeCore:
     path: Core
@@ -20,7 +23,10 @@ packages:
     exactVersion: 1.99.0
   swift-subprocess:
     url: https://github.com/swiftlang/swift-subprocess.git
-    from: 1.0.0
+    exactVersion: 1.0.1
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    exactVersion: 2.10.0
 targets:
   QueenBee:
     type: application
@@ -35,13 +41,17 @@ targets:
       - package: SwiftTerm
       - package: swift-subprocess
         product: Subprocess
+      - package: Sparkle
       - target: qb
         embed: false
         link: false
     postBuildScripts:
       - name: Embed qb helper
         script: |
-          cp -f "${BUILT_PRODUCTS_DIR}/qb" "${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/qb"
+          # Copy, then rename over the old one. Writing into the old file would get every new launch of it
+          # killed while a running session still has it open.
+          cp -f "${BUILT_PRODUCTS_DIR}/qb" "${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/qb.new"
+          mv -f "${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/qb.new" "${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/qb"
         inputFiles:
           - $(BUILT_PRODUCTS_DIR)/qb
         outputFiles:
@@ -51,6 +61,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.queenbee.app
         PRODUCT_NAME: QueenBee
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Queen Bee
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_NSPrincipalClass: NSApplication

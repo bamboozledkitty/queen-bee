@@ -304,7 +304,8 @@ final class FlowController: ToolHost {
     func startSession(forCard id: String) {
         guard let environment = services.environment else { return }
         guard let index = flow.cards.firstIndex(where: { $0.id == id }), flow.cards[index].kind == .agent else { return }
-        if flow.cards[index].sessionID == nil { flow.cards[index].sessionID = UUID().uuidString.lowercased() }
+        // The id ends up on the command line and in a file name, so one from a flow file has to be a real id.
+        if flow.cards[index].sessionID.flatMap(UUID.init(uuidString:)) == nil { flow.cards[index].sessionID = UUID().uuidString.lowercased() }
         let card = flow.cards[index]
         guard let spec = ClaudeLauncher.agent(flow: flow, card: card, sessionID: card.sessionID!, projectRoot: project.root,
                                               services: services, environment: environment) else {
@@ -316,7 +317,7 @@ final class FlowController: ToolHost {
 
     func startOrchestrator() {
         guard let environment = services.environment else { return }
-        if flow.orchestratorSessionID == nil { flow.orchestratorSessionID = UUID().uuidString.lowercased() }
+        if flow.orchestratorSessionID.flatMap(UUID.init(uuidString:)) == nil { flow.orchestratorSessionID = UUID().uuidString.lowercased() }
         guard let spec = ClaudeLauncher.orchestrator(flow: flow, sessionID: flow.orchestratorSessionID!, projectRoot: project.root,
                                                      services: services, environment: environment) else {
             banner = services.problem
@@ -555,13 +556,20 @@ final class FlowController: ToolHost {
     }
 
     private func save(_ text: String, to file: String, card: String) {
-        let url = project.root.appendingPathComponent(file).standardizedFileURL
-        guard url.path.hasPrefix(project.root.path + "/") else {
+        // Symlinks are followed before the check, so a link inside the project can't point the save somewhere else.
+        let root = project.root.resolvingSymlinksInPath()
+        let url = root.appendingPathComponent(file).standardizedFileURL.resolvingSymlinksInPath()
+        guard url.path.hasPrefix(root.path + "/") else {
             append("\(card) didn't save: \(file) is outside the project folder")
             return
         }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Creating the folders may have gone through a link that didn't resolve while they were missing.
+            guard url.deletingLastPathComponent().resolvingSymlinksInPath().path.hasPrefix(root.path) else {
+                append("\(card) didn't save: \(file) is outside the project folder")
+                return
+            }
             try text.write(to: url, atomically: true, encoding: .utf8)
             append("\(card) saved the answer to \(file)")
         } catch {

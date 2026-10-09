@@ -88,9 +88,11 @@ enum ClaudeLauncher {
         guard let claude = environment.claude else { return nil }
         var args = common(sessionID: sessionID, name: card.name,
                           systemPrompt: agentPrompt(flow: flow, card: card), services: services)
-        if let model = card.model, !model.isEmpty { args += ["--model", model] }
-        if let effort = card.effort, !effort.isEmpty { args += ["--effort", effort] }
-        if let mode = card.permissionMode, !mode.isEmpty { args += ["--permission-mode", mode] }
+        // These come from a flow file, which may not be one this app wrote. Anything that could be read
+        // as another flag, or that isn't a setting the app offers, is left out.
+        if let model = card.model, !model.isEmpty, !model.hasPrefix("-") { args += ["--model", model] }
+        if let effort = card.effort, Card.effortLevels.contains(effort) { args += ["--effort", effort] }
+        if let mode = card.permissionMode, Card.permissionModes.contains(mode) { args += ["--permission-mode", mode] }
         let cwd = (card.cwd?.isEmpty == false ? card.cwd! : projectRoot.path)
         return spec(claude: claude, args: args, cwd: cwd, key: "\(flow.id)/\(card.id)", sessionID: sessionID,
                     services: services, environment: environment)
@@ -102,7 +104,7 @@ enum ClaudeLauncher {
         let key = "\(flow.id)/orchestrator"
         let server: JSONValue = ["mcpServers": ["queenbee": [
             "command": .string(services.helperPath), "args": ["mcp"],
-            "env": ["QB_SOCKET": .string(services.socketPath), "QB_SESSION": .string(key)],
+            "env": ["QB_SOCKET": .string(services.socketPath), "QB_SESSION": .string(services.credential(for: key))],
         ]]]
         let args = common(sessionID: sessionID, name: orchestratorName(for: flow),
                           systemPrompt: orchestratorPrompt(flow: flow), services: services)
@@ -114,7 +116,7 @@ enum ClaudeLauncher {
     private static func spec(claude: String, args: [String], cwd: String, key: String, sessionID: String,
                              services: AppServices, environment: ResolvedEnvironment) -> LaunchSpec {
         let env = environment.variables(adding: [
-            "QB_SOCKET": services.socketPath, "QB_SESSION": key, "QB_HELPER": services.helperPath,
+            "QB_SOCKET": services.socketPath, "QB_SESSION": services.credential(for: key), "QB_HELPER": services.helperPath,
         ])
         return LaunchSpec(executable: claude, arguments: args, environment: env.map { "\($0.key)=\($0.value)" },
                           workingDirectory: cwd, sessionID: sessionID)

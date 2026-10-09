@@ -5,7 +5,14 @@ import QueenBeeCore
 /// A script asks what the app is showing and does what a person would do with the mouse
 /// and keyboard, over the same socket the helper uses. `scripts/e2e.py` is that script.
 enum TestHarness {
-    static var isEnabled: Bool { CommandLine.arguments.contains("--testing") }
+    /// Always off in a release build, so a copy people download has no back door.
+    static var isEnabled: Bool {
+        #if DEBUG
+        CommandLine.arguments.contains("--testing")
+        #else
+        false
+        #endif
+    }
 
     /// Questions about the app as a whole, for when no flow is involved.
     static func handleApp(_ payload: JSONValue) -> JSONValue {

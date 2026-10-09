@@ -212,4 +212,15 @@ import Testing
         let dropped = try flow.addCard(kind: .note, name: "Note", x: 600, y: 150)
         #expect(dropped.x == 600)
     }
+
+    @Test func aModeThatSkipsPermissionChecksIsRefused() throws {
+        var flow = Flow(name: "Demo")
+        let agent = try flow.addCard(kind: .agent, name: "Writer")
+        for mode in ["bypassPermissions", "dontAsk", "--dangerously-skip-permissions"] {
+            var patch = CardPatch()
+            patch.permissionMode = mode
+            #expect(throws: FlowError.self) { try flow.updateCard(agent.id, patch: patch) }
+        }
+        #expect(flow.card(agent.id)?.permissionMode == nil)
+    }
 }

@@ -172,7 +172,12 @@ extension Flow {
             if let instructions = patch.instructions { card.instructions = instructions }
             if let model = patch.model { card.model = Self.setOrCleared(model) }
             if let effort = patch.effort { card.effort = Self.setOrCleared(effort) }
-            if let mode = patch.permissionMode { card.permissionMode = Self.setOrCleared(mode) }
+            if let mode = patch.permissionMode {
+                guard mode.isEmpty || Card.permissionModes.contains(mode) else {
+                    throw FlowError.invalid("Unknown permission mode \"\(mode)\". Use one of: \(Card.permissionModes.joined(separator: ", "))")
+                }
+                card.permissionMode = Self.setOrCleared(mode)
+            }
             if let cwd = patch.cwd { card.cwd = Self.setOrCleared(cwd) }
         case .start:
             if let command = patch.command { card.command = command }

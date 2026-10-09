@@ -36,7 +36,7 @@ final class AppServices {
 
     private init() {
         // QB_SUPPORT_DIR lets a test copy of the app keep its socket and plugin apart from the real one's.
-        if let override = ProcessInfo.processInfo.environment["QB_SUPPORT_DIR"], !override.isEmpty {
+        if TestHarness.isEnabled, let override = ProcessInfo.processInfo.environment["QB_SUPPORT_DIR"], !override.isEmpty {
             supportDirectory = URL(fileURLWithPath: override, isDirectory: true)
         } else {
             let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -53,7 +53,9 @@ final class AppServices {
     func start() {
         guard !didStart else { return }
         didStart = true
+        // The socket and the plugin live here, so only this account may look inside.
         try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: supportDirectory.path)
         installPlugin()
         startServer()
         restoreProjects()
@@ -84,6 +86,29 @@ final class AppServices {
 
     private static let projectsKey = "projects"
     private static let pinnedKey = "pinnedFlows"
+    private static let trustedKey = "trustedProjects"
+
+    /// Whether flows already saved in `root` may be opened. Opening a flow starts sessions with the
+    /// instructions, folders and permissions in its file, so a folder that arrives with flows in it,
+    /// such as a cloned repository, is only opened once the person has said they trust it.
+    func confirmTrust(_ root: URL) -> Bool {
+        let path = root.standardizedFileURL.path
+        var trusted = Set(UserDefaults.standard.stringArray(forKey: Self.trustedKey) ?? [])
+        if trusted.contains(path) || TestHarness.isEnabled { return true }
+        let flows = (try? FileManager.default.contentsOfDirectory(at: FlowStore(root: root).directory, includingPropertiesForKeys: nil)) ?? []
+        if flows.contains(where: { $0.pathExtension == "json" }) {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Trust the flows in “\(root.lastPathComponent)”?"
+            alert.informativeText = "This folder already has Queen Bee flows in it. Opening them starts Claude Code sessions with the instructions, working folders and permission settings saved in those files. Only continue if you trust where this folder came from."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Trust and Open")
+            guard alert.runModal() == .alertSecondButtonReturn else { return false }
+        }
+        trusted.insert(path)
+        UserDefaults.standard.set(trusted.sorted(), forKey: Self.trustedKey)
+        return true
+    }
     /// A test run opens scratch folders, which shouldn't come back the next time the app starts.
     private var remembersProjects: Bool { !TestHarness.isEnabled }
 
@@ -100,7 +125,7 @@ final class AppServices {
                 addProject(URL(fileURLWithPath: path), select: false)
             }
         }
-        if let path = LaunchArguments.takeFolder() {
+        if let path = LaunchArguments.takeFolder(), confirmTrust(URL(fileURLWithPath: path)) {
             let project = addProject(URL(fileURLWithPath: path), select: true)
             if project.controllers.isEmpty { project.newFlow() }
         } else if selectedFlowID == nil {
@@ -155,6 +180,23 @@ final class AppServices {
 
     // MARK: Socket
 
+    /// What each session was told to call itself, and the session key that belongs to.
+    @ObservationIgnored private var credentials: [String: String] = [:]
+    @ObservationIgnored private var credentialOwners: [String: String] = [:]
+
+    /// The `QB_SESSION` value for the session `key` ("<flowID>/<cardID>" or "<flowID>/orchestrator"): the key
+    /// with a secret on the end. The helper sends it back with every request, which is how the app knows
+    /// which session is really asking.
+    func credential(for key: String) -> String {
+        if let known = credentials[key] { return known }
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        let made = key + "#" + bytes.map { String(format: "%02x", $0) }.joined()
+        credentials[key] = made
+        credentialOwners[made] = key
+        return made
+    }
+
     private func startServer() {
         let path = socketPath
         unlink(path)
@@ -184,7 +226,12 @@ final class AppServices {
 
     /// Answers one helper request. `session` is "<flowID>/<cardID>" or "<flowID>/orchestrator".
     func handle(_ request: WireRequest) async -> JSONValue {
-        let parts = request.session.split(separator: "/", maxSplits: 1).map(String.init)
+        var parts = request.session.split(separator: "/", maxSplits: 1).map(String.init)
+        if request.kind != "test" {
+            // Who is asking comes from the secret, never from the name the request gives itself.
+            guard let owner = credentialOwners[request.session] else { return fallback(for: request) }
+            parts = owner.split(separator: "/", maxSplits: 1).map(String.init)
+        }
         if request.kind == "test" {
             guard TestHarness.isEnabled else { return ["error": "testing is off"] }
             guard parts.count == 2, let controller = controllers[parts[0]]?.value else { return TestHarness.handleApp(request.payload) }
@@ -209,6 +256,8 @@ final class AppServices {
             if let reason = verdict.refusal { return ["allowed": false, "reason": .string(reason)] }
             return ["allowed": true, "sessionId": verdict.sessionID.map(JSONValue.string) ?? .null]
         case "mcp":
+            // The tools edit and run the flow, so only the orchestrator's own session gets them.
+            guard who == FlowController.orchestratorKey else { return fallback(for: request) }
             return await MCPServer.handle(request.payload, host: controller) ?? .null
         default:
             return fallback(for: request)

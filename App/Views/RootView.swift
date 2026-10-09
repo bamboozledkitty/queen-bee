@@ -144,7 +144,7 @@ struct WorkspaceView: View {
         panel.canCreateDirectories = true
         panel.prompt = "Add"
         panel.message = "Flows are kept in a .queenbee folder inside the project, and agents work in the project folder."
-        if panel.runModal() == .OK, let url = panel.url {
+        if panel.runModal() == .OK, let url = panel.url, AppServices.shared.confirmTrust(url) {
             let project = AppServices.shared.addProject(url)
             if project.controllers.isEmpty { project.newFlow() }
         }
