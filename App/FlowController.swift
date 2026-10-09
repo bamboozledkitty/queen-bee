@@ -42,7 +42,7 @@ final class FlowController: ToolHost {
     private(set) var sessionGeneration = 0
 
     @ObservationIgnored weak var canvas: CanvasView?
-    @ObservationIgnored private var sessions: [String: TerminalSession] = [:]
+    @ObservationIgnored private(set) var sessions: [String: TerminalSession] = [:]
     @ObservationIgnored private var engine: Engine?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var isOpen = false
@@ -278,6 +278,7 @@ final class FlowController: ToolHost {
         let type = payload["notification_type"]?.stringValue
             ?? ((payload["message"]?.stringValue ?? "").localizedCaseInsensitiveContains("permission") ? "permission_prompt" : nil)
         session.apply(hook: event, notificationType: type)
+        if event == "Stop", let reply = payload["last_assistant_message"]?.stringValue { session.lastReply = reply }
         guard who != Self.orchestratorKey else { return }
         switch event {
         case "SessionStart":
@@ -329,12 +330,22 @@ final class FlowController: ToolHost {
         }
     }
 
-    /// Why an agent may not message `to`, or nil when it may. Agents talk along the links
-    /// drawn on the canvas, and to the orchestrator.
-    func refusal(from who: String, to: String) -> String? {
-        guard who != Self.orchestratorKey, let sender = flow.card(who) else { return nil }
+    /// What to do with a SendMessage from one of this flow's sessions.
+    struct SendVerdict {
+        var refusal: String?
+        /// The exact session to deliver to, when the recipient is part of this flow.
+        var sessionID: String?
+    }
+
+    /// Decides a SendMessage a session's model is making. A recipient named like one of this
+    /// flow's cards is that card, whatever other sessions on the machine share the name, so
+    /// the answer carries the card's session id. An agent may only message agents its card is
+    /// linked to, and the orchestrator. The orchestrator may message any agent.
+    func judgeSend(from who: String, to: String) -> SendVerdict {
         let address = to.lowercased()
-        if address.hasPrefix(ClaudeLauncher.orchestratorName(for: flow).lowercased()) { return nil }
+        if who != Self.orchestratorKey, address.hasPrefix(ClaudeLauncher.orchestratorName(for: flow).lowercased()) {
+            return SendVerdict(sessionID: flow.orchestratorSessionID)
+        }
         let target = flow.cards
             .filter { card in
                 guard card.kind == .agent, card.id != who else { return false }
@@ -343,8 +354,12 @@ final class FlowController: ToolHost {
                 return address == name || address.hasPrefix(name + "-") || address.hasPrefix(name + " ")
             }
             .max { $0.name.count < $1.name.count }
-        guard let target, !linkedAgents(of: who).contains(target.id) else { return nil }
-        return "\(sender.name) isn't linked to \(target.name) in the flow \"\(flow.name)\". Ask the person or the orchestrator to link the two cards first."
+        // Not one of this flow's sessions: Claude Code decides.
+        guard let target else { return SendVerdict() }
+        if who != Self.orchestratorKey, let sender = flow.card(who), !linkedAgents(of: who).contains(target.id) {
+            return SendVerdict(refusal: "\(sender.name) isn't linked to \(target.name) in the flow \"\(flow.name)\". Ask the person or the orchestrator to link the two cards first.")
+        }
+        return SendVerdict(sessionID: target.sessionID)
     }
 
     /// The agents a card reaches, or is reached by, through logic cards alone.

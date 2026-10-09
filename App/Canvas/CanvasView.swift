@@ -154,10 +154,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         // Scrolling over a terminal you haven't clicked into pans the canvas. Only a focused
         // terminal scrolls its own history.
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, event.window === self.window, let terminal = self.terminal(under: event),
-                  !self.isFocused(terminal) else { return event }
-            self.scrollView.scrollWheel(with: event)
-            return nil
+            guard let self, event.window === self.window else { return event }
+            return self.panInsteadOfScrolling(event, atWindowPoint: event.locationInWindow) ? nil : event
         }
 
         responderObservation = window.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
@@ -173,9 +171,19 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         }
     }
 
-    private func terminal(under event: NSEvent) -> NSView? {
+    /// A scroll over a terminal that doesn't have the keyboard pans the canvas. Returns
+    /// whether it did; when it didn't, the event goes on to whatever is under it.
+    private func panInsteadOfScrolling(_ event: NSEvent, atWindowPoint point: NSPoint) -> Bool {
+        guard let terminal = terminal(atWindowPoint: point), !isFocused(terminal) else { return false }
+        scrollView.scrollWheel(with: event)
+        return true
+    }
+
+    private func terminal(atWindowPoint point: NSPoint) -> NSView? {
         guard let content = window?.contentView else { return nil }
-        var view = content.hitTest(content.convert(event.locationInWindow, from: nil))
+        // hitTest takes a point in the superview's coordinates. The content view is flipped, so
+        // converting into its own coordinates would look for the terminal at the mirrored spot.
+        var view = content.hitTest(content.superview?.convert(point, from: nil) ?? point)
         while let v = view {
             if v is TerminalView { return v }
             view = v.superview
@@ -232,6 +240,66 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         let target = controller.flow.cards.last { CanvasGeometry.frame(of: $0).insetBy(dx: -CardView.gutter, dy: 0).contains(point) }
         guard let target else { return }
         controller.link(from: cardID, port: port, to: target.id)
+    }
+
+    // MARK: Test support
+
+    func testFocus(cardID: String?) {
+        if let cardID, let terminal = controller?.sessions[cardID]?.view {
+            window?.makeFirstResponder(terminal)
+        } else {
+            takeFocus()
+        }
+    }
+
+    func testSetMagnification(_ value: Double) {
+        scrollView.setMagnification(CGFloat(value), centeredAt: visibleCenter)
+        document.needsDisplay = true
+    }
+
+    var testViewState: JSONValue {
+        let r = scrollView.documentVisibleRect
+        return ["magnification": .number(Double(scrollView.magnification)), "x": .number(Double(r.minX)), "y": .number(Double(r.minY)),
+                "width": .number(Double(r.width)), "height": .number(Double(r.height))]
+    }
+
+    /// Scrolls the wheel over a card's terminal, or over bare canvas. "system" hands a real
+    /// event to this process, so it travels the whole road: the event queue, the monitor,
+    /// the view under the pointer. "direct" skips the queue and gives the event to the same
+    /// decision the monitor makes, for when the system won't deliver to a window that is
+    /// behind others.
+    func testScroll(cardID: String?, dy: Double, mode: String) -> String? {
+        guard let window, let controller else { return nil }
+        let target: CGPoint
+        if let cardID, let card = controller.flow.card(cardID) {
+            target = CGPoint(x: card.x + card.width / 2, y: card.y + card.height / 2)
+        } else {
+            // A spot on the visible canvas that no card covers.
+            let r = scrollView.documentVisibleRect
+            let frames = controller.flow.cards.map { CanvasGeometry.frame(of: $0).insetBy(dx: -20, dy: -20) }
+            var spot = CGPoint(x: r.maxX - 30, y: r.maxY - 30)
+            var tries = 0
+            while tries < 40, frames.contains(where: { $0.contains(spot) }) {
+                spot.x -= 40
+                tries += 1
+            }
+            target = spot
+        }
+        let inWindow = document.convert(target, to: nil)
+        let onScreen = window.convertPoint(toScreen: inWindow)
+        guard let primary = NSScreen.screens.first,
+              let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: Int32(dy), wheel2: 0, wheel3: 0) else { return nil }
+        cg.location = CGPoint(x: onScreen.x, y: primary.frame.height - onScreen.y)
+        if mode == "system" {
+            cg.postToPid(getpid())
+            return "system"
+        }
+        guard let event = NSEvent(cgEvent: cg) else { return nil }
+        if !panInsteadOfScrolling(event, atWindowPoint: inWindow) {
+            let under = window.contentView.flatMap { $0.hitTest($0.superview?.convert(inWindow, from: nil) ?? inWindow) }
+            (under ?? scrollView).scrollWheel(with: event)
+        }
+        return "direct"
     }
 
     // MARK: Zoom

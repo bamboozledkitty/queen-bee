@@ -40,7 +40,17 @@ Open a project folder when the app asks. Flows are saved in `<project>/.queenbee
 
 The design is in `docs/superpowers/specs/2026-10-09-queen-bee-design.md`.
 
+## Tests
+
+```sh
+cd Core && swift test        # 122 unit tests on the model, store, engine and tools
+./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about five minutes
+```
+
+The end-to-end script starts a separate test copy of the app with its own support folder, so a copy you have open is left alone. It builds a scratch project with one flow per scenario and drives the app through a test harness that only exists when the app is launched with `--testing`. Name scenarios to run a few: `./scripts/e2e.py guard loop`.
+
 ## Launch flags
 
 - `--open <folder>` opens that project folder in the first window.
-- `--float` keeps the window above others without taking focus. Terminals stop painting in a hidden window, so automated checks need it.
+- `--float` keeps the window above others without taking focus. Terminals stop painting in a hidden window, so a check that looks at the window needs it.
+- `--testing` turns on the test harness and lets a second copy of the app run. `QB_SUPPORT_DIR` in the environment moves that copy's socket and plugin.

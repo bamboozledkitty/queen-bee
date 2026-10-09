@@ -51,6 +51,11 @@ export const register: Register = on => {
     if (verdict && verdict.allowed === false) {
       return { isDelivered: false, reason: String(verdict.reason ?? 'These two agents are not linked on the canvas.') }
     }
+    // The recipient is a card of this flow. Other sessions on the machine may carry the same
+    // name, so deliver to the card's own session and not to whoever the name finds.
+    if (verdict && typeof verdict.sessionId === 'string' && verdict.sessionId) {
+      return $.session.send({ to: { sessionId: verdict.sessionId }, text: e.text }).catch(err => ({ isDelivered: false as const, reason: String(err) }))
+    }
     return next(e)
   })
 }

@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let me = NSRunningApplication.current
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
             .filter { $0 != me }
-        if let first = others.first {
+        if let first = others.first, !TestHarness.isEnabled {
             first.activate()
             exit(0)
         }
@@ -70,6 +70,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         source.setEventHandler { NSApp.terminate(nil) }
         source.resume()
         termSignal = source
+
+        // A second copy of the app, which is what a test run is, starts without a window. Ask for one.
+        if TestHarness.isEnabled {
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                guard !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) else { return }
+                let file = NSApp.mainMenu?.items.compactMap(\.submenu).first { $0.items.contains { $0.keyEquivalent == "n" } }
+                if let item = file?.items.first(where: { $0.keyEquivalent == "n" && $0.keyEquivalentModifierMask == .command }), let action = item.action {
+                    NSApp.sendAction(action, to: item.target, from: item)
+                }
+            }
+        }
     }
 
     /// Stops every session the app started, so no `claude` process outlives the window it ran in.

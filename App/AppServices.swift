@@ -25,8 +25,13 @@ final class AppServices {
     @ObservationIgnored private var didStart = false
 
     private init() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        supportDirectory = base.appendingPathComponent("QueenBee", isDirectory: true)
+        // QB_SUPPORT_DIR lets a test copy of the app keep its socket and plugin apart from the real one's.
+        if let override = ProcessInfo.processInfo.environment["QB_SUPPORT_DIR"], !override.isEmpty {
+            supportDirectory = URL(fileURLWithPath: override, isDirectory: true)
+        } else {
+            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            supportDirectory = base.appendingPathComponent("QueenBee", isDirectory: true)
+        }
         socketPath = supportDirectory.appendingPathComponent("qb.sock").path
         helperPath = Bundle.main.url(forAuxiliaryExecutable: "qb")?.path
             ?? Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/qb").path
@@ -73,6 +78,8 @@ final class AppServices {
         projects[key] = project
         return project
     }
+
+    var openProjectPaths: [String] { projects.keys.map(\.path).sorted() }
 
     func close(_ project: ProjectModel) {
         projects[project.root] = nil
@@ -123,6 +130,11 @@ final class AppServices {
     /// Answers one helper request. `session` is "<flowID>/<cardID>" or "<flowID>/orchestrator".
     func handle(_ request: WireRequest) async -> JSONValue {
         let parts = request.session.split(separator: "/", maxSplits: 1).map(String.init)
+        if request.kind == "test" {
+            guard TestHarness.isEnabled else { return ["error": "testing is off"] }
+            guard parts.count == 2, let controller = controllers[parts[0]]?.value else { return TestHarness.handleApp(request.payload) }
+            return await TestHarness.handle(request.payload, controller: controller)
+        }
         guard parts.count == 2, let controller = controllers[parts[0]]?.value else {
             return fallback(for: request)
         }
@@ -138,10 +150,9 @@ final class AppServices {
             controller.handleSent(from: who, results: request.payload["results"]?.arrayValue ?? [])
             return [:]
         case "may-send":
-            if let reason = controller.refusal(from: who, to: request.payload["to"]?.stringValue ?? "") {
-                return ["allowed": false, "reason": .string(reason)]
-            }
-            return ["allowed": true]
+            let verdict = controller.judgeSend(from: who, to: request.payload["to"]?.stringValue ?? "")
+            if let reason = verdict.refusal { return ["allowed": false, "reason": .string(reason)] }
+            return ["allowed": true, "sessionId": verdict.sessionID.map(JSONValue.string) ?? .null]
         case "mcp":
             return await MCPServer.handle(request.payload, host: controller) ?? .null
         default:
