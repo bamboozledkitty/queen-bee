@@ -31,20 +31,36 @@ public struct EndResult: Equatable, Sendable {
     }
 }
 
+/// One card a message reached while an event was handled, for showing where a run has been.
+public struct CardVisit: Equatable, Sendable {
+    public let cardID: String
+    /// The link the message came in by. Nil for a Start card and for an agent's own reply.
+    public let viaLinkID: String?
+    /// The output it left by. Nil when it stopped here: handed to an agent, taken by an End,
+    /// held by an And that is still waiting, or dropped by an Or.
+    public let port: String?
+
+    public init(cardID: String, viaLinkID: String?, port: String?) {
+        self.cardID = cardID; self.viaLinkID = viaLinkID; self.port = port
+    }
+}
+
 /// Everything one event caused.
 public struct RunOutput: Equatable, Sendable {
     public var deliveries: [Delivery]
     public var log: [String]
     public var results: [EndResult]
+    /// Every card a message reached, in order.
+    public var visits: [CardVisit]
     /// True when this call ended the run.
     public var finished: Bool
     /// The run this call belonged to, nil if there was none.
     public var runID: String?
 
     public init(deliveries: [Delivery] = [], log: [String] = [], results: [EndResult] = [],
-                finished: Bool = false, runID: String? = nil) {
+                visits: [CardVisit] = [], finished: Bool = false, runID: String? = nil) {
         self.deliveries = deliveries; self.log = log; self.results = results
-        self.finished = finished; self.runID = runID
+        self.visits = visits; self.finished = finished; self.runID = runID
     }
 }
 
@@ -112,6 +128,7 @@ public actor Engine {
 
         var state = Run(id: Flow.newID())
         var output = RunOutput(runID: state.id)
+        output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: "out"))
         await send(Message(text: text, fromName: "Start", fromStart: true), from: card, in: flow, state: &state, output: &output)
         settle(state, &output)
         return output
@@ -129,6 +146,7 @@ public actor Engine {
             if reply.isEmpty || reply.caseInsensitiveCompare("[no reply]") == .orderedSame {
                 output.log.append("\(card.name) had nothing to pass on")
             } else {
+                output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: "out"))
                 await send(Message(text: text, fromName: card.name, fromStart: false), from: card, in: flow, state: &state, output: &output)
             }
         } else {
@@ -210,6 +228,7 @@ public actor Engine {
             }
 
             let next = await arrive(message, at: target, by: link, in: flow, state: &state, output: &output)
+            output.visits.append(CardVisit(cardID: target.id, viaLinkID: link.id, port: next?.port))
             if state.hitLimit { return }
             if let next {
                 travelling += leaving(target, port: next.port, next.message, in: flow, output: &output)

@@ -9,6 +9,26 @@ nonisolated enum Selection: Equatable, Sendable {
     case link(String)
 }
 
+/// Where the run on show has been, for one card.
+nonisolated struct RunMark: Equatable, Sendable {
+    /// Messages that reached the card along a link.
+    var arrivals = 0
+    /// Times a message left the card.
+    var passes = 0
+    /// How many times it left by each output, and the output it left by last.
+    var ports: [String: Int] = [:]
+    var lastPort: String?
+    /// Arrivals since it last passed anything on: what an And is holding, what an Or dropped.
+    var holding = 0
+    /// The run stopped at this card.
+    var failed = false
+}
+
+/// What a flow needs from you right now, for its row in the sidebar.
+nonisolated enum FlowActivity: Sendable {
+    case quiet, running, needsYou, failed
+}
+
 nonisolated struct LogLine: Identifiable, Sendable {
     let id = UUID()
     let date: Date
@@ -40,6 +60,18 @@ final class FlowController: ToolHost {
     private(set) var isRunning = false
     /// Bumped when a session object is replaced, so the canvas picks up its new terminal.
     private(set) var sessionGeneration = 0
+    /// Where the latest run has been, card by card. Kept after the run ends, cleared when the next starts.
+    private(set) var marks: [String: RunMark] = [:]
+    /// How many times each link has fired in the latest run.
+    private(set) var linkPasses: [String: Int] = [:]
+    /// The links each waiting agent's hand-off travelled, by that agent's card id.
+    private var liveLinks: [String: Set<String>] = [:]
+    /// Hand-offs made in the latest run.
+    private(set) var handOffs = 0
+    /// The canvas's zoom, published by the canvas for the zoom pill.
+    var zoom: Double = 1
+    /// The person closed the "describe the flow" box on a new flow, to build it by hand.
+    var promptDismissed = false
 
     @ObservationIgnored weak var canvas: CanvasView?
     @ObservationIgnored private(set) var sessions: [String: TerminalSession] = [:]
@@ -55,6 +87,24 @@ final class FlowController: ToolHost {
 
     private var services: AppServices { AppServices.shared }
     var warnings: [String: String] { QueenBeeCore.warnings(for: flow) }
+    var liveLinkIDs: Set<String> { liveLinks.values.reduce(into: Set<String>()) { $0.formUnion($1) } }
+
+    /// Agent cards whose session is waiting on the person, in canvas order.
+    var cardsNeedingYou: [Card] {
+        flow.cards.filter { $0.kind == .agent && sessions[$0.id]?.state == .needsYou }
+    }
+
+    var activity: FlowActivity {
+        if !cardsNeedingYou.isEmpty { return .needsYou }
+        if isRunning { return .running }
+        if marks.values.contains(where: \.failed) { return .failed }
+        return .quiet
+    }
+
+    /// True for a flow nobody has built anything in yet: just its Start card, with no command.
+    var isBlank: Bool {
+        flow.links.isEmpty && flow.cards.allSatisfy { $0.kind == .start && ($0.command ?? "").isEmpty }
+    }
 
     init(flow: Flow, fileURL: URL, project: ProjectModel) {
         self.flow = flow
@@ -136,22 +186,30 @@ final class FlowController: ToolHost {
         perform { try $0.updateCard(id, patch: patch) }
     }
 
-    func addCard(_ kind: CardKind) {
+    /// Adds a card. With a point, as when one is dropped from the palette, the card is centred
+    /// there. Without, it goes to the middle of what is on screen, stepped clear of other cards.
+    func addCard(_ kind: CardKind, at point: CGPoint? = nil) {
         var made: Card?
-        let center = canvas?.visibleCenter ?? CGPoint(x: 400, y: 300)
         let size = Card.make(kind: kind, name: "x", x: 0, y: 0)
-        // Start at the middle of what's on screen, then step down and right until the card
-        // doesn't land on top of another one.
-        var spot = CGRect(x: max(20, center.x - size.width / 2), y: max(20, center.y - size.height / 2),
+        var spot: CGRect
+        if let point {
+            spot = CGRect(x: max(20, point.x - size.width / 2), y: max(20, point.y - CanvasGeometry.titleHeight / 2),
                           width: size.width, height: size.height)
-        let taken = flow.cards.map(CanvasGeometry.frame(of:))
-        var tries = 0
-        while tries < 30, taken.contains(where: { $0.insetBy(dx: -16, dy: -16).intersects(spot) }) {
-            spot.origin.x += 48
-            spot.origin.y += 48
-            tries += 1
+        } else {
+            let center = canvas?.visibleCenter ?? CGPoint(x: 400, y: 300)
+            spot = CGRect(x: max(20, center.x - size.width / 2), y: max(20, center.y - size.height / 2),
+                          width: size.width, height: size.height)
+            let taken = flow.cards.map(CanvasGeometry.frame(of:))
+            var tries = 0
+            while tries < 30, taken.contains(where: { $0.insetBy(dx: -16, dy: -16).intersects(spot) }) {
+                spot.origin.x += 48
+                spot.origin.y += 48
+                tries += 1
+            }
         }
-        perform { made = try $0.addCard(kind: kind, x: spot.minX, y: spot.minY) }
+        var patch = CardPatch()
+        if kind == .agent, let model = UserDefaults.standard.string(forKey: "defaultModel"), !model.isEmpty { patch.model = model }
+        perform { made = try $0.addCard(kind: kind, x: spot.minX, y: spot.minY, patch: patch) }
         if let made { selection = .card(made.id) }
     }
 
@@ -258,6 +316,7 @@ final class FlowController: ToolHost {
     private func sessionExited(_ id: String) {
         guard id != Self.orchestratorKey, isRunning, let engine else { return }
         let name = flow.card(id)?.name ?? id
+        markFailed(id)
         Task { self.absorb(await engine.agentFailed(flow: self.flow, cardID: id, reason: "\(name)'s session exited"), sender: nil) }
     }
 
@@ -290,6 +349,7 @@ final class FlowController: ToolHost {
         case "StopFailure":
             guard isRunning, let engine else { return }
             let name = flow.card(who)?.name ?? who
+            markFailed(who)
             Task { self.absorb(await engine.agentFailed(flow: self.flow, cardID: who, reason: "\(name)'s turn ended with an API error"), sender: nil) }
         default:
             break
@@ -387,6 +447,10 @@ final class FlowController: ToolHost {
         guard let engine = readyEngine() else { return services.problem ?? "Claude Code isn't ready yet." }
         if !isRunning {
             results.removeAll()
+            marks.removeAll()
+            linkPasses.removeAll()
+            liveLinks.removeAll()
+            handOffs = 0
             runLogStart = log.count
         }
         let output = await engine.start(flow: flow, startCardID: nil, command: command)
@@ -405,6 +469,8 @@ final class FlowController: ToolHost {
     @discardableResult
     private func absorb(_ output: RunOutput, sender: String?) -> [(to: String, text: String)] {
         output.log.forEach(append)
+        record(output.visits, sender: sender)
+        handOffs += output.deliveries.count
         for result in output.results {
             results[result.cardID] = result.text
             if let file = result.saveTo, !file.isEmpty { save(result.text, to: file, card: result.cardName) }
@@ -424,11 +490,44 @@ final class FlowController: ToolHost {
         }
         if output.finished {
             isRunning = false
+            liveLinks.removeAll()
             notifyOrchestrator(of: output)
         } else if output.runID != nil {
             isRunning = true
         }
         return forPlugin
+    }
+
+    /// Adds what an event did to the per-card tallies. The links an event travelled stay live
+    /// until the agents they led to have answered.
+    private func record(_ visits: [CardVisit], sender: String?) {
+        if let sender { liveLinks[sender] = nil }
+        let travelled = Set(visits.compactMap(\.viaLinkID))
+        for visit in visits {
+            var mark = marks[visit.cardID] ?? RunMark()
+            if let link = visit.viaLinkID {
+                linkPasses[link, default: 0] += 1
+                mark.arrivals += 1
+            }
+            // An agent's own reply: whatever was on its way to it has arrived and been dealt with.
+            if visit.viaLinkID == nil { liveLinks[visit.cardID] = nil }
+            if let port = visit.port {
+                mark.passes += 1
+                mark.ports[port, default: 0] += 1
+                mark.lastPort = port
+                mark.holding = 0
+            } else if visit.viaLinkID != nil {
+                mark.holding += 1
+                if flow.card(visit.cardID)?.kind == .agent { liveLinks[visit.cardID, default: []].formUnion(travelled) }
+            }
+            marks[visit.cardID] = mark
+        }
+    }
+
+    private func markFailed(_ cardID: String) {
+        var mark = marks[cardID] ?? RunMark()
+        mark.failed = true
+        marks[cardID] = mark
     }
 
     private func save(_ text: String, to file: String, card: String) {

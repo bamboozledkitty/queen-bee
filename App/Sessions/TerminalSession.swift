@@ -20,12 +20,17 @@ enum SessionState: String {
 
     var color: NSColor {
         switch self {
-        case .notStarted, .exited: .systemGray
-        case .starting: .systemYellow
-        case .idle: .systemGreen
-        case .working: .systemBlue
-        case .needsYou: .systemOrange
-        case .failed: .systemRed
+        case .notStarted, .starting, .idle: Theme.inkSecondary
+        case .working, .needsYou: Theme.live
+        case .failed, .exited: Theme.failInk
+        }
+    }
+
+    var tone: Badge.Tone {
+        switch self {
+        case .notStarted, .starting, .idle: .plain
+        case .working, .needsYou: .live
+        case .failed, .exited: .fail
         }
     }
 }
@@ -47,15 +52,25 @@ final class TerminalSession: NSObject {
     /// Typed input waiting for the session to go idle.
     @ObservationIgnored private var waiting: [String] = []
     @ObservationIgnored private var readyAt: Date = .distantFuture
+    @ObservationIgnored private var appearanceObservation: NSKeyValueObservation?
 
     init(key: String) {
         self.key = key
         view = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 520, height: 320))
         super.init()
-        view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        view.nativeBackgroundColor = Palette.terminalBackground
-        view.nativeForegroundColor = Palette.terminalForeground
+        view.font = Theme.mono(12)
         view.processDelegate = self
+        applyTheme()
+        // The terminal takes plain colours, so it is told again whenever light and dark swap.
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            Task { @MainActor in self?.applyTheme() }
+        }
+    }
+
+    private func applyTheme() {
+        let appearance = NSApp.effectiveAppearance
+        view.nativeBackgroundColor = Theme.terminal.fixed(in: appearance)
+        view.nativeForegroundColor = Theme.terminalInk.fixed(in: appearance)
     }
 
     var isLive: Bool { state != .notStarted && state != .exited }

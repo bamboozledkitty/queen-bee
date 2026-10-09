@@ -19,8 +19,16 @@ final class AppServices {
     /// Why the app can't start sessions, shown in every window.
     private(set) var problem: String?
 
+    /// The project folders in the sidebar, in the order they were added.
+    private(set) var projects: [ProjectModel] = []
+    /// The flow on the canvas.
+    var selectedFlowID: String? {
+        didSet { if selectedFlowID != oldValue { current?.open() } }
+    }
+    /// Flows kept at the top of the sidebar.
+    private(set) var pinnedFlowIDs: Set<String> = []
+
     @ObservationIgnored private var controllers: [String: WeakController] = [:]
-    @ObservationIgnored private var projects: [URL: ProjectModel] = [:]
     @ObservationIgnored private var serverTask: Task<Void, Never>?
     @ObservationIgnored private var didStart = false
 
@@ -46,6 +54,7 @@ final class AppServices {
         try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
         installPlugin()
         startServer()
+        restoreProjects()
         Task {
             let resolved = await ResolvedEnvironment.resolve()
             self.environment = resolved
@@ -71,22 +80,66 @@ final class AppServices {
 
     // MARK: Projects and flows
 
-    func project(for root: URL) -> ProjectModel {
+    private static let projectsKey = "projects"
+    private static let pinnedKey = "pinnedFlows"
+    /// A test run opens scratch folders, which shouldn't come back the next time the app starts.
+    private var remembersProjects: Bool { !TestHarness.isEnabled }
+
+    var allFlows: [FlowController] { projects.flatMap(\.controllers) }
+    var current: FlowController? { allFlows.first { $0.flow.id == selectedFlowID } }
+    var openProjectPaths: [String] { projects.map(\.root.path) }
+
+    /// Puts back the folders that were in the sidebar last time, then the one named on the command line.
+    private func restoreProjects() {
+        if remembersProjects {
+            pinnedFlowIDs = Set(UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
+            for path in UserDefaults.standard.stringArray(forKey: Self.projectsKey) ?? []
+            where FileManager.default.fileExists(atPath: path) {
+                addProject(URL(fileURLWithPath: path), select: false)
+            }
+        }
+        if let path = LaunchArguments.takeFolder() {
+            let project = addProject(URL(fileURLWithPath: path), select: true)
+            if project.controllers.isEmpty { project.newFlow() }
+        } else if selectedFlowID == nil {
+            selectedFlowID = allFlows.first?.flow.id
+        }
+    }
+
+    @discardableResult
+    func addProject(_ root: URL, select: Bool = true) -> ProjectModel {
         let key = root.standardizedFileURL
-        if let existing = projects[key] { return existing }
-        let project = ProjectModel(root: key)
-        projects[key] = project
+        let project = projects.first { $0.root == key } ?? {
+            let made = ProjectModel(root: key)
+            projects.append(made)
+            rememberProjects()
+            return made
+        }()
+        if select, let first = project.controllers.first { selectedFlowID = first.flow.id }
         return project
     }
 
-    var openProjectPaths: [String] { projects.keys.map(\.path).sorted() }
+    /// Takes a folder out of the sidebar. Its flows stay on disk.
+    func removeProject(_ project: ProjectModel) {
+        let wasCurrent = project.controllers.contains { $0.flow.id == selectedFlowID }
+        project.close()
+        projects.removeAll { $0 === project }
+        rememberProjects()
+        if wasCurrent { selectedFlowID = allFlows.first?.flow.id }
+    }
 
-    func close(_ project: ProjectModel) {
-        projects[project.root] = nil
+    private func rememberProjects() {
+        guard remembersProjects else { return }
+        UserDefaults.standard.set(projects.map(\.root.path), forKey: Self.projectsKey)
+    }
+
+    func togglePin(_ flowID: String) {
+        if !pinnedFlowIDs.insert(flowID).inserted { pinnedFlowIDs.remove(flowID) }
+        if remembersProjects { UserDefaults.standard.set(pinnedFlowIDs.sorted(), forKey: Self.pinnedKey) }
     }
 
     func shutDown() {
-        projects.values.forEach { $0.close() }
+        projects.forEach { $0.close() }
         unlink(socketPath)
     }
 

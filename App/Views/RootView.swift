@@ -1,109 +1,69 @@
 import QueenBeeCore
 import SwiftUI
 
-/// One window: a project folder once one is chosen, a welcome screen until then.
-struct ProjectWindow: View {
-    @Binding var folder: URL?
+/// The tabs of the panel beside the canvas.
+enum PanelTab: String, CaseIterable {
+    case orchestrator, log, output
 
-    var body: some View {
-        Group {
-            if let folder {
-                RootView(project: AppServices.shared.project(for: folder))
-                    .id(folder)
-            } else {
-                WelcomeView { folder = $0 }
-            }
-        }
-        .onAppear {
-            // `--open <folder>` on the command line opens that folder in the first window.
-            if folder == nil, let path = LaunchArguments.takeFolder() { folder = URL(fileURLWithPath: path) }
+    var label: String {
+        switch self {
+        case .orchestrator: "Orchestrator"
+        case .log: "Log"
+        case .output: "Output"
         }
     }
 }
 
-enum LaunchArguments {
-    private static var used = false
-
-    /// `--float` keeps the window above others without taking focus. Terminals stop painting
-    /// in a hidden window, so automated checks of the window need it on screen.
-    static var floats: Bool { CommandLine.arguments.contains("--float") }
-
-    static func takeFolder() -> String? {
-        guard !used else { return nil }
-        used = true
-        let args = CommandLine.arguments
-        guard let i = args.firstIndex(of: "--open"), i + 1 < args.count else { return nil }
-        return args[i + 1]
-    }
-}
-
-struct RootView: View {
-    let project: ProjectModel
-    @State private var showsOrchestrator = true
-    @State private var showsLog = true
+/// The app's one window: projects and their flows on the left, the selected flow's canvas
+/// in the middle, and a panel for its orchestrator, log and output on the right.
+struct WorkspaceView: View {
+    @State private var showsPanel = true
+    @State private var tab = PanelTab.orchestrator
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(project: project)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
+            SidebarView()
+                .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 340)
         } detail: {
-            if let controller = project.current {
-                HSplitView {
-                    VSplitView {
-                        canvas(for: controller)
-                            .frame(minWidth: 480, maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
-                            .layoutPriority(1)
-                        if showsLog {
-                            LogPanel(controller: controller)
-                                .frame(minHeight: 70, idealHeight: 130, maxHeight: 260)
-                        }
-                    }
-                    .layoutPriority(1)
-                    if showsOrchestrator {
-                        OrchestratorPane(controller: controller)
-                            .frame(minWidth: 300, idealWidth: 400, maxWidth: 560)
-                    }
-                }
-                .id(controller.flow.id)
+            if let controller = services.current {
+                FlowView(controller: controller, showsPanel: $showsPanel, tab: $tab)
+                    .id(controller.flow.id)
+            } else if services.projects.isEmpty {
+                WelcomeView()
             } else {
-                ContentUnavailableView("No flow yet", systemImage: "point.3.connected.trianglepath.dotted",
-                                       description: Text("Create a flow to start placing agents on the canvas."))
+                ContentUnavailableView("No flow selected", systemImage: "point.3.connected.trianglepath.dotted",
+                                       description: Text("Pick a flow in the sidebar, or add one to a project."))
             }
         }
-        .navigationTitle(project.current?.flow.name ?? project.name)
-        .navigationSubtitle(project.name)
+        .navigationTitle(services.current?.flow.name ?? "Queen Bee")
+        .navigationSubtitle(subtitle)
         .toolbar { toolbar }
-        .focusedSceneValue(\.project, project)
-        .onDisappear { project.close() }
     }
 
-    private func canvas(for controller: FlowController) -> some View {
-        CanvasRepresentable(controller: controller)
-            .overlay(alignment: .topTrailing) {
-                if controller.selection != .none {
-                    InspectorView(controller: controller)
-                        .padding(12)
-                }
-            }
-            .overlay(alignment: .top) {
-                if let message = services.problem ?? controller.banner {
-                    Text(message)
-                        .font(.callout)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(.regularMaterial, in: Capsule())
-                        .overlay(Capsule().strokeBorder(.orange.opacity(0.6)))
-                        .padding(.top, 10)
-                        .onTapGesture { controller.banner = nil }
-                }
-            }
+    private var subtitle: String {
+        guard let controller = services.current else { return "" }
+        let project = controller.project.name
+        if controller.isRunning { return "\(project) · running, \(controller.handOffs) hand-offs" }
+        return project
     }
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            if let controller = project.current {
+            if let controller = services.current {
+                let waiting = controller.cardsNeedingYou
+                if let first = waiting.first {
+                    Button {
+                        controller.select(.card(first.id))
+                        controller.canvas?.zoom(toCard: first.id)
+                    } label: {
+                        Label(waiting.count == 1 ? "1 needs you" : "\(waiting.count) need you", systemImage: "hand.raised")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .tint(Theme.live.ui)
+                    .help("Go to the card that is waiting on you")
+                }
                 if controller.isRunning {
                     Button { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
                         .help("Stop the run")
@@ -111,56 +71,133 @@ struct RootView: View {
                     Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill") }
                         .help("Run the flow from its Start card")
                 }
-                Menu {
-                    ForEach(CardKindMenu.kinds, id: \.self) { kind in
-                        Button { controller.addCard(kind) } label: {
-                            Label(kind.label, systemImage: CanvasGeometry.icon(for: kind))
-                        }
-                    }
-                } label: {
-                    Label("Add Card", systemImage: "plus.rectangle.on.rectangle")
-                }
-                .help("Add a card to the canvas")
-                ControlGroup {
-                    Button { controller.canvas?.zoom(by: 0.8) } label: { Label("Zoom Out", systemImage: "minus.magnifyingglass") }
-                    Button { controller.canvas?.zoomToFit() } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
-                    Button { controller.canvas?.zoom(by: 1.25) } label: { Label("Zoom In", systemImage: "plus.magnifyingglass") }
-                }
-                Button { showsLog.toggle() } label: { Label("Log", systemImage: "list.bullet.rectangle") }
-                    .help("Show or hide the run log")
-                Button { showsOrchestrator.toggle() } label: { Label("Orchestrator", systemImage: "sidebar.trailing") }
-                    .help("Show or hide the orchestrator")
+                Button { showsPanel.toggle() } label: { Label("Panel", systemImage: "sidebar.trailing") }
+                    .help("Show or hide the orchestrator, log and output")
             }
+        }
+    }
+
+    static func pickProjectFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Add"
+        panel.message = "Flows are kept in a .queenbee folder inside the project, and agents work in the project folder."
+        if panel.runModal() == .OK, let url = panel.url {
+            let project = AppServices.shared.addProject(url)
+            if project.controllers.isEmpty { project.newFlow() }
         }
     }
 }
 
-struct WelcomeView: View {
-    let onPick: (URL) -> Void
+/// One flow: its canvas with the controls that float on it, and the side panel.
+struct FlowView: View {
+    let controller: FlowController
+    @Binding var showsPanel: Bool
+    @Binding var tab: PanelTab
+    @AppStorage("panelWidth") private var panelWidth = 420.0
+    private var services: AppServices { AppServices.shared }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
-            Text("Queen Bee")
-                .font(.largeTitle.weight(.semibold))
-            Text("Open a project folder. Its flows are kept in a .queenbee folder inside it, and agents work in that folder.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 420)
-            Button("Open Folder…") {
-                let panel = NSOpenPanel()
-                panel.canChooseDirectories = true
-                panel.canChooseFiles = false
-                panel.canCreateDirectories = true
-                panel.prompt = "Open"
-                if panel.runModal() == .OK, let url = panel.url { onPick(url) }
+        HStack(spacing: 0) {
+            canvas
+                .frame(minWidth: 420, maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
+            if showsPanel {
+                PanelDivider(width: $panelWidth)
+                SidePanel(controller: controller, tab: $tab)
+                    .frame(width: panelWidth)
             }
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    private var canvas: some View {
+        CanvasRepresentable(controller: controller)
+            .overlay(alignment: .topLeading) {
+                PaletteView(controller: controller).padding(Theme.Space.m)
+            }
+            .overlay(alignment: .topTrailing) {
+                if controller.selection != .none {
+                    InspectorView(controller: controller).padding(Theme.Space.m)
+                }
+            }
+            .overlay(alignment: .top) {
+                if let message = services.problem ?? controller.banner {
+                    BannerView(text: message) { controller.banner = nil }.padding(.top, Theme.Space.m)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                StatusStrip(controller: controller) {
+                    tab = .log
+                    showsPanel = true
+                }
+                .padding(Theme.Space.m)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                ZoomPill(controller: controller).padding(Theme.Space.m)
+            }
+            .overlay {
+                if controller.isBlank, !controller.promptDismissed {
+                    BlankFlowPrompt(controller: controller) {
+                        tab = .orchestrator
+                        showsPanel = true
+                    }
+                }
+            }
+            .animation(.easeOut(duration: Theme.Motion.base), value: controller.selection)
+    }
+}
+
+/// The line between the canvas and the side panel. Drag it to make the panel wider or narrower.
+private struct PanelDivider: View {
+    @Binding var width: Double
+    @State private var startWidth: Double?
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.ink.ui)
+            .frame(width: 1)
+            .overlay {
+                // A wider strip than the line itself, so it is easy to catch.
+                Color.clear
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { drag in
+                                let from = startWidth ?? width
+                                startWidth = from
+                                width = min(760, max(300, from - drag.translation.width))
+                            }
+                            .onEnded { _ in startWidth = nil }
+                    )
+            }
+    }
+}
+
+struct WelcomeView: View {
+    var body: some View {
+        VStack(spacing: Theme.Space.l) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(Theme.ink.ui)
+            Text("Queen Bee")
+                .font(.dsMono(22, .medium))
+                .foregroundStyle(Theme.ink.ui)
+            Text("Add a project folder to start. Its flows are kept in a .queenbee folder inside it, and agents work in that folder.")
+                .font(.dsSans(Theme.Size.title))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Theme.inkSecondary.ui)
+                .frame(maxWidth: 420)
+            Button("Add Project Folder…") { WorkspaceView.pickProjectFolder() }
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
         }
         .padding(40)
-        .frame(minWidth: 620, minHeight: 420)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.paper.ui)
     }
 }

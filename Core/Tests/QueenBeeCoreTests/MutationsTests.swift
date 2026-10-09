@@ -188,4 +188,28 @@ import Testing
         try flow.addLink(from: "Writer", to: "Reviewer")
         return flow
     }
+
+    @Test func aCardAskedToStayClearIsMovedPastWhatItWouldCover() throws {
+        var flow = Flow(name: "Clear")
+        let writer = try flow.addCard(kind: .agent, name: "Writer", x: 560, y: 120)
+        // 320 points along is still inside the 560-wide agent card.
+        let reviewer = try flow.addCard(kind: .agent, name: "Reviewer", x: 880, y: 120, clearOfOthers: true)
+        #expect(reviewer.x == writer.x + writer.width + 60)
+        let check = try flow.addCard(kind: .ifElse, name: "Check", x: 1200, y: 120, clearOfOthers: true)
+        #expect(check.x == reviewer.x + reviewer.width + 60)
+    }
+
+    @Test func aCardWithRoomStaysWhereItWasPut() throws {
+        var flow = Flow(name: "Room")
+        try flow.addCard(kind: .agent, name: "Writer", x: 560, y: 120)
+        let below = try flow.addCard(kind: .note, name: "Note", x: 560, y: 700, clearOfOthers: true)
+        #expect(below.x == 560 && below.y == 700)
+    }
+
+    @Test func withoutBeingAskedACardMayOverlap() throws {
+        var flow = Flow(name: "Overlap")
+        try flow.addCard(kind: .agent, name: "Writer", x: 560, y: 120)
+        let dropped = try flow.addCard(kind: .note, name: "Note", x: 600, y: 150)
+        #expect(dropped.x == 600)
+    }
 }

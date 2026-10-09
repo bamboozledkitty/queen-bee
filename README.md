@@ -4,7 +4,7 @@ A Mac app for building and running flows of Claude Code agents on a canvas.
 
 Each agent is a live `claude` session in a terminal that sits on the canvas. You can click into any of them and type. Logic cards (If / Else, Switch, And, Or, Prompt, Loop until, End) route each agent's finished reply to the next cards. Every flow also has an orchestrator, a Claude Code session docked beside the canvas that can edit the flow, run it and talk to the agents.
 
-![A run driven by the orchestrator](docs/queen-bee-first-run.jpg)
+![A finished run: cards the run passed through carry a check and a count, and travelled links are green](docs/queen-bee-flight-plan-light.jpg)
 
 ## Requirements
 
@@ -23,18 +23,21 @@ Open a project folder when the app asks. Flows are saved in `<project>/.queenbee
 
 ## Use
 
-- **New Flow** in the sidebar starts a flow with a Start card.
-- **Add Card** in the toolbar adds an agent or a logic card. Each agent card starts its own Claude Code session.
-- Drag a card by its title bar. Drag its bottom-right corner to resize it. Pinch to zoom and two-finger scroll to pan.
+- **Add Project Folder…** at the foot of the sidebar adds a folder. Each folder lists its flows, and **+** beside its name makes a new one.
+- A new flow opens with one box: describe the flow you want and the orchestrator builds it. Close the box to build by hand.
+- The **palette** at the canvas's top-left holds the card types. Click one to add it, or drag it to where you want it. Each agent card starts its own Claude Code session.
+- Drag a card by its title bar. Drag its bottom-right corner to resize it. Pinch to zoom and two-finger scroll to pan, or use the zoom control at the bottom-right.
 - Drag from a dot on a card's right edge onto another card to link them. Click a link to change its max passes or delete it.
 - Click a card's title to edit its settings. Click inside a terminal to type in it; click empty canvas to give the keyboard back.
-- Write the Start card's command, then press **Run**. The log under the canvas shows each hand-off.
-- Or ask the orchestrator: "add a reviewer after the writer that loops until it approves, then run it".
+- Write the Start card's command, then press **Run**. Cards the run passes through get a check and a count, travelled links turn green, and the link a message is on now shows orange dashes.
+- The panel on the right has the **Orchestrator**, the run **Log**, and the **Output** of each End card. The line at the canvas's bottom-left shows the latest step.
+- A flow that needs you says so on its sidebar row, and the toolbar shows a button that takes you to the waiting card.
+- **View → Appearance** switches between light, dark and following the system.
 
 ## How it works
 
 - `Core/` is a Swift package with no UI: the flow model, the file store, the routing engine, the orchestrator's tools and the socket messages. `cd Core && swift test` runs its tests.
-- `App/` is the SwiftUI and AppKit app. The canvas is an `NSScrollView` with magnification, and each terminal is a SwiftTerm view inside a card.
+- `App/` is the SwiftUI and AppKit app. The canvas is an `NSScrollView` with magnification, and each terminal is a SwiftTerm view inside a card. `App/Design/Tokens.swift` holds every colour, type size, spacing step and timing the views use.
 - `Helper/` builds `qb`, a small binary inside the app bundle. Claude Code hooks, the plugin and the orchestrator's tool server all run it, and it talks to the app over a unix socket in `~/Library/Application Support/QueenBee/`.
 - `Plugin/qb-link/` is the plugin the app loads into every session. When an agent's turn ends it asks the app where the reply goes and sends it there as a Claude Code session message.
 
@@ -43,7 +46,7 @@ The design is in `docs/superpowers/specs/2026-10-09-queen-bee-design.md`.
 ## Tests
 
 ```sh
-cd Core && swift test        # 122 unit tests on the model, store, engine and tools
+cd Core && swift test        # 132 unit tests on the model, store, engine, link router and tools
 ./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about five minutes
 ```
 

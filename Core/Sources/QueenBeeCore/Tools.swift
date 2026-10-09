@@ -74,10 +74,10 @@ public enum Tools {
             }
             let patch = try arguments.patch(for: kind)
             let name = try arguments.string("name")
-            let card = try await host.mutate { try $0.addCard(kind: kind, name: name, patch: patch) }
+            let card = try await host.mutate { try $0.addCard(kind: kind, name: name, patch: patch, clearOfOthers: true) }
             let outputs = ports(of: card)
             let tail = outputs.isEmpty ? "It has no outputs." : "Outputs: \(outputs.joined(separator: ", "))."
-            return "Added \(card.kind.label) \"\(card.name)\" (id \(card.id)). \(tail)"
+            return "Added \(card.kind.label) \"\(card.name)\" (id \(card.id)) at x \(Int(card.x)), y \(Int(card.y)), \(Int(card.width)) wide. \(tail)"
 
         case "update_card":
             let ref = try arguments.required("card")
@@ -228,7 +228,10 @@ public enum Tools {
             - end: records the final answer and saves it to a file if save_to is set. No outputs.
             - note: text for people. Carries no messages and cannot be linked.
             Only pass the settings that belong to the kind. Leave out x and y to place the card to the right of the \
-            others. Returns the new card's id and outputs. Then connect it with add_link.
+            others, which is usually what you want. An agent card is 560 points wide and 380 tall, and the other \
+            cards are about 240 by 100, so if you do give positions leave 60 points between cards. A card that \
+            would land on another is moved right until it is clear. Returns the new card's id, position and \
+            outputs. Then connect it with add_link.
             """,
             inputSchema: schema(
                 ["kind": ["type": "string", "enum": .array(CardKind.allCases.map { .string($0.rawValue) })],

@@ -305,6 +305,13 @@ def scenario_fanout(app):
     dropped = sum("dropped a later reply" in line for line in s["log"])
     check("Or dropped the seven later answers", dropped == 7, f"dropped {dropped}")
     check("the run ended on its own", not s["isRunning"])
+    marks = s["marks"]
+    check("the And card shows one pass and nothing held", marks.get("Everyone", {}).get("passes") == 1 and marks["Everyone"]["holding"] == 0,
+          str(marks.get("Everyone")))
+    check("the Or card shows one passed on and seven dropped", marks.get("Fastest", {}).get("passes") == 1 and marks["Fastest"]["holding"] == 7,
+          str(marks.get("Fastest")))
+    check("every worker shows one reply", all(marks.get(f"W{i + 1}", {}).get("passes") == 1 for i in range(8)))
+    check("no link is still marked live after the run", s["liveLinks"] == 0, str(s["liveLinks"]))
 
 
 def scenario_switch(app):
@@ -316,6 +323,8 @@ def scenario_switch(app):
     check("a crash report went out the bug branch", any('Switch "Triage" → bug' in line for line in s["log"]), str(s["log"][-5:]))
     check("the bug agent's answer reached End", "BUG-HANDLED" in s["results"]["Out"], s["results"]["Out"][:200])
     check("the other branch's agent was left alone", s["sessions"]["Planner"]["lastReply"] is None)
+    check("the Switch card shows the branch it took", s["marks"].get("Triage", {}).get("lastPort") == "bug", str(s["marks"].get("Triage")))
+    check("the untaken branch's agent has no run mark", "Planner" not in s["marks"], str(s["marks"].get("Planner")))
     before = len(s["log"])
     app.op(fid, "run", command="Please add a dark mode option to the settings screen.")
     s = app.wait(fid, lambda s: not s["isRunning"] and "FEATURE" in s["results"].get("Out", ""), 180, "the feature run to finish")
@@ -332,6 +341,12 @@ def scenario_loop(app):
     check("the loop sent the agent round twice", sum("→ Again" in line for line in log) == 2, str([l for l in log if "Loop" in l]))
     check("the loop left by Done once the condition held", any('Loop "Enough?" → Done' == line for line in log), str([l for l in log if "Loop" in l]))
     check("the final answer is the third reply", s["results"]["Out"].strip().endswith("XXX") and "XXXX" not in s["results"]["Out"], s["results"]["Out"][:100])
+    marks = s["marks"]
+    check("the agent's card counts three replies", marks.get("Counter", {}).get("passes") == 3, str(marks.get("Counter")))
+    check("the Loop card counts each output", marks.get("Enough?", {}).get("ports") == {"again": 2, "done": 1}
+          and marks["Enough?"]["lastPort"] == "done", str(marks.get("Enough?")))
+    check("the End card counts one arrival", marks.get("Out", {}).get("arrivals") == 1, str(marks.get("Out")))
+    check("link pass counts match the route taken", sorted(s["linkPasses"]) == [1, 1, 2, 3], str(s["linkPasses"]))
 
 
 def scenario_exit(app):
@@ -350,6 +365,8 @@ def scenario_exit(app):
     check("the run stopped when the session died", True)
     check("the log says which agent failed", any("Sleeper failed" in line for line in s["log"]), str(s["log"][-4:]))
     check("the card shows the session as exited", s["sessions"]["Sleeper"]["state"] == "exited", s["sessions"]["Sleeper"]["state"])
+    check("the card where the run stopped is marked failed", s["marks"].get("Sleeper", {}).get("failed") is True and s["activity"] == "failed",
+          f"{s['marks'].get('Sleeper')} {s['activity']}")
     app.op(fid, "restart", card="Sleeper")
     try:
         app.wait(fid, lambda s: s["sessions"]["Sleeper"]["state"] == "idle", 90, "Sleeper to come back")

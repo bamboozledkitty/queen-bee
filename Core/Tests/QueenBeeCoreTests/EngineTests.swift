@@ -611,4 +611,49 @@ actor ScriptedJudge: Judge {
         #expect(deliveries.count == 1)
         #expect(deliveries.first?.text.contains("## From A\nfrom A\n\n## From B\nfrom B") == true)
     }
+
+    // MARK: Visits
+
+    @Test func visitsRecordEveryCardAMessageReaches() async {
+        var flow = Flow(name: "Visits")
+        let start = try! flow.addCard(kind: .start, patch: { var p = CardPatch(); p.command = "Go"; return p }())
+        let writer = try! flow.addCard(kind: .agent, name: "Writer")
+        var patch = CardPatch(); patch.check = .contains; patch.value = "yes"
+        let check = try! flow.addCard(kind: .ifElse, name: "Check", patch: patch)
+        let end = try! flow.addCard(kind: .end, name: "Out")
+        let toWriter = try! flow.addLink(from: start.id, to: writer.id)
+        let toCheck = try! flow.addLink(from: writer.id, to: check.id)
+        let toEnd = try! flow.addLink(from: check.id, port: "yes", to: end.id)
+        let engine = Engine(judge: SilentJudge())
+
+        let started = await engine.start(flow: flow, startCardID: nil, command: nil)
+        #expect(started.visits == [
+            CardVisit(cardID: start.id, viaLinkID: nil, port: "out"),
+            CardVisit(cardID: writer.id, viaLinkID: toWriter.id, port: nil),
+        ])
+
+        let replied = await engine.agentReplied(flow: flow, cardID: writer.id, text: "yes, done")
+        #expect(replied.visits == [
+            CardVisit(cardID: writer.id, viaLinkID: nil, port: "out"),
+            CardVisit(cardID: check.id, viaLinkID: toCheck.id, port: "yes"),
+            CardVisit(cardID: end.id, viaLinkID: toEnd.id, port: nil),
+        ])
+    }
+
+    @Test func aReplyThatPassesNothingOnLeavesNoVisit() async {
+        var flow = Flow(name: "Quiet")
+        let start = try! flow.addCard(kind: .start, patch: { var p = CardPatch(); p.command = "Go"; return p }())
+        let writer = try! flow.addCard(kind: .agent, name: "Writer")
+        try! flow.addLink(from: start.id, to: writer.id)
+        let engine = Engine(judge: SilentJudge())
+        _ = await engine.start(flow: flow, startCardID: nil, command: nil)
+        let replied = await engine.agentReplied(flow: flow, cardID: writer.id, text: "[no reply]")
+        #expect(replied.visits.isEmpty)
+    }
+}
+
+/// A judge for flows whose checks are all text checks: it is never asked anything.
+private struct SilentJudge: Judge {
+    func holds(statement: String, message: String) async -> Bool? { nil }
+    func pick(branches: [String], message: String) async -> String? { nil }
 }

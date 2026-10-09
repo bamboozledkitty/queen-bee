@@ -22,11 +22,10 @@ struct InspectorView: View {
                 EmptyView()
             }
         }
-        .padding(14)
+        .padding(Theme.Space.m)
         .frame(width: 300)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.separator))
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        .foregroundStyle(Theme.ink.ui)
+        .floatingPanel()
     }
 }
 
@@ -38,7 +37,7 @@ private struct CardSettings: View {
     var body: some View {
         HStack {
             Label(card.kind.label, systemImage: CanvasGeometry.icon(for: card.kind))
-                .font(.headline)
+                .font(.dsMono(Theme.Size.title, .medium))
             Spacer()
             Button(role: .destructive) { controller.deleteSelection() } label: { Image(systemName: "trash") }
                 .buttonStyle(.borderless)
@@ -91,9 +90,9 @@ private struct CardSettings: View {
         }
 
         if let warning = controller.warnings[card.id] {
-            Label(warning, systemImage: "exclamationmark.triangle.fill")
-                .font(.callout)
-                .foregroundStyle(.orange)
+            Label(warning, systemImage: "exclamationmark.triangle")
+                .font(.dsSans(Theme.Size.body))
+                .foregroundStyle(Theme.failInk.ui)
         }
     }
 
@@ -128,8 +127,7 @@ private struct CardSettings: View {
             .labelsHidden()
         }
         HStack {
-            Circle().fill(Color(nsColor: session.state.color)).frame(width: 8, height: 8)
-            Text(session.state.label).font(.callout)
+            Badge(text: session.state.label.lowercased(), tone: session.state.tone)
             Spacer()
             Button(session.isLive ? "Restart" : "Start") { controller.startSession(forCard: card.id) }
                 .controlSize(.small)
@@ -177,7 +175,7 @@ private struct LinkSettings: View {
         let to = controller.flow.card(link.to)?.name ?? "?"
         HStack {
             Label("Link", systemImage: "arrow.right")
-                .font(.headline)
+                .font(.dsMono(Theme.Size.title, .medium))
             Spacer()
             Button(role: .destructive) { controller.deleteSelection() } label: { Image(systemName: "trash") }
                 .buttonStyle(.borderless)
@@ -198,13 +196,13 @@ private func binding<T>(_ value: T, set: @escaping (T) -> Void) -> Binding<T> {
 
 private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-        Text(title).font(.caption).foregroundStyle(.secondary)
+        Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
         content()
     }
 }
 
 private func hint(_ text: String) -> some View {
-    Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    Text(text).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui).fixedSize(horizontal: false, vertical: true)
 }
 
 /// A multi-line text box that keeps its own draft while you type and writes each change through.
@@ -227,8 +225,8 @@ private struct EditorField: View {
                 .frame(minHeight: 70, maxHeight: 150)
                 .scrollContentBackground(.hidden)
                 .padding(4)
-                .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
                 .onAppear { draft = text }
                 .onChange(of: draft) { if draft != text { commit(draft) } }
                 .onChange(of: text) { if text != draft { draft = text } }

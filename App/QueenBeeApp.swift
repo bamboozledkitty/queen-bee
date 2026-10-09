@@ -5,45 +5,64 @@ import SwiftUI
 @main
 struct QueenBeeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @FocusedValue(\.project) private var project
+    @AppStorage(Theme.modeKey) private var mode = Theme.Mode.system.rawValue
+    private var services: AppServices { AppServices.shared }
 
     var body: some Scene {
-        WindowGroup(id: "project", for: URL.self) { $folder in
-            ProjectWindow(folder: $folder)
+        WindowGroup(id: "workspace") {
+            WorkspaceView()
         }
         .defaultSize(width: 1500, height: 950)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("New Flow") { project?.newFlow() }
+                Button("New Flow") { services.current?.project.newFlow() ?? services.projects.first?.newFlow() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
-                    .disabled(project == nil)
+                    .disabled(services.projects.isEmpty)
+                Button("Add Project Folder…") { WorkspaceView.pickProjectFolder() }
+                    .keyboardShortcut("o")
             }
             CommandMenu("Flow") {
-                Button("Run") { if let c = project?.current { Task { await c.run() } } }
+                Button("Run") { if let c = services.current { Task { await c.run() } } }
                     .keyboardShortcut("r")
-                    .disabled(project?.current == nil || project?.current?.isRunning == true)
-                Button("Stop") { if let c = project?.current { Task { await c.stop() } } }
+                    .disabled(services.current == nil || services.current?.isRunning == true)
+                Button("Stop") { if let c = services.current { Task { await c.stop() } } }
                     .keyboardShortcut(".")
-                    .disabled(project?.current?.isRunning != true)
+                    .disabled(services.current?.isRunning != true)
                 Divider()
                 Menu("Add Card") {
                     ForEach(CardKindMenu.kinds, id: \.self) { kind in
-                        Button(kind.label) { project?.current?.addCard(kind) }
+                        Button(kind.label) { services.current?.addCard(kind) }
                     }
                 }
-                .disabled(project?.current == nil)
+                .disabled(services.current == nil)
             }
             CommandGroup(after: .toolbar) {
-                Button("Zoom In") { project?.current?.canvas?.zoom(by: 1.25) }
+                Button("Zoom In") { services.current?.canvas?.zoom(by: 1.25) }
                     .keyboardShortcut("=")
-                Button("Zoom Out") { project?.current?.canvas?.zoom(by: 0.8) }
+                Button("Zoom Out") { services.current?.canvas?.zoom(by: 0.8) }
                     .keyboardShortcut("-")
-                Button("Actual Size") { project?.current?.canvas?.zoomToActualSize() }
+                Button("Actual Size") { services.current?.canvas?.zoomToActualSize() }
                     .keyboardShortcut("0")
-                Button("Zoom to Fit") { project?.current?.canvas?.zoomToFit() }
+                Button("Zoom to Fit") { services.current?.canvas?.zoomToFit() }
                     .keyboardShortcut("9")
                 Divider()
+                Menu("Appearance") {
+                    // Buttons, not a Picker: a menu Picker changes the stored value but nothing
+                    // would then tell the app to switch.
+                    ForEach(Theme.Mode.allCases, id: \.rawValue) { item in
+                        Toggle(item.label, isOn: Binding(get: { mode == item.rawValue }, set: { _ in
+                            mode = item.rawValue
+                            Theme.apply(item)
+                        }))
+                    }
+                }
+                Divider()
             }
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 }
@@ -64,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Theme.apply(Theme.mode)
+
         // `kill` and a logout send SIGTERM, which would skip applicationWillTerminate. Turn it into a normal quit.
         signal(SIGTERM, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
@@ -84,26 +105,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Stops every session the app started, so no `claude` process outlives the window it ran in.
+    /// Stops every session the app started, so no `claude` process outlives the app.
     func applicationWillTerminate(_ notification: Notification) {
         AppServices.shared.shutDown()
     }
 
+    // Sessions belong to the app, not to a window: closing the window leaves them running,
+    // and clicking the Dock icon brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-
 }
 
 enum CardKindMenu {
     static let kinds: [CardKind] = [.agent, .start, .ifElse, .switchCard, .and, .or, .prompt, .loop, .end, .note]
 }
 
-struct ProjectKey: FocusedValueKey {
-    typealias Value = ProjectModel
-}
+enum LaunchArguments {
+    private static var used = false
 
-extension FocusedValues {
-    var project: ProjectModel? {
-        get { self[ProjectKey.self] }
-        set { self[ProjectKey.self] = newValue }
+    /// `--float` keeps the window above others without taking focus. Terminals stop painting
+    /// in a hidden window, so a check that looks at the window needs it on screen.
+    static var floats: Bool { CommandLine.arguments.contains("--float") }
+
+    /// `--open <folder>` adds that folder to the sidebar and shows its first flow.
+    static func takeFolder() -> String? {
+        guard !used else { return nil }
+        used = true
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--open"), i + 1 < args.count else { return nil }
+        return args[i + 1]
     }
 }

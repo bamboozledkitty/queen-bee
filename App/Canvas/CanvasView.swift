@@ -3,28 +3,43 @@ import Observation
 import QueenBeeCore
 import SwiftTerm
 
-/// The surface cards sit on. Flipped so a card's y grows downward, as the flow file stores it.
+/// The surface cards sit on: drafting paper with a fine grid. Flipped so a card's y grows
+/// downward, as the flow file stores it.
 final class CanvasDocumentView: NSView {
+    /// What the add-card palette puts on the pasteboard when a row is dragged. Nothing else
+    /// in the app, the terminals included, accepts it, so the drop always lands on the canvas.
+    static let cardKindType = NSPasteboard.PasteboardType("dev.queenbee.card-kind")
+
     weak var canvas: CanvasView?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        Palette.canvas.setFill()
+        Theme.paper.setFill()
         dirtyRect.fill()
-        // A dot grid for a sense of place; skipped when zoomed far out, where it turns to noise.
-        guard (canvas?.scrollView.magnification ?? 1) >= 0.45 else { return }
-        Palette.gridDot.setFill()
-        let step: CGFloat = 24
-        var y = (dirtyRect.minY / step).rounded(.down) * step
-        while y <= dirtyRect.maxY {
-            var x = (dirtyRect.minX / step).rounded(.down) * step
-            while x <= dirtyRect.maxX {
-                NSRect(x: x - 1, y: y - 1, width: 2, height: 2).fill()
-                x += step
-            }
+        let zoom = canvas?.scrollView.magnification ?? 1
+        // Fine lines turn to noise when zoomed far out, so only every fifth is kept there.
+        if zoom >= 0.5 { strokeGrid(step: CanvasGeometry.gridStep, color: Theme.grid, in: dirtyRect) }
+        strokeGrid(step: CanvasGeometry.gridStep * 5, color: Theme.gridMajor, in: dirtyRect)
+    }
+
+    private func strokeGrid(step: CGFloat, color: NSColor, in rect: NSRect) {
+        color.setFill()
+        var x = (rect.minX / step).rounded(.down) * step
+        while x <= rect.maxX {
+            NSRect(x: x, y: rect.minY, width: 1, height: rect.height).fill(using: .sourceOver)
+            x += step
+        }
+        var y = (rect.minY / step).rounded(.down) * step
+        while y <= rect.maxY {
+            NSRect(x: rect.minX, y: y, width: rect.width, height: 1).fill(using: .sourceOver)
             y += step
         }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 
     override func keyDown(with event: NSEvent) {
@@ -35,13 +50,39 @@ final class CanvasDocumentView: NSView {
             super.keyDown(with: event)
         }
     }
+
+    // MARK: Cards dropped from the palette
+
+    private func kind(in info: NSDraggingInfo) -> CardKind? {
+        let board = info.draggingPasteboard
+        let raw = board.string(forType: Self.cardKindType)
+            ?? board.data(forType: Self.cardKindType).flatMap { String(data: $0, encoding: .utf8) }
+        return raw.flatMap(CardKind.init(rawValue:))
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        sender.draggingPasteboard.types?.contains(Self.cardKindType) == true ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggingEntered(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let kind = kind(in: sender) else { return false }
+        canvas?.controller?.addCard(kind, at: convert(sender.draggingLocation, from: nil))
+        return true
+    }
 }
 
 /// The zoomable canvas of one flow. An NSScrollView with magnification holds one large
 /// document view; cards are its subviews, so a card's terminal is a real view that takes
 /// clicks and keys at any zoom.
 final class CanvasView: NSView, NSGestureRecognizerDelegate {
-    static let documentSize = CGSize(width: 12000, height: 9000)
+    static let documentSize = CGSize(width: 14000, height: 11000)
+    /// Room to pan left of and above the canvas's origin. Without it a card at the origin
+    /// could never be moved out from under the palette, which floats over that corner.
+    static let margin: CGFloat = 3000
 
     let scrollView = NSScrollView()
     let document = CanvasDocumentView()
@@ -51,6 +92,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private var scrollMonitor: Any?
     private var responderObservation: NSKeyValueObservation?
     private var didInitialScroll = false
+    /// False until the flow's saved cards are on screen, so only cards added later draw in.
+    private var didFirstSync = false
+    private var boundsObservation: NSObjectProtocol?
 
     init(controller: FlowController) {
         self.controller = controller
@@ -58,10 +102,14 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
         document.canvas = self
         document.frame = CGRect(origin: .zero, size: CanvasView.documentSize)
+        document.bounds.origin = CGPoint(x: -CanvasView.margin, y: -CanvasView.margin)
+        // The link layer covers the whole document and shares its coordinates, so a link is
+        // drawn with the same numbers its cards are placed with.
         linkLayer.frame = document.bounds
-        linkLayer.autoresizingMask = [.width, .height]
+        linkLayer.bounds.origin = document.bounds.origin
         document.addSubview(linkLayer)
 
+        document.registerForDraggedTypes([CanvasDocumentView.cardKindType])
         scrollView.documentView = document
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
@@ -77,7 +125,23 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         click.delegate = self
         document.addGestureRecognizer(click)
 
+        // The zoom pill shows the zoom level, however it was changed: pinch, menu or button.
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        boundsObservation = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.publishZoom() }
+        }
+
         observe()
+    }
+
+    private func publishZoom() {
+        let zoom = Double(scrollView.magnification)
+        if let controller, abs(controller.zoom - zoom) > 0.004 {
+            controller.zoom = zoom
+            document.needsDisplay = true
+        }
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -98,6 +162,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         let flow = controller.flow
         let warnings = controller.warnings
         linkLayer.flow = flow
+        linkLayer.passes = controller.linkPasses
+        linkLayer.liveLinkIDs = controller.liveLinkIDs
         if case .link(let id) = controller.selection { linkLayer.selectedLinkID = id } else { linkLayer.selectedLinkID = nil }
 
         var seen = Set<String>()
@@ -112,6 +178,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                 view.canvas = self
                 document.addSubview(view)
                 cardViews[card.id] = view
+                if didFirstSync { view.playDrawIn() }
             }
             var context = CardContext()
             context.isSelected = controller.selection == .card(card.id)
@@ -121,9 +188,12 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.warning = warnings[card.id]
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
+            context.mark = controller.marks[card.id] ?? RunMark()
             if card.kind == .agent, let agentView = view as? AgentCardView {
                 let session = controller.session(forCard: card.id)
                 context.sessionState = session.state
+                context.isLive = session.state == .working || session.state == .needsYou
+                    || context.mark.arrivals > context.mark.passes
                 agentView.attach(terminal: session.view)
             }
             view.update(card: card, context: context)
@@ -132,6 +202,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             view.removeFromSuperview()
             cardViews[id] = nil
         }
+        didFirstSync = true
     }
 
     private func viewClass(for card: Card) -> CardView.Type {
@@ -167,7 +238,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         super.layout()
         if !didInitialScroll, bounds.width > 0 {
             didInitialScroll = true
-            document.scroll(.zero)
+            // Start with the canvas's origin just clear of the palette.
+            document.scroll(CGPoint(x: -164, y: -16))
         }
     }
 
@@ -232,13 +304,31 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
     // MARK: Linking
 
-    func showPendingLink(from: CGPoint, to: CGPoint) { linkLayer.pending = (from, to) }
-    func clearPendingLink() { linkLayer.pending = nil }
+    /// A link is being dragged out of a port. The card under the pointer shows whether the
+    /// link would be taken there.
+    func showPendingLink(from cardID: String, port: String, start: CGPoint, to point: CGPoint) {
+        linkLayer.pending = (start, point)
+        let target = card(at: point)
+        for (id, view) in cardViews {
+            if id == target?.id, id != cardID, let flow = controller?.flow {
+                view.linkDrop = flow.linkProblem(from: cardID, port: port, to: id) == nil ? .accepts : .refuses
+            } else {
+                view.linkDrop = .none
+            }
+        }
+    }
+
+    func clearPendingLink() {
+        linkLayer.pending = nil
+        cardViews.values.forEach { $0.linkDrop = .none }
+    }
+
+    private func card(at point: CGPoint) -> Card? {
+        controller?.flow.cards.last { CanvasGeometry.frame(of: $0).insetBy(dx: -CardView.gutter, dy: 0).contains(point) }
+    }
 
     func finishLink(from cardID: String, port: String, at point: CGPoint) {
-        guard let controller else { return }
-        let target = controller.flow.cards.last { CanvasGeometry.frame(of: $0).insetBy(dx: -CardView.gutter, dy: 0).contains(point) }
-        guard let target else { return }
+        guard let controller, let target = card(at: point), target.id != cardID else { return }
         controller.link(from: cardID, port: port, to: target.id)
     }
 
@@ -253,7 +343,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     func testSetMagnification(_ value: Double) {
-        scrollView.setMagnification(CGFloat(value), centeredAt: visibleCenter)
+        scrollView.setMagnification(CGFloat(value), centeredAt: inClip(visibleCenter))
         document.needsDisplay = true
     }
 
@@ -277,7 +367,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             // A spot on the visible canvas that no card covers.
             let r = scrollView.documentVisibleRect
             let frames = controller.flow.cards.map { CanvasGeometry.frame(of: $0).insetBy(dx: -20, dy: -20) }
-            var spot = CGPoint(x: r.maxX - 30, y: r.maxY - 30)
+            // Away from the corners, where the palette, zoom control and status line float.
+            var spot = CGPoint(x: r.midX, y: r.maxY - 90 / max(scrollView.magnification, 0.01))
             var tries = 0
             while tries < 40, frames.contains(where: { $0.contains(spot) }) {
                 spot.x -= 40
@@ -304,6 +395,11 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
     // MARK: Zoom
 
+    // The scroll view's zoom calls take the clip view's coordinates. Those differ from the
+    // canvas's own because the canvas's origin is set in from the document's corner.
+    private func inClip(_ point: CGPoint) -> CGPoint { scrollView.contentView.convert(point, from: document) }
+    private func inClip(_ rect: CGRect) -> CGRect { scrollView.contentView.convert(rect, from: document) }
+
     /// The middle of what is on screen, in canvas points: where a new card goes.
     var visibleCenter: CGPoint {
         let r = scrollView.documentVisibleRect
@@ -312,25 +408,30 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
     func zoom(by factor: CGFloat) {
         let target = min(scrollView.maxMagnification, max(scrollView.minMagnification, scrollView.magnification * factor))
-        scrollView.setMagnification(target, centeredAt: visibleCenter)
+        scrollView.setMagnification(target, centeredAt: inClip(visibleCenter))
         document.needsDisplay = true
     }
 
     func zoomToActualSize() {
-        scrollView.setMagnification(1, centeredAt: visibleCenter)
+        scrollView.setMagnification(1, centeredAt: inClip(visibleCenter))
         document.needsDisplay = true
     }
 
     func zoomToFit() {
         guard let cards = controller?.flow.cards, !cards.isEmpty else { return }
-        let box = cards.map(CanvasGeometry.frame(of:)).reduce(CGRect.null) { $0.union($1) }
-        scrollView.magnify(toFit: box.insetBy(dx: -60, dy: -60))
+        var box = cards.map(CanvasGeometry.frame(of:)).reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -60, dy: -60)
+        scrollView.magnify(toFit: inClip(box))
+        // The palette floats over the canvas's left edge. Fit again with room for it, sized by
+        // the zoom the first fit landed on, so no card ends up underneath.
+        let palette = 150 / max(scrollView.magnification, 0.01)
+        box = CGRect(x: box.minX - palette, y: box.minY, width: box.width + palette, height: box.height)
+        scrollView.magnify(toFit: inClip(box))
         document.needsDisplay = true
     }
 
     func zoom(toCard id: String) {
         guard let card = controller?.flow.card(id) else { return }
-        scrollView.magnify(toFit: CanvasGeometry.frame(of: card).insetBy(dx: -40, dy: -40))
+        scrollView.magnify(toFit: inClip(CanvasGeometry.frame(of: card).insetBy(dx: -40, dy: -40)))
         document.needsDisplay = true
     }
 }

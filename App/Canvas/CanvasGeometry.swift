@@ -4,11 +4,11 @@ import QueenBeeCore
 /// Where things sit on a card, in canvas points. Card views and the link layer both
 /// read these, so a link always ends on the dot it belongs to.
 enum CanvasGeometry {
-    static let titleHeight: CGFloat = 30
-    static let portRowHeight: CGFloat = 24
-    static let portRadius: CGFloat = 6
-    static let cornerRadius: CGFloat = 10
-    static let resizeHandle: CGFloat = 18
+    static let titleHeight: CGFloat = 28
+    static let portRowHeight: CGFloat = 22
+    static let portRadius: CGFloat = 5
+    static let resizeHandle: CGFloat = 16
+    static let gridStep: CGFloat = 24
 
     static func frame(of card: Card) -> CGRect {
         CGRect(x: card.x, y: card.y, width: card.width, height: card.height)
@@ -30,44 +30,28 @@ enum CanvasGeometry {
         return CGPoint(x: card.x + card.width, y: card.y + card.height - fromBottom * portRowHeight + portRowHeight / 2)
     }
 
-    /// The curve a link follows between two points, leaving and arriving horizontally.
-    static func linkPath(from a: CGPoint, to b: CGPoint) -> CGPath {
-        let reach = max(50, abs(b.x - a.x) / 2)
-        let path = CGMutablePath()
-        path.move(to: a)
-        path.addCurve(to: b, control1: CGPoint(x: a.x + reach, y: a.y), control2: CGPoint(x: b.x - reach, y: b.y))
-        return path
+    /// The corner points of a link's right-angled route. Links that leave the same card are
+    /// given a lane each, so two that loop back don't run on top of one another.
+    static func route(of link: Link, in flow: Flow) -> [CGPoint]? {
+        guard let from = flow.card(link.from), let to = flow.card(link.to) else { return nil }
+        let siblings = flow.links(from: link.from)
+        let lane = siblings.firstIndex { $0.id == link.id } ?? 0
+        return LinkRouter.route(from: outputPoint(of: from, port: link.port), to: inputPoint(of: to),
+                                source: frame(of: from), target: frame(of: to), lane: lane)
     }
 
     static func icon(for kind: CardKind) -> String {
         switch kind {
         case .agent: "terminal"
-        case .start: "play.fill"
+        case .start: "play"
         case .ifElse: "arrow.triangle.branch"
         case .switchCard: "arrow.triangle.swap"
         case .and: "arrow.triangle.merge"
-        case .or: "bolt.fill"
+        case .or: "bolt"
         case .prompt: "pencil"
         case .loop: "repeat"
-        case .end: "stop.fill"
+        case .end: "flag"
         case .note: "note.text"
         }
     }
-}
-
-enum Palette {
-    static let canvas = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.11, alpha: 1) : NSColor(white: 0.93, alpha: 1) }
-    static let gridDot = NSColor(name: nil) { $0.isDark ? NSColor(white: 1, alpha: 0.10) : NSColor(white: 0, alpha: 0.12) }
-    static let card = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.17, alpha: 1) : NSColor.white }
-    static let cardTitle = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.22, alpha: 1) : NSColor(white: 0.96, alpha: 1) }
-    static let cardBorder = NSColor(name: nil) { $0.isDark ? NSColor(white: 1, alpha: 0.14) : NSColor(white: 0, alpha: 0.16) }
-    static let link = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.62, alpha: 1) : NSColor(white: 0.42, alpha: 1) }
-    static let terminalBackground = NSColor(white: 0.08, alpha: 1)
-    static let terminalForeground = NSColor(white: 0.92, alpha: 1)
-    static let accent = NSColor.controlAccentColor
-    static let warning = NSColor.systemOrange
-}
-
-extension NSAppearance {
-    var isDark: Bool { bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
 }

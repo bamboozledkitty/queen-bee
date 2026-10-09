@@ -41,8 +41,10 @@ extension Flow {
     }
 
     @discardableResult
+    /// With `clearOfOthers`, a card that would land on top of another is moved right until it
+    /// doesn't. The orchestrator's tools ask for that, since it places cards without seeing them.
     public mutating func addCard(kind: CardKind, name: String? = nil, x: Double? = nil, y: Double? = nil,
-                                 patch: CardPatch = CardPatch()) throws -> Card {
+                                 patch: CardPatch = CardPatch(), clearOfOthers: Bool = false) throws -> Card {
         var rest = patch
         let chosen: String
         if let given = name ?? patch.name {
@@ -53,7 +55,18 @@ extension Flow {
         let spot = nextCardPosition()
         let card = Card.make(kind: kind, name: chosen, x: x ?? patch.x ?? spot.x, y: y ?? patch.y ?? spot.y)
         rest.name = nil; rest.x = nil; rest.y = nil
-        let finished = try patched(card, with: rest)
+        var finished = try patched(card, with: rest)
+        if clearOfOthers {
+            // Each move takes the card past the one it overlapped, so this ends within one pass per card.
+            for _ in cards {
+                let wanted = (minX: finished.x - 40, maxX: finished.x + finished.width + 40,
+                              minY: finished.y - 40, maxY: finished.y + finished.height + 40)
+                guard let blocker = cards.first(where: {
+                    $0.x < wanted.maxX && $0.x + $0.width > wanted.minX && $0.y < wanted.maxY && $0.y + $0.height > wanted.minY
+                }) else { break }
+                finished.x = blocker.x + blocker.width + 60
+            }
+        }
         cards.append(finished)
         return finished
     }

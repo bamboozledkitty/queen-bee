@@ -29,7 +29,7 @@ enum TestHarness {
         case "state":
             return state(of: controller)
         case "select":
-            controller.project.selectedFlowID = controller.flow.id
+            AppServices.shared.selectedFlowID = controller.flow.id
             return [:]
         case "close":
             controller.shutDown()
@@ -74,6 +74,15 @@ enum TestHarness {
         }
         var results: [String: JSONValue] = [:]
         for (id, text) in controller.results { results[controller.flow.card(id)?.name ?? id] = .string(text) }
+        var marks: [String: JSONValue] = [:]
+        for (id, mark) in controller.marks {
+            var ports: [String: JSONValue] = [:]
+            for (port, count) in mark.ports { ports[port] = .number(Double(count)) }
+            marks[controller.flow.card(id)?.name ?? id] = [
+                "arrivals": .number(Double(mark.arrivals)), "passes": .number(Double(mark.passes)), "ports": .object(ports),
+                "lastPort": mark.lastPort.map(JSONValue.string) ?? .null, "holding": .number(Double(mark.holding)), "failed": .bool(mark.failed),
+            ]
+        }
         return [
             "name": .string(controller.flow.name),
             "isRunning": .bool(controller.isRunning),
@@ -83,6 +92,11 @@ enum TestHarness {
             "orchestrator": describe(controller.sessions[FlowController.orchestratorKey]),
             "banner": controller.banner.map(JSONValue.string) ?? .null,
             "problem": AppServices.shared.problem.map(JSONValue.string) ?? .null,
+            "marks": .object(marks),
+            "linkPasses": .array(controller.flow.links.map { .number(Double(controller.linkPasses[$0.id] ?? 0)) }),
+            "liveLinks": .number(Double(controller.liveLinkIDs.count)),
+            "handOffs": .number(Double(controller.handOffs)),
+            "activity": .string("\(controller.activity)"),
             "focusedCard": controller.focusedCardID.flatMap { controller.flow.card($0)?.name }.map(JSONValue.string) ?? .null,
             "canvas": controller.canvas?.testViewState ?? .null,
         ]
