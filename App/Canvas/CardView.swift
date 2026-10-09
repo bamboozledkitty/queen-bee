@@ -160,6 +160,8 @@ class CardView: NSView {
     private var outputDots: [PortDotView] = []
     private var dragOrigins: [String: CGPoint] = [:]
     private var dragSize = CGSize.zero
+    /// Where on the canvas the pointer was when the drag began.
+    private var dragStart = CGPoint.zero
     /// What the view last showed, so a sync that changes nothing for this card costs nothing.
     private var shown: (card: Card, context: CardContext)?
     private var hasDrawn = false
@@ -471,15 +473,17 @@ class CardView: NSView {
         switch g.state {
         case .began:
             dragOrigins = canvas.controller?.dragOrigins(for: card.id) ?? [:]
+            beginDrag(g, in: canvas) { [weak self] in self?.moveToPointer() }
             canvas.controller?.beginGesture()
             // The card moves under the pointer, which would keep re-asking the title bar for
             // its open hand. Cursor regions are switched off until the drag ends.
             window?.disableCursorRects()
             NSCursor.closedHand.set()
         case .changed:
-            canvas.drag(dragOrigins, primary: card.id, by: g.translation(in: canvas.document))
+            moveToPointer()
         case .ended, .cancelled, .failed:
-            if g.state == .ended { canvas.drag(dragOrigins, primary: card.id, by: g.translation(in: canvas.document)) }
+            if g.state == .ended { moveToPointer() }
+            canvas.endEdgePan()
             canvas.clearGuides()
             canvas.controller?.endGesture("Move")
             window?.enableCursorRects()
@@ -488,25 +492,53 @@ class CardView: NSView {
         }
     }
 
+    /// Notes where a drag began and lets it pan the canvas from the edges. `follow` redoes the
+    /// drag for where the pointer is, each time the canvas pans under it.
+    private func beginDrag(_ g: NSPanGestureRecognizer, in canvas: CanvasView, follow: @escaping () -> Void) {
+        let now = canvas.pointer, t = g.translation(in: canvas.document)
+        dragStart = CGPoint(x: now.x - t.x, y: now.y - t.y)
+        canvas.beginEdgePan(moved: follow)
+    }
+
+    /// How far the pointer is from where the drag began, on the canvas. Unlike the gesture's
+    /// own translation, this counts what the canvas has panned under the pointer.
+    private var dragTravel: CGPoint {
+        guard let now = canvas?.pointer else { return .zero }
+        return CGPoint(x: now.x - dragStart.x, y: now.y - dragStart.y)
+    }
+
+    private func moveToPointer() {
+        canvas?.drag(dragOrigins, primary: card.id, by: dragTravel)
+    }
+
+    private func resizeToPointer() {
+        let t = dragTravel
+        var width = dragSize.width + t.x, height = dragSize.height + t.y
+        // The corner being dragged settles on the grid. Option lets it rest anywhere.
+        if !NSEvent.modifierFlags.contains(.option) {
+            let step = CanvasGeometry.gridStep
+            width = ((card.x + width) / step).rounded() * step - card.x
+            height = ((card.y + height) / step).rounded() * step - card.y
+        }
+        canvas?.controller?.resizeCard(card.id, width: width, height: height)
+    }
+
     @objc private func handleResize(_ g: NSPanGestureRecognizer) {
         guard let canvas else { return }
         switch g.state {
         case .began:
             dragSize = CGSize(width: card.width, height: card.height)
+            beginDrag(g, in: canvas) { [weak self] in self?.resizeToPointer() }
             canvas.controller?.select(.card(card.id))
             canvas.controller?.beginGesture()
         case .changed, .ended:
-            let t = g.translation(in: canvas.document)
-            var width = dragSize.width + t.x, height = dragSize.height + t.y
-            // The corner being dragged settles on the grid. Option lets it rest anywhere.
-            if !NSEvent.modifierFlags.contains(.option) {
-                let step = CanvasGeometry.gridStep
-                width = ((card.x + width) / step).rounded() * step - card.x
-                height = ((card.y + height) / step).rounded() * step - card.y
+            resizeToPointer()
+            if g.state == .ended {
+                canvas.endEdgePan()
+                canvas.controller?.endGesture("Resize")
             }
-            canvas.controller?.resizeCard(card.id, width: width, height: height)
-            if g.state == .ended { canvas.controller?.endGesture("Resize") }
         case .cancelled, .failed:
+            canvas.endEdgePan()
             canvas.controller?.endGesture("Resize")
         default: break
         }
@@ -517,12 +549,21 @@ class CardView: NSView {
         let start = CanvasGeometry.outputPoint(of: card, port: dot.port)
         let now = g.location(in: canvas.document)
         switch g.state {
-        case .began, .changed:
+        case .began:
+            let id = card.id, port = dot.port
+            canvas.beginEdgePan { [weak canvas] in
+                guard let canvas else { return }
+                canvas.showPendingLink(from: id, port: port, start: start, to: canvas.pointer)
+            }
+            fallthrough
+        case .changed:
             canvas.showPendingLink(from: card.id, port: dot.port, start: start, to: now)
         case .ended:
+            canvas.endEdgePan()
             canvas.clearPendingLink()
             canvas.finishLink(from: card.id, port: dot.port, at: now)
         default:
+            canvas.endEdgePan()
             canvas.clearPendingLink()
         }
     }
