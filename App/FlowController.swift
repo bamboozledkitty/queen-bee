@@ -46,8 +46,9 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var engine: Engine?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var isOpen = false
-    /// Agents whose plugin has reported the turn that just ended.
-    @ObservationIgnored private var routedThisTurn: Set<String> = []
+    /// Agents whose plugin has reported a finished turn since their session started. Once a
+    /// plugin has spoken it is loaded, and the app never routes that agent's replies itself.
+    @ObservationIgnored private var pluginSpoke: Set<String> = []
     /// Hand-offs given to a plugin to send, by the receiving session's id, until it says how they went.
     @ObservationIgnored private var inFlight: [String: Delivery] = [:]
     @ObservationIgnored private var runLogStart = 0
@@ -273,8 +274,8 @@ final class FlowController: ToolHost {
         session.apply(hook: event, notificationType: type)
         guard who != Self.orchestratorKey else { return }
         switch event {
-        case "UserPromptSubmit":
-            routedThisTurn.remove(who)
+        case "SessionStart":
+            pluginSpoke.remove(who)
         case "Stop":
             let reply = payload["last_assistant_message"]?.stringValue ?? ""
             session.lastReply = reply
@@ -291,11 +292,10 @@ final class FlowController: ToolHost {
     /// The plugin normally reports a finished turn within milliseconds. If it hasn't after a
     /// few seconds it isn't loaded, so the app routes the reply itself and types the hand-offs in.
     private func routeIfPluginIsSilent(_ who: String, reply: String) {
-        guard isRunning, let engine else { return }
+        guard isRunning, !pluginSpoke.contains(who), let engine else { return }
         Task {
             try? await Task.sleep(for: .seconds(3))
-            guard self.isRunning, !self.routedThisTurn.contains(who) else { return }
-            self.routedThisTurn.insert(who)
+            guard self.isRunning, !self.pluginSpoke.contains(who) else { return }
             self.append("The session plugin didn't report \(self.flow.card(who)?.name ?? who)'s reply, so the app passed it on")
             self.absorb(await engine.agentReplied(flow: self.flow, cardID: who, text: reply), sender: nil)
         }
@@ -305,7 +305,7 @@ final class FlowController: ToolHost {
     /// hand-offs for that plugin to send as session messages.
     func handleRoute(from who: String, answer: String) async -> [(to: String, text: String)] {
         guard who != Self.orchestratorKey, flow.card(who) != nil else { return [] }
-        routedThisTurn.insert(who)
+        pluginSpoke.insert(who)
         sessions[who]?.lastReply = answer
         guard let engine = readyEngine() else { return [] }
         return absorb(await engine.agentReplied(flow: flow, cardID: who, text: answer), sender: who)
