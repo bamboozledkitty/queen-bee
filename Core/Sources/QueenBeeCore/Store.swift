@@ -1,0 +1,114 @@
+import Foundation
+
+/// A flow and the file it was loaded from.
+public struct FlowFile: Equatable, Sendable {
+    public let url: URL
+    public var flow: Flow
+
+    public init(url: URL, flow: Flow) { self.url = url; self.flow = flow }
+}
+
+/// Reads and writes a project's flows, one JSON file each.
+public struct FlowStore: Sendable {
+    /// The project folder.
+    public let root: URL
+
+    public init(root: URL) { self.root = root }
+
+    private var home: URL { root.appendingPathComponent(".queenbee", isDirectory: true) }
+    public var directory: URL { home.appendingPathComponent("flows", isDirectory: true) }
+
+    /// Every flow in the project, sorted by file name. A file that doesn't parse, comes from another version,
+    /// or repeats the id of a flow already loaded is listed as unreadable instead.
+    public func loadAll() -> (flows: [FlowFile], unreadable: [URL]) {
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+            .filter { $0.hasSuffix(".json") && !$0.hasPrefix(".") }
+            .sorted()
+        var flows: [FlowFile] = []
+        var unreadable: [URL] = []
+        var seen: Set<String> = []
+        for name in names {
+            let url = directory.appendingPathComponent(name)
+            if let flow = Self.read(url), seen.insert(flow.id).inserted {
+                flows.append(FlowFile(url: url, flow: flow))
+            } else {
+                unreadable.append(url)
+            }
+        }
+        return (flows, unreadable)
+    }
+
+    /// Writes the flow and returns where it went. With no url it picks a new file name from the flow's name.
+    @discardableResult
+    public func save(_ flow: Flow, to url: URL?) throws -> URL {
+        let files = FileManager.default
+        try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Flows hold session ids and local paths, so the folder is kept out of git unless the person opts in.
+        let ignore = home.appendingPathComponent(".gitignore")
+        if !files.fileExists(atPath: ignore.path) { try Data("*\n".utf8).write(to: ignore) }
+
+        let target = url ?? freeURL(for: flow)
+        let folder = target.deletingLastPathComponent()
+        try files.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        var data = try encoder.encode(flow)
+        data.append(0x0A)
+
+        // Written whole beside the target and renamed over it, so a crash never leaves half a flow.
+        let temp = folder.appendingPathComponent(".\(target.lastPathComponent).\(Flow.newID()).tmp")
+        try data.write(to: temp)
+        guard rename(temp.path, target.path) == 0 else {
+            let code = errno
+            try? files.removeItem(at: temp)
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+        return target
+    }
+
+    public func delete(_ url: URL) throws {
+        try FileManager.default.removeItem(at: url)
+    }
+
+    /// Lowercase letters, digits and dashes, 40 characters at most, "flow" if nothing is left.
+    public static func slug(_ name: String) -> String {
+        var slug = ""
+        for character in name.lowercased() {
+            if character.isASCII, character.isLetter || character.isNumber {
+                slug.append(character)
+            } else if !slug.isEmpty, !slug.hasSuffix("-") {
+                slug.append("-")
+            }
+        }
+        slug = String(slug.prefix(40))
+        while slug.hasSuffix("-") { slug.removeLast() }
+        return slug.isEmpty ? "flow" : slug
+    }
+
+    // MARK: -
+
+    private static func read(_ url: URL) -> Flow? {
+        guard let data = try? Data(contentsOf: url),
+              let flow = try? JSONDecoder().decode(Flow.self, from: data),
+              flow.version == Flow.currentVersion else { return nil }
+        return flow
+    }
+
+    /// A file name nothing else is using. A file that already holds this same flow counts as free,
+    /// because saving beside it would leave two files with one id and make the second unreadable.
+    private func freeURL(for flow: Flow) -> URL {
+        let slug = Self.slug(flow.name)
+        func free(_ name: String) -> URL? {
+            let url = directory.appendingPathComponent(name + ".json")
+            if !FileManager.default.fileExists(atPath: url.path) || Self.read(url)?.id == flow.id { return url }
+            return nil
+        }
+        if let url = free(slug) ?? free("\(slug)-\(flow.id.prefix(4))") ?? free("\(slug)-\(flow.id)") { return url }
+        var n = 2
+        while true {
+            if let url = free("\(slug)-\(flow.id)-\(n)") { return url }
+            n += 1
+        }
+    }
+}
