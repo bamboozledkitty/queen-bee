@@ -3,6 +3,21 @@
     <channel>
         <title>QueenBee</title>
         <item>
+            <title>0.1.1</title>
+            <pubDate>Fri, 09 Oct 2026 17:42:38 +0400</pubDate>
+            <link>https://github.com/bamboozledkitty/queen-bee</link>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[
+### Fixed
+
+- **Queen Bee → Check for Updates…** was always greyed out. It now turns on once the updater is ready.
+
+]]></description>
+            <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.1.1/QueenBee-0.1.1.dmg" length="9098128" type="application/octet-stream" sparkle:edSignature="9vpQm5KKHZ4slf3nBjaPCfcAgonAhY7Ld7d3vwcBZ7sqsTXqPZPFQDAN+CBcYQAU3s8XEMThm+yq56hHlb+IBg=="/>
+        </item>
+        <item>
             <title>0.1.0</title>
             <pubDate>Fri, 09 Oct 2026 17:34:26 +0400</pubDate>
             <link>https://github.com/bamboozledkitty/queen-bee</link>
