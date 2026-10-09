@@ -234,7 +234,9 @@ struct CanvasControls: View {
             }
             .overlay(alignment: .top) {
                 if let message = services.problem ?? controller.banner {
-                    BannerView(text: message) { controller.banner = nil }
+                    BannerView(text: message) {
+                        if services.problem != nil { services.dismissProblem() } else { controller.banner = nil }
+                    }
                 }
             }
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }

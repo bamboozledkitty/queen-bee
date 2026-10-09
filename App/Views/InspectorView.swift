@@ -21,6 +21,8 @@ struct InspectorView: View {
                     LinkSettings(controller: controller, link: link)
                         .id(link.id)
                 }
+            case .cards(let ids):
+                SeveralSettings(controller: controller, count: ids.count)
             case .none:
                 EmptyView()
             }
@@ -218,6 +220,42 @@ private struct CardSettings: View {
         var p = CardPatch()
         change(&p)
         controller.update(card.id, p)
+    }
+}
+
+/// What can be done to several cards at once.
+private struct SeveralSettings: View {
+    let controller: FlowController
+    let count: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Theme.Space.s) {
+                Image(systemName: "square.on.square.dashed")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 16)
+                Text("\(count) cards")
+                    .font(.dsMono(Theme.Size.title, .medium))
+                    .contentTransition(.numericText())
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
+            .background(Theme.bar.ui)
+            note("Drag any of them to move them together, or use the arrow keys. Shift-click a card to add it or take it out.")
+            HStack(spacing: Theme.Space.s) {
+                Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }
+                    .buttonStyle(.panel(.quiet))
+                Spacer()
+                Button("Duplicate") { controller.duplicateSelection() }
+                    .buttonStyle(.panel())
+            }
+            .padding(.horizontal, Theme.Space.s)
+            .padding(.vertical, 6)
+            .background(Theme.bar.ui)
+            .overlay(alignment: .top) { rule }
+        }
+        .animation(Theme.Motion.quick, value: count)
     }
 }
 

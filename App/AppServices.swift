@@ -38,6 +38,11 @@ final class AppServices {
         if remembersProjects { UserDefaults.standard.set(dismissedHints.sorted(), forKey: Self.hintsKey) }
     }
 
+    /// Puts away the app's own message. It comes back if the problem does.
+    func dismissProblem() {
+        problem = nil
+    }
+
     func closeWelcome() {
         showsWelcome = false
         if remembersProjects { UserDefaults.standard.set(true, forKey: OnboardingView.seenKey) }

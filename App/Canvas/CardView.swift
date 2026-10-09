@@ -149,7 +149,7 @@ class CardView: NSView {
     private let resizeGrip = ResizeGripView()
     private var inputDot: PortDotView?
     private var outputDots: [PortDotView] = []
-    private var dragOrigin = CGPoint.zero
+    private var dragOrigins: [String: CGPoint] = [:]
     private var dragSize = CGSize.zero
     /// What the view last showed, so a sync that changes nothing for this card costs nothing.
     private var shown: (card: Card, context: CardContext)?
@@ -371,8 +371,38 @@ class CardView: NSView {
     // MARK: Gestures
 
     @objc private func handleClick(_ g: NSClickGestureRecognizer) {
-        canvas?.controller?.select(.card(card.id))
+        // Shift adds the card to what is selected, or takes it out.
+        if NSEvent.modifierFlags.contains(.shift) {
+            canvas?.controller?.toggleSelection(card.id)
+        } else {
+            canvas?.controller?.select(.card(card.id))
+        }
         canvas?.takeFocus()
+    }
+
+    // MARK: Menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let controller = canvas?.controller else { return nil }
+        // A right-click on a card outside the selection is about that card alone.
+        if !controller.selection.cardIDs.contains(card.id) { controller.select(.card(card.id)) }
+        canvas?.takeFocus()
+        let id = card.id
+        let several = controller.selection.cardIDs.count > 1
+        let menu = NSMenu()
+        if !several {
+            menu.addItem(ActionMenuItem("Zoom to Card") { [weak canvas] in canvas?.zoom(toCard: id) })
+            if card.kind == .agent {
+                let isLive = controller.session(forCard: id).isLive
+                menu.addItem(ActionMenuItem(isLive ? "Restart Session" : "Start Session") { [weak controller] in controller?.startSession(forCard: id) })
+            }
+            menu.addItem(.separator())
+        }
+        menu.addItem(ActionMenuItem("Duplicate") { [weak controller] in controller?.duplicateSelection() })
+        menu.addItem(ActionMenuItem("Copy") { [weak controller] in controller?.copySelection() })
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem(several ? "Delete \(controller.selection.cardIDs.count) Cards" : "Delete") { [weak controller] in controller?.deleteSelection() })
+        return menu
     }
 
     @objc private func handleDoubleClick(_ g: NSClickGestureRecognizer) {
@@ -383,20 +413,18 @@ class CardView: NSView {
         guard let canvas else { return }
         switch g.state {
         case .began:
-            dragOrigin = CGPoint(x: card.x, y: card.y)
-            canvas.controller?.select(.card(card.id))
+            dragOrigins = canvas.controller?.dragOrigins(for: card.id) ?? [:]
+            canvas.controller?.beginGesture()
             // The card moves under the pointer, which would keep re-asking the title bar for
             // its open hand. Cursor regions are switched off until the drag ends.
             window?.disableCursorRects()
             NSCursor.closedHand.set()
         case .changed:
-            let t = g.translation(in: canvas.document)
-            canvas.controller?.moveCard(card.id, x: max(CardView.farLeft, dragOrigin.x + t.x), y: max(CardView.farLeft, dragOrigin.y + t.y))
+            canvas.drag(dragOrigins, primary: card.id, by: g.translation(in: canvas.document))
         case .ended, .cancelled, .failed:
-            if g.state == .ended {
-                let t = g.translation(in: canvas.document)
-                canvas.controller?.moveCard(card.id, x: max(CardView.farLeft, dragOrigin.x + t.x), y: max(CardView.farLeft, dragOrigin.y + t.y))
-            }
+            if g.state == .ended { canvas.drag(dragOrigins, primary: card.id, by: g.translation(in: canvas.document)) }
+            canvas.clearGuides()
+            canvas.controller?.endGesture("Move")
             window?.enableCursorRects()
             window?.invalidateCursorRects(for: titleBar)
         default: break
@@ -409,9 +437,20 @@ class CardView: NSView {
         case .began:
             dragSize = CGSize(width: card.width, height: card.height)
             canvas.controller?.select(.card(card.id))
+            canvas.controller?.beginGesture()
         case .changed, .ended:
             let t = g.translation(in: canvas.document)
-            canvas.controller?.resizeCard(card.id, width: dragSize.width + t.x, height: dragSize.height + t.y)
+            var width = dragSize.width + t.x, height = dragSize.height + t.y
+            // The corner being dragged settles on the grid. Option lets it rest anywhere.
+            if !NSEvent.modifierFlags.contains(.option) {
+                let step = CanvasGeometry.gridStep
+                width = ((card.x + width) / step).rounded() * step - card.x
+                height = ((card.y + height) / step).rounded() * step - card.y
+            }
+            canvas.controller?.resizeCard(card.id, width: width, height: height)
+            if g.state == .ended { canvas.controller?.endGesture("Resize") }
+        case .cancelled, .failed:
+            canvas.controller?.endGesture("Resize")
         default: break
         }
     }
@@ -447,6 +486,23 @@ struct CardContext: Equatable {
     /// The card's settings have changed since its session started.
     var needsRestart = false
     var mark = RunMark()
+}
+
+/// Runs a closure when its menu item is picked, for menus built on the spot.
+private final class MenuAction: NSObject {
+    let run: () -> Void
+    init(_ run: @escaping () -> Void) { self.run = run }
+    @objc func fire() { run() }
+}
+
+/// A menu item that runs `run`.
+func ActionMenuItem(_ title: String, _ run: @escaping () -> Void) -> NSMenuItem {
+    let action = MenuAction(run)
+    let item = NSMenuItem(title: title, action: #selector(MenuAction.fire), keyEquivalent: "")
+    item.target = action
+    // A menu item doesn't keep its target alive, so it carries it.
+    item.representedObject = action
+    return item
 }
 
 class FlippedView: NSView {

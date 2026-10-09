@@ -7,6 +7,8 @@ import SwiftUI
 struct QueenBeeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @AppStorage(Theme.modeKey) private var mode = Theme.Mode.system.rawValue
+    @AppStorage("showsSidebar") private var showsSidebar = true
+    @AppStorage("showsPanel") private var showsPanel = true
     private var services: AppServices { AppServices.shared }
 
     var body: some Scene {
@@ -35,6 +37,9 @@ struct QueenBeeApp: App {
                     .keyboardShortcut(".")
                     .disabled(services.current?.isRunning != true)
                 Divider()
+                Button("Duplicate") { services.current?.duplicateSelection() }
+                    .keyboardShortcut("d")
+                    .disabled(services.current?.selection.cardIDs.isEmpty != false)
                 Menu("Add Card") {
                     ForEach(CardKindMenu.kinds, id: \.self) { kind in
                         Button(kind.label) { services.current?.addCard(kind) }
@@ -46,6 +51,11 @@ struct QueenBeeApp: App {
                 Button("Welcome to Queen Bee") { services.showsWelcome = true }
             }
             CommandGroup(after: .toolbar) {
+                Button(showsSidebar ? "Hide Projects" : "Show Projects") { showsSidebar.toggle() }
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                Button(showsPanel ? "Hide Panel" : "Show Panel") { showsPanel.toggle() }
+                    .keyboardShortcut("0", modifiers: [.command, .option])
+                Divider()
                 Button("Zoom In") { services.current?.canvas?.zoom(by: 1.25) }
                     .keyboardShortcut("=")
                 Button("Zoom Out") { services.current?.canvas?.zoom(by: 0.8) }

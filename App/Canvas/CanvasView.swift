@@ -42,12 +42,61 @@ final class CanvasDocumentView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        // Delete and forward delete remove the selected card or link.
-        if event.keyCode == 51 || event.keyCode == 117 {
-            canvas?.controller?.deleteSelection()
-        } else {
-            super.keyDown(with: event)
+        guard let controller = canvas?.controller else { return super.keyDown(with: event) }
+        // Option moves by a single point; without it a card moves a grid step.
+        let step = event.modifierFlags.contains(.option) ? 1 : Double(CanvasGeometry.gridStep)
+        switch event.keyCode {
+        case 51, 117: controller.deleteSelection() // Delete and forward delete
+        case 53: controller.select(.none) // Escape
+        case 123 where !controller.selection.cardIDs.isEmpty: controller.nudgeSelection(dx: -step, dy: 0)
+        case 124 where !controller.selection.cardIDs.isEmpty: controller.nudgeSelection(dx: step, dy: 0)
+        case 125 where !controller.selection.cardIDs.isEmpty: controller.nudgeSelection(dx: 0, dy: step)
+        case 126 where !controller.selection.cardIDs.isEmpty: controller.nudgeSelection(dx: 0, dy: -step)
+        default: super.keyDown(with: event)
         }
+    }
+
+    // MARK: The Edit menu
+
+    // While the canvas has the keyboard, Undo and Redo work on the flow's graph.
+    override var undoManager: UndoManager? { canvas?.controller?.undoManager ?? super.undoManager }
+
+    @objc func copy(_ sender: Any?) { canvas?.controller?.copySelection() }
+
+    @objc func cut(_ sender: Any?) {
+        canvas?.controller?.copySelection()
+        canvas?.controller?.deleteSelection()
+    }
+
+    @objc func paste(_ sender: Any?) { canvas?.controller?.paste() }
+
+    override func selectAll(_ sender: Any?) { canvas?.controller?.selectAll() }
+
+    // MARK: Menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let canvas, let controller = canvas.controller else { return nil }
+        canvas.takeFocus()
+        let point = convert(event.locationInWindow, from: nil)
+        let menu = NSMenu()
+        if let link = canvas.link(at: point) {
+            controller.select(.link(link))
+            menu.addItem(ActionMenuItem("Delete Link") { [weak controller] in controller?.deleteSelection() })
+            return menu
+        }
+        let add = NSMenuItem(title: "Add Card", action: nil, keyEquivalent: "")
+        add.submenu = NSMenu()
+        for kind in CardKindMenu.kinds {
+            add.submenu?.addItem(ActionMenuItem(kind.label) { [weak controller] in controller?.addCard(kind, at: point) })
+        }
+        menu.addItem(add)
+        if controller.canPaste {
+            menu.addItem(ActionMenuItem("Paste") { [weak controller] in controller?.paste(at: point) })
+        }
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem("Select All") { [weak controller] in controller?.selectAll() })
+        menu.addItem(ActionMenuItem("Zoom to Fit") { [weak canvas] in canvas?.zoomToFit() })
+        return menu
     }
 
     // MARK: Cards dropped from the palette
@@ -74,6 +123,40 @@ final class CanvasDocumentView: NSView {
     }
 }
 
+/// What is drawn over the cards while something is being dragged: the lines that show a card
+/// is lined up with another, and the box that selects cards. It never takes a click.
+final class CanvasOverlayView: NSView {
+    var guides: [Snapping.Guide] = [] { didSet { if guides != oldValue { needsDisplay = true } } }
+    var marquee: CGRect? { didSet { if marquee != oldValue { needsDisplay = true } } }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        // A hairline on screen at any zoom.
+        let hairline = 1 / max(convert(CGSize(width: 1, height: 1), to: nil).width, 0.01)
+        ctx.setStrokeColor(Theme.select.cgColor)
+        ctx.setLineWidth(hairline)
+        for guide in guides {
+            let pad = 12 * hairline
+            if guide.isVertical {
+                ctx.move(to: CGPoint(x: guide.position, y: guide.start - pad))
+                ctx.addLine(to: CGPoint(x: guide.position, y: guide.end + pad))
+            } else {
+                ctx.move(to: CGPoint(x: guide.start - pad, y: guide.position))
+                ctx.addLine(to: CGPoint(x: guide.end + pad, y: guide.position))
+            }
+        }
+        ctx.strokePath()
+        if let marquee {
+            ctx.setFillColor(Theme.select.withAlphaComponent(0.08).cgColor)
+            ctx.fill(marquee)
+            ctx.stroke(marquee)
+        }
+    }
+}
+
 /// The zoomable canvas of one flow. An NSScrollView with magnification holds one large
 /// document view; cards are its subviews, so a card's terminal is a real view that takes
 /// clicks and keys at any zoom.
@@ -88,6 +171,10 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     let scrollView = NSScrollView()
     let document = CanvasDocumentView()
     private let linkLayer = LinkLayerView()
+    /// Drawn over the cards: alignment guides and the selection box.
+    private let overlay = CanvasOverlayView()
+    private var marqueeStart: CGPoint?
+    private var marqueeBase: Set<String> = []
     private var cardViews: [String: CardView] = [:]
     private(set) weak var controller: FlowController?
     private var scrollMonitor: Any?
@@ -109,6 +196,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         linkLayer.frame = document.bounds
         linkLayer.bounds.origin = document.bounds.origin
         document.addSubview(linkLayer)
+        overlay.frame = document.bounds
+        overlay.bounds.origin = document.bounds.origin
+        document.addSubview(overlay)
 
         document.registerForDraggedTypes([CanvasDocumentView.cardKindType])
         scrollView.documentView = document
@@ -128,6 +218,10 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         let click = NSClickGestureRecognizer(target: self, action: #selector(handleBackgroundClick(_:)))
         click.delegate = self
         document.addGestureRecognizer(click)
+        // A drag that starts on bare canvas draws a box, and the cards it touches are selected.
+        let marquee = NSPanGestureRecognizer(target: self, action: #selector(handleMarquee(_:)))
+        marquee.delegate = self
+        document.addGestureRecognizer(marquee)
 
         // The zoom pill shows the zoom level, however it was changed: pinch, menu or button.
         scrollView.contentView.postsBoundsChangedNotifications = true
@@ -180,12 +274,12 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                 cardViews[card.id]?.removeFromSuperview()
                 view = card.kind == .agent ? AgentCardView(card: card) : LogicCardView(card: card)
                 view.canvas = self
-                document.addSubview(view)
+                document.addSubview(view, positioned: .below, relativeTo: overlay)
                 cardViews[card.id] = view
                 if didFirstSync { view.playDrawIn() }
             }
             var context = CardContext()
-            context.isSelected = controller.selection == .card(card.id)
+            context.isSelected = controller.selection.cardIDs.contains(card.id)
             context.isFocused = controller.focusedCardID == card.id
             context.linkedInputs = flow.links.contains { $0.to == card.id }
             context.linkedPorts = Set(flow.links(from: card.id).map(\.port))
@@ -307,6 +401,56 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         } else {
             controller?.select(.none)
         }
+    }
+
+    func link(at point: CGPoint) -> String? { linkLayer.linkID(at: point) }
+
+    @objc private func handleMarquee(_ g: NSPanGestureRecognizer) {
+        guard let controller else { return }
+        let now = g.location(in: document)
+        switch g.state {
+        case .began:
+            takeFocus()
+            // The gesture begins a few points into the drag: go back to where the button went down.
+            let t = g.translation(in: document)
+            marqueeStart = CGPoint(x: now.x - t.x, y: now.y - t.y)
+            marqueeBase = NSEvent.modifierFlags.contains(.shift) ? controller.selection.cardIDs : []
+            fallthrough
+        case .changed:
+            guard let start = marqueeStart else { return }
+            let box = CGRect(x: min(start.x, now.x), y: min(start.y, now.y), width: abs(now.x - start.x), height: abs(now.y - start.y))
+            overlay.marquee = box
+            let inside = controller.flow.cards.filter { CanvasGeometry.frame(of: $0).intersects(box) }.map(\.id)
+            controller.select(.of(marqueeBase.union(inside)))
+        default:
+            marqueeStart = nil
+            overlay.marquee = nil
+        }
+    }
+
+    // MARK: Dragging cards
+
+    /// Moves the cards a drag carries to their origins plus `translation`, settled against the
+    /// other cards and the grid by where the card under the pointer lands. Option turns that off.
+    func drag(_ origins: [String: CGPoint], primary: String, by translation: CGPoint) {
+        guard let controller, let card = controller.flow.card(primary), let start = origins[primary] else { return }
+        var offset = CGSize(width: translation.x, height: translation.y)
+        if NSEvent.modifierFlags.contains(.option) {
+            overlay.guides = []
+        } else {
+            let moving = CGRect(x: start.x + translation.x, y: start.y + translation.y, width: card.width, height: card.height)
+            let others = controller.flow.cards.filter { origins[$0.id] == nil }.map(CanvasGeometry.frame(of:))
+            // Six points on screen, whatever the zoom.
+            let reach = 6 / max(scrollView.magnification, 0.01)
+            let settled = Snapping.snap(moving, to: others, grid: CanvasGeometry.gridStep, tolerance: reach)
+            offset = CGSize(width: settled.origin.x - start.x, height: settled.origin.y - start.y)
+            overlay.guides = settled.guides
+        }
+        controller.moveCards(from: origins, by: offset)
+    }
+
+    func clearGuides() {
+        overlay.guides = []
     }
 
     // MARK: Linking
