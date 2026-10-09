@@ -77,7 +77,7 @@ open build/Build/Products/Debug/QueenBee.app
 ## Tests
 
 ```sh
-cd Core && swift test        # 132 unit tests on the model, store, engine, link router and tools
+cd Core && swift test        # 142 unit tests on the model, store, engine, link router, snapping and tools
 ./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about five minutes
 ```
 
@@ -87,9 +87,10 @@ The end-to-end script starts a separate test copy of the app with its own suppor
 
 - `--open <folder>` opens that project folder in the first window.
 - `--float` keeps the window above others without taking focus. Terminals stop painting in a hidden window, so a check that looks at the window needs it.
+- `--welcome` shows the first-run walk-through in a test copy, which otherwise skips it.
 - `--testing` turns on the test harness and lets a second copy of the app run. `QB_SUPPORT_DIR` in the environment moves that copy's socket and plugin.
 
-`--testing` and `QB_SUPPORT_DIR` only work in a debug build.
+`--testing`, `--welcome` and `QB_SUPPORT_DIR` only work in a debug build.
 
 ## Releasing
 

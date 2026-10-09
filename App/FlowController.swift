@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import Observation
 import QueenBeeCore
@@ -149,8 +150,15 @@ final class FlowController: ToolHost {
     // MARK: History
 
     /// Kept in the app's own folder, not the project's, so a run leaves nothing to commit.
+    /// A flow's id comes from its file, which may have been written by someone else, so it is
+    /// never used as a file name as it stands: anything but a plain id is replaced by its hash.
     private var historyURL: URL {
-        services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(flow.id).json")
+        let id = flow.id
+        let plain = !id.isEmpty && id.count <= 64 && id.unicodeScalars.allSatisfy {
+            ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "-"
+        }
+        let name = plain ? id : SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        return services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(name).json")
     }
 
     private func loadHistory() {
@@ -221,7 +229,7 @@ final class FlowController: ToolHost {
     /// Applies a change to a copy of the flow and keeps it only if it is valid. `name` is what
     /// the Edit menu calls it. Changes with the same `key` made close together undo as one.
     @discardableResult
-    private func perform(_ name: String, key: String? = nil, _ body: (inout Flow) throws -> Void) -> Bool {
+    private func perform(_ name: String, key: String? = nil, undoable: Bool = true, _ body: (inout Flow) throws -> Void) -> Bool {
         var copy = flow
         do {
             try body(&copy)
@@ -232,7 +240,7 @@ final class FlowController: ToolHost {
         banner = nil
         let old = flow
         flow = copy
-        registerUndo(from: old, name, key: key)
+        if undoable { registerUndo(from: old, name, key: key) }
         reconcile()
         return true
     }
@@ -352,11 +360,14 @@ final class FlowController: ToolHost {
 
     /// Puts each card at its origin plus `offset`. Part of a drag, so it is undone with the drag.
     func moveCards(from origins: [String: CGPoint], by offset: CGSize) {
+        // The whole group stops at the canvas's edge together, so it keeps its shape.
+        guard let left = origins.values.map(\.x).min(), let top = origins.values.map(\.y).min() else { return }
+        let dx = max(offset.width, CardView.farLeft - left), dy = max(offset.height, CardView.farLeft - top)
         var copy = flow
         for i in copy.cards.indices {
             guard let origin = origins[copy.cards[i].id] else { continue }
-            copy.cards[i].x = max(CardView.farLeft, origin.x + offset.width)
-            copy.cards[i].y = max(CardView.farLeft, origin.y + offset.height)
+            copy.cards[i].x = origin.x + dx
+            copy.cards[i].y = origin.y + dy
         }
         if copy != flow { flow = copy }
     }
@@ -366,9 +377,13 @@ final class FlowController: ToolHost {
         let ids = selection.cardIDs
         guard !ids.isEmpty else { return }
         let old = flow
+        let moving = flow.cards.filter { ids.contains($0.id) }
+        guard let left = moving.map(\.x).min(), let top = moving.map(\.y).min() else { return }
+        // Stopped at the canvas's edge as a group, so it keeps its shape.
+        let stepX = max(dx, CardView.farLeft - left), stepY = max(dy, CardView.farLeft - top)
         for i in flow.cards.indices where ids.contains(flow.cards[i].id) {
-            flow.cards[i].x = max(CardView.farLeft, flow.cards[i].x + dx)
-            flow.cards[i].y = max(CardView.farLeft, flow.cards[i].y + dy)
+            flow.cards[i].x += stepX
+            flow.cards[i].y += stepY
         }
         registerUndo(from: old, "Move", key: "nudge")
     }
@@ -381,7 +396,11 @@ final class FlowController: ToolHost {
     }
 
     func update(_ id: String, _ patch: CardPatch) {
-        perform("Change \(flow.card(id)?.name ?? "Card")", key: "edit:\(id)") { try $0.updateCard(id, patch: patch) }
+        // A text box undoing its own typing writes the old text back through here. That is
+        // the undo, not a new change, so it doesn't get a step of its own.
+        let textManager = (NSApp.keyWindow?.firstResponder as? NSTextView)?.undoManager
+        let isTextUndo = textManager?.isUndoing == true || textManager?.isRedoing == true
+        perform("Change \(flow.card(id)?.name ?? "Card")", key: "edit:\(id)", undoable: !isTextUndo) { try $0.updateCard(id, patch: patch) }
     }
 
     // MARK: Copying
@@ -603,7 +622,7 @@ final class FlowController: ToolHost {
         if session.state == .needsYou, !wasWaiting {
             let name = who == Self.orchestratorKey ? "The orchestrator" : flow.card(who)?.name ?? "An agent"
             Notifier.post(title: "\(name) needs you", body: "In \(flow.name). It is waiting for an answer or a permission.",
-                          flowID: flow.id, cardID: who == Self.orchestratorKey ? nil : who)
+                          flowID: flow.id, cardID: who)
         }
         if event == "Stop", let reply = payload["last_assistant_message"]?.stringValue { session.lastReply = reply }
         guard who != Self.orchestratorKey else { return }

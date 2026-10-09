@@ -148,7 +148,8 @@ private struct LogList: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Theme.Space.m)
             }
-            .onChange(of: controller.log.count) {
+            // By the last line, not the count: a full log stays the same length as it turns over.
+            .onChange(of: controller.log.last?.id) {
                 if let last = controller.log.last { proxy.scrollTo(last.id, anchor: .bottom) }
             }
             .onAppear {

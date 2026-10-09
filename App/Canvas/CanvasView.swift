@@ -78,21 +78,21 @@ final class CanvasDocumentView: NSView {
         let menu = NSMenu()
         if let link = canvas.link(at: point) {
             controller.select(.link(link))
-            menu.addItem(ActionMenuItem("Delete Link") { [weak controller] in controller?.deleteSelection() })
+            menu.addItem(menuItem("Delete Link") { [weak controller] in controller?.deleteSelection() })
             return menu
         }
         let add = NSMenuItem(title: "Add Card", action: nil, keyEquivalent: "")
         add.submenu = NSMenu()
         for kind in CardKindMenu.kinds {
-            add.submenu?.addItem(ActionMenuItem(kind.label) { [weak controller] in controller?.addCard(kind, at: point) })
+            add.submenu?.addItem(menuItem(kind.label) { [weak controller] in controller?.addCard(kind, at: point) })
         }
         menu.addItem(add)
         if controller.canPaste {
-            menu.addItem(ActionMenuItem("Paste") { [weak controller] in controller?.paste(at: point) })
+            menu.addItem(menuItem("Paste") { [weak controller] in controller?.paste(at: point) })
         }
         menu.addItem(.separator())
-        menu.addItem(ActionMenuItem("Select All") { [weak controller] in controller?.selectAll() })
-        menu.addItem(ActionMenuItem("Zoom to Fit") { [weak canvas] in canvas?.zoomToFit() })
+        menu.addItem(menuItem("Select All") { [weak controller] in controller?.selectAll() })
+        menu.addItem(menuItem("Zoom to Fit") { [weak canvas] in canvas?.zoomToFit() })
         return menu
     }
 
@@ -286,12 +286,13 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
             context.mark = controller.marks[card.id] ?? RunMark()
+            context.isRunning = controller.isRunning
             if card.kind == .agent, let agentView = view as? AgentCardView {
                 let session = controller.session(forCard: card.id)
                 context.sessionState = session.state
                 context.needsRestart = !controller.settingsAwaitingRestart(forCard: card.id).isEmpty
                 context.isLive = session.state == .working || session.state == .needsYou
-                    || context.mark.arrivals > context.mark.passes
+                    || (controller.isRunning && context.mark.arrivals > context.mark.passes)
                 agentView.attach(terminal: session.view)
             }
             if !view.isCurrent(card: card, context: context) { view.update(card: card, context: context) }

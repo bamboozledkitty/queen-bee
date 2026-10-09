@@ -184,8 +184,10 @@ private struct ClaudeCheck: View {
                 Badge(text: "Claude Code isn't installed, or isn't on your PATH", symbol: "xmark", tone: .fail)
             } else if let version, version.compare(ResolvedEnvironment.minimumClaude, options: .numeric) == .orderedAscending {
                 Badge(text: "Claude Code \(version) is too old: update to \(ResolvedEnvironment.minimumClaude) or later", symbol: "xmark", tone: .fail)
+            } else if let version {
+                Badge(text: "Claude Code \(version) is ready", symbol: "checkmark", tone: .pass)
             } else {
-                Badge(text: "Claude Code \(version ?? "") is ready", symbol: "checkmark", tone: .pass)
+                Badge(text: "Claude Code is installed, but its version couldn't be read. It needs \(ResolvedEnvironment.minimumClaude) or later.")
             }
         }
         .padding(.top, Theme.Space.xs)

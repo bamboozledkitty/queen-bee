@@ -448,17 +448,17 @@ class CardView: NSView {
         let several = controller.selection.cardIDs.count > 1
         let menu = NSMenu()
         if !several {
-            menu.addItem(ActionMenuItem("Zoom to Card") { [weak canvas] in canvas?.zoom(toCard: id) })
+            menu.addItem(menuItem("Zoom to Card") { [weak canvas] in canvas?.zoom(toCard: id) })
             if card.kind == .agent {
                 let isLive = controller.session(forCard: id).isLive
-                menu.addItem(ActionMenuItem(isLive ? "Restart Session" : "Start Session") { [weak controller] in controller?.startSession(forCard: id) })
+                menu.addItem(menuItem(isLive ? "Restart Session" : "Start Session") { [weak controller] in controller?.startSession(forCard: id) })
             }
             menu.addItem(.separator())
         }
-        menu.addItem(ActionMenuItem("Duplicate") { [weak controller] in controller?.duplicateSelection() })
-        menu.addItem(ActionMenuItem("Copy") { [weak controller] in controller?.copySelection() })
+        menu.addItem(menuItem("Duplicate") { [weak controller] in controller?.duplicateSelection() })
+        menu.addItem(menuItem("Copy") { [weak controller] in controller?.copySelection() })
         menu.addItem(.separator())
-        menu.addItem(ActionMenuItem(several ? "Delete \(controller.selection.cardIDs.count) Cards" : "Delete") { [weak controller] in controller?.deleteSelection() })
+        menu.addItem(menuItem(several ? "Delete \(controller.selection.cardIDs.count) Cards" : "Delete") { [weak controller] in controller?.deleteSelection() })
         return menu
     }
 
@@ -542,6 +542,8 @@ struct CardContext: Equatable {
     var sessionState: SessionState = .notStarted
     /// The card's settings have changed since its session started.
     var needsRestart = false
+    /// A run is under way. Marks left by a run that has ended say where it went, not what is live.
+    var isRunning = false
     var mark = RunMark()
 }
 
@@ -553,7 +555,7 @@ private final class MenuAction: NSObject {
 }
 
 /// A menu item that runs `run`.
-func ActionMenuItem(_ title: String, _ run: @escaping () -> Void) -> NSMenuItem {
+func menuItem(_ title: String, _ run: @escaping () -> Void) -> NSMenuItem {
     let action = MenuAction(run)
     let item = NSMenuItem(title: title, action: #selector(MenuAction.fire), keyEquivalent: "")
     item.target = action

@@ -43,7 +43,7 @@ final class AgentCardView: CardView {
     override func update(card new: Card, context: CardContext) {
         let state = context.sessionState
         // In a run, an agent that has been handed work but hasn't started on it yet is waiting.
-        let isWaiting = context.mark.arrivals > context.mark.passes && state == .idle
+        let isWaiting = context.isRunning && context.mark.arrivals > context.mark.passes && state == .idle
         let tone: BadgeLabel.Tone = switch state {
         case .working, .needsYou: .live
         case .failed, .exited: .fail

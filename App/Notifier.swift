@@ -43,7 +43,8 @@ enum Notifier {
                 NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
                 guard let flow, let controller = AppServices.shared.allFlows.first(where: { $0.flow.id == flow }) else { return }
                 AppServices.shared.selectedFlowID = flow
-                if let card, !card.isEmpty {
+                // The orchestrator isn't a card, and a card may have been deleted since.
+                if let card, controller.flow.card(card) != nil {
                     controller.select(.card(card))
                     // The canvas for a flow that wasn't on screen takes a moment to appear.
                     Task {
