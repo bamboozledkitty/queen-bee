@@ -8,9 +8,9 @@ Each agent is a live `claude` session in a terminal that sits on the canvas. You
 
 ## Install
 
-1. Download `QueenBee-<version>.zip` from the [latest release](https://github.com/bamboozledkitty/queen-bee/releases/latest).
-2. Unzip it and drag **QueenBee** into your Applications folder.
-3. Open it, then add a project folder when the app asks.
+1. Download `QueenBee-<version>.dmg` from the [latest release](https://github.com/bamboozledkitty/queen-bee/releases/latest).
+2. Open it and drag **QueenBee** onto the Applications folder beside it.
+3. Open Queen Bee from Applications, then add a project folder when the app asks.
 
 You need:
 

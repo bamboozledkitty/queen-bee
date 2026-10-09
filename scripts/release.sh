@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds a release of the version in project.yml: signs it with a Developer ID, has Apple notarize it,
-# and writes the update feed. With "publish" it then tags the release and puts it on GitHub.
+# packs it in a disk image and writes the update feed. With "publish" it then tags the release and puts it on GitHub.
 #
 #   ./scripts/release.sh            build, sign, notarize, update appcast.xml; everything lands in dist/
 #   ./scripts/release.sh publish    the same, then commit appcast.xml, tag, push and create the GitHub release
@@ -20,7 +20,7 @@ VERSION=$(sed -n 's/.*MARKETING_VERSION: "\(.*\)"/\1/p' project.yml)
 TAG="v$VERSION"
 APP=build/Build/Products/Release/QueenBee.app
 OUT="dist/$VERSION"
-ZIP="$OUT/QueenBee-$VERSION.zip"
+DMG="$OUT/QueenBee-$VERSION.dmg"
 SPARKLE=build/SourcePackages/artifacts/sparkle/Sparkle/bin
 
 grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "CHANGELOG.md has no section for $VERSION"; exit 1; }
@@ -46,13 +46,27 @@ sign "$APP/Contents/MacOS/qb"
 sign "$APP"
 codesign --verify --deep --strict "$APP"
 
-echo "== Notarizing"
+notarize() { xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait; }
+
+echo "== Notarizing the app"
+# The app first, so the copy people drag out of the disk image carries its own ticket and opens offline.
 rm -rf "$OUT" && mkdir -p "$OUT"
-ditto -c -k --keepParent "$APP" "$ZIP"
-xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+ditto -c -k --keepParent "$APP" "$OUT/app.zip"
+notarize "$OUT/app.zip"
+rm "$OUT/app.zip"
 xcrun stapler staple "$APP"
-rm "$ZIP" && ditto -c -k --keepParent "$APP" "$ZIP"
 spctl --assess --type execute -vv "$APP"
+
+echo "== Building the disk image"
+STAGE=$(mktemp -d)
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create -quiet -volname "Queen Bee" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+rm -rf "$STAGE"
+codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+notarize "$DMG"
+xcrun stapler staple "$DMG"
+spctl --assess --type open --context context:primary-signature -vv "$DMG"
 
 echo "== Writing the update feed"
 # The notes for this version are its section of the changelog.
@@ -62,7 +76,7 @@ cp appcast.xml "$OUT/appcast.xml" 2>/dev/null || true
   --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" \
   --link "https://github.com/$REPO" -o "$OUT/appcast.xml" "$OUT"
 cp "$OUT/appcast.xml" appcast.xml
-echo "Built $ZIP"
+echo "Built $DMG"
 
 [ "${1:-}" = "publish" ] || { echo "Run again with 'publish' to release it."; exit 0; }
 
@@ -71,4 +85,4 @@ git add appcast.xml
 git commit -q -m "Release $TAG" -- appcast.xml
 git tag "$TAG"
 git push -q origin HEAD "$TAG"
-gh release create "$TAG" "$ZIP" --repo "$REPO" --title "Queen Bee $VERSION" --notes-file "$OUT/QueenBee-$VERSION.md"
+gh release create "$TAG" "$DMG" --repo "$REPO" --title "Queen Bee $VERSION" --notes-file "$OUT/QueenBee-$VERSION.md"
