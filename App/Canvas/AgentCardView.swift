@@ -5,6 +5,8 @@ import QueenBeeCore
 /// and a Start button while no session is running.
 final class AgentCardView: CardView {
     private let stateBadge = BadgeLabel()
+    /// Shown when the card's settings have changed and the running session doesn't have them yet.
+    private let restartBadge = BadgeLabel()
     private let startButton = NSButton(title: "Start session", target: nil, action: nil)
     private let terminalHolder = FlippedView()
     private weak var terminal: NSView?
@@ -12,6 +14,8 @@ final class AgentCardView: CardView {
     override init(card: Card) {
         super.init(card: card)
         titleBar.addSubview(stateBadge)
+        titleBar.addSubview(restartBadge)
+        restartBadge.toolTip = "This card's settings changed after its session started. Restart the session from its settings to apply them."
 
         terminalHolder.wantsLayer = true
         content.addSubview(terminalHolder)
@@ -23,7 +27,7 @@ final class AgentCardView: CardView {
         content.addSubview(startButton)
     }
 
-    override var titleAccessories: [NSView] { [stateBadge] }
+    override var titleAccessories: [NSView] { [stateBadge, restartBadge] }
 
     func attach(terminal view: NSView) {
         guard terminal !== view else { return }
@@ -44,6 +48,7 @@ final class AgentCardView: CardView {
         case .notStarted, .starting: .plain
         }
         stateBadge.set(isWaiting ? "waiting" : state.label.lowercased(), tone: tone)
+        restartBadge.set(context.needsRestart ? "restart to apply" : "", tone: .live)
         let live = state != .notStarted && state != .exited
         startButton.isHidden = live
         startButton.title = state == .exited ? "Restart session" : "Start session"

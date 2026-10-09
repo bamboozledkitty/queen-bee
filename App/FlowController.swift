@@ -271,6 +271,13 @@ final class FlowController: ToolHost {
 
     var orchestrator: TerminalSession { session(forCard: Self.orchestratorKey) }
 
+    /// The settings changed on a card since its session started, which the running session
+    /// doesn't have yet. Empty when the session isn't running or is up to date.
+    func settingsAwaitingRestart(forCard id: String) -> [String] {
+        guard let card = flow.card(id), let session = sessions[id], session.isLive, let launched = session.launched else { return [] }
+        return AgentSettings(card).differences(from: launched)
+    }
+
     private func startMissingSessions() {
         for card in flow.cards where card.kind == .agent && session(forCard: card.id).state == .notStarted {
             startSession(forCard: card.id)
@@ -289,7 +296,7 @@ final class FlowController: ToolHost {
             banner = services.problem
             return
         }
-        freshSession(for: id).start(spec)
+        freshSession(for: id).start(spec, settings: AgentSettings(card))
     }
 
     func startOrchestrator() {

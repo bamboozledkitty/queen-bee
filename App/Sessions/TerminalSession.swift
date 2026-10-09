@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import QueenBeeCore
 import SwiftTerm
 
 /// What a session is doing, as Claude Code's hooks report it.
@@ -45,6 +46,9 @@ final class TerminalSession: NSObject {
     private(set) var state: SessionState = .notStarted
     /// The session's last finished reply, as its turn-end reported it.
     var lastReply: String?
+    /// The card settings this session was started with. A running session keeps these until
+    /// it restarts, whatever the card says now.
+    private(set) var launched: AgentSettings?
     /// The Claude Code session id this terminal was started with.
     private(set) var claudeSessionID: String?
     @ObservationIgnored var onExit: ((Int32?) -> Void)?
@@ -75,8 +79,9 @@ final class TerminalSession: NSObject {
 
     var isLive: Bool { state != .notStarted && state != .exited }
 
-    func start(_ spec: LaunchSpec) {
+    func start(_ spec: LaunchSpec, settings: AgentSettings? = nil) {
         guard !isLive else { return }
+        launched = settings
         claudeSessionID = spec.sessionID
         state = .starting
         view.startProcess(executable: spec.executable, args: spec.arguments, environment: spec.environment,
@@ -147,6 +152,37 @@ extension TerminalSession: @preconcurrency LocalProcessTerminalViewDelegate {
         state = .exited
         waiting.removeAll()
         onExit?(exitCode)
+    }
+}
+
+/// The settings of an agent card that only take hold when its session starts.
+nonisolated struct AgentSettings: Equatable, Sendable {
+    var name: String
+    var instructions: String
+    var model: String
+    var effort: String
+    var permissionMode: String
+    var folder: String
+
+    init(_ card: QueenBeeCore.Card) {
+        name = card.name
+        instructions = (card.instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        model = card.model ?? ""
+        effort = card.effort ?? ""
+        permissionMode = card.permissionMode ?? ""
+        folder = card.cwd ?? ""
+    }
+
+    /// What differs from `other`, named as the settings panel names it.
+    func differences(from other: AgentSettings) -> [String] {
+        var changed: [String] = []
+        if name != other.name { changed.append("name") }
+        if instructions != other.instructions { changed.append("instructions") }
+        if model != other.model { changed.append("model") }
+        if effort != other.effort { changed.append("effort") }
+        if permissionMode != other.permissionMode { changed.append("permissions") }
+        if folder != other.folder { changed.append("folder") }
+        return changed
     }
 }
 

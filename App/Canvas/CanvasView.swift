@@ -196,6 +196,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             if card.kind == .agent, let agentView = view as? AgentCardView {
                 let session = controller.session(forCard: card.id)
                 context.sessionState = session.state
+                context.needsRestart = !controller.settingsAwaitingRestart(forCard: card.id).isEmpty
                 context.isLive = session.state == .working || session.state == .needsYou
                     || context.mark.arrivals > context.mark.passes
                 agentView.attach(terminal: session.view)

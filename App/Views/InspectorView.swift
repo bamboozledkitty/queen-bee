@@ -126,13 +126,47 @@ private struct CardSettings: View {
             }
             .labelsHidden()
         }
-        HStack {
-            Badge(text: session.state.label.lowercased(), tone: session.state.tone)
-            Spacer()
-            Button(session.isLive ? "Restart" : "Start") { controller.startSession(forCard: card.id) }
-                .controlSize(.small)
+        let pending = controller.settingsAwaitingRestart(forCard: card.id)
+        if pending.isEmpty {
+            HStack {
+                Badge(text: session.state.label.lowercased(), tone: session.state.tone)
+                Spacer()
+                Button(session.isLive ? "Restart" : "Start") { controller.startSession(forCard: card.id) }
+                    .controlSize(.small)
+            }
+            if !session.isLive {
+                hint("The session starts with the settings above.")
+            }
+        } else {
+            // The session is still running on what it was started with. Say so where the
+            // change was made, with the one button that fixes it.
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
+                Label("Not applied yet", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.dsMono(Theme.Size.body, .medium))
+                Text("You changed the \(Self.list(pending)). The running session still has the old \(pending.count == 1 ? "one" : "ones") until it restarts.")
+                    .font(.dsSans(Theme.Size.caption))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Badge(text: session.state.label.lowercased(), tone: session.state.tone)
+                    Spacer()
+                    Button("Restart to apply") { controller.startSession(forCard: card.id) }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.live.ui)
+                        .help(session.state == .working ? "Restarting interrupts what the agent is doing now. Its conversation is kept." : "The agent's conversation is kept.")
+                }
+            }
+            .foregroundStyle(Theme.liveInk.ui)
+            .padding(Theme.Space.s)
+            .background(Theme.liveTint.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.live.ui, lineWidth: Theme.Stroke.card))
         }
-        hint("Instructions, model, effort and permissions take effect when the session restarts.")
+    }
+
+    /// "model", "model and effort", "name, model and effort".
+    private static func list(_ items: [String]) -> String {
+        guard items.count > 1 else { return items.first ?? "" }
+        return items.dropLast().joined(separator: ", ") + " and " + items[items.count - 1]
     }
 
     @ViewBuilder private var condition: some View {

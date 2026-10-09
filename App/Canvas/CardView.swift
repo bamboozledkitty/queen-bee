@@ -419,6 +419,8 @@ struct CardContext {
     var inputCount = 0
     var result: String?
     var sessionState: SessionState = .notStarted
+    /// The card's settings have changed since its session started.
+    var needsRestart = false
     var mark = RunMark()
 }
 
