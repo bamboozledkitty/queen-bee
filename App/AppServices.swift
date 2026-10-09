@@ -25,6 +25,8 @@ final class AppServices {
     var selectedFlowID: String? {
         didSet { if selectedFlowID != oldValue { current?.open() } }
     }
+    /// How much of the canvas the floating panels cover, published by the window for the canvas.
+    @ObservationIgnored var canvasObstruction = CanvasObstruction(left: 400, right: 450)
     /// Flows kept at the top of the sidebar.
     private(set) var pinnedFlowIDs: Set<String> = []
 
@@ -224,6 +226,12 @@ final class AppServices {
         default: return [:]
         }
     }
+}
+
+/// The strips at the canvas's left and right that floating panels sit over, in screen points.
+nonisolated struct CanvasObstruction: Equatable, Sendable {
+    var left: CGFloat
+    var right: CGFloat
 }
 
 private struct WeakController {

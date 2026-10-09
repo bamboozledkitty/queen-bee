@@ -481,7 +481,9 @@ final class FlowController: ToolHost {
             if !target.isLive { startSession(forCard: delivery.toCardID) }
             let live = session(forCard: delivery.toCardID)
             let settled = live.state == .idle || live.state == .working || live.state == .needsYou
-            if sender != nil, settled, let sid = live.claudeSessionID {
+            // A session can't message itself, so a hand-off that loops straight back to the
+            // agent that just replied is typed in.
+            if let sender, sender != delivery.toCardID, settled, let sid = live.claudeSessionID {
                 forPlugin.append((sid, delivery.text))
                 inFlight[sid] = delivery
             } else {

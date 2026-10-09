@@ -14,31 +14,76 @@ enum PanelTab: String, CaseIterable {
     }
 }
 
-/// The app's one window: projects and their flows on the left, the selected flow's canvas
-/// in the middle, and a panel for its orchestrator, log and output on the right.
+/// The app's one window. The canvas fills it edge to edge. Everything else floats over the
+/// canvas: the projects panel on the left, the orchestrator panel on the right, and the
+/// canvas's own controls between them.
 struct WorkspaceView: View {
-    @State private var showsPanel = true
+    static let gap = Theme.Space.m
+    static let sidebarWidth: CGFloat = 236
+
+    @AppStorage("showsSidebar") private var showsSidebar = true
+    @AppStorage("showsPanel") private var showsPanel = true
+    @AppStorage("panelWidth") private var panelWidth = 420.0
     @State private var tab = PanelTab.orchestrator
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 340)
-        } detail: {
+        ZStack {
+            Theme.paper.ui.ignoresSafeArea()
             if let controller = services.current {
-                FlowView(controller: controller, showsPanel: $showsPanel, tab: $tab)
+                CanvasRepresentable(controller: controller)
                     .id(controller.flow.id)
             } else if services.projects.isEmpty {
                 WelcomeView()
             } else {
                 ContentUnavailableView("No flow selected", systemImage: "point.3.connected.trianglepath.dotted",
-                                       description: Text("Pick a flow in the sidebar, or add one to a project."))
+                                       description: Text("Pick a flow on the left, or add one to a project."))
             }
+
+            HStack(alignment: .top, spacing: Self.gap) {
+                if showsSidebar {
+                    SidebarView()
+                        .frame(width: Self.sidebarWidth)
+                        .floatingPanel()
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+                if let controller = services.current {
+                    CanvasControls(controller: controller) {
+                        tab = .log
+                        showsPanel = true
+                    } showOrchestrator: {
+                        tab = .orchestrator
+                        showsPanel = true
+                    }
+                    .id(controller.flow.id)
+                } else {
+                    Spacer(minLength: 0)
+                }
+                if showsPanel, let controller = services.current {
+                    SidePanel(controller: controller, tab: $tab, width: $panelWidth)
+                        .frame(width: panelWidth)
+                        .floatingPanel()
+                        .id(controller.flow.id)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .padding(Self.gap)
         }
+        .animation(.easeOut(duration: Theme.Motion.base), value: showsSidebar)
+        .animation(.easeOut(duration: Theme.Motion.base), value: showsPanel)
+        .onChange(of: obstruction, initial: true) { services.canvasObstruction = obstruction }
         .navigationTitle(services.current?.flow.name ?? "Queen Bee")
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
+        .frame(minWidth: 900, minHeight: 560)
+    }
+
+    /// How much of the canvas's left and right the floating panels and the palette cover,
+    /// so "fit" can keep the flow clear of them.
+    private var obstruction: CanvasObstruction {
+        let left = (showsSidebar ? Self.sidebarWidth + Self.gap : 0) + Self.gap + PaletteView.width + Self.gap
+        let right = showsPanel && services.current != nil ? panelWidth + Self.gap * 2 : Self.gap
+        return CanvasObstruction(left: left, right: right)
     }
 
     private var subtitle: String {
@@ -50,6 +95,10 @@ struct WorkspaceView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button { showsSidebar.toggle() } label: { Label("Projects", systemImage: "sidebar.leading") }
+                .help("Show or hide projects and flows")
+        }
         ToolbarItemGroup(placement: .primaryAction) {
             if let controller = services.current {
                 let waiting = controller.cardsNeedingYou
@@ -91,90 +140,36 @@ struct WorkspaceView: View {
     }
 }
 
-/// One flow: its canvas with the controls that float on it, and the side panel.
-struct FlowView: View {
+/// What floats over the canvas between the two panels: the palette, the selected card's
+/// settings, a banner, the status line, the zoom control, and a new flow's prompt. Its empty
+/// areas let clicks through to the canvas underneath.
+struct CanvasControls: View {
     let controller: FlowController
-    @Binding var showsPanel: Bool
-    @Binding var tab: PanelTab
-    @AppStorage("panelWidth") private var panelWidth = 420.0
+    let showLog: () -> Void
+    let showOrchestrator: () -> Void
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
-        HStack(spacing: 0) {
-            canvas
-                .frame(minWidth: 420, maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
-            if showsPanel {
-                PanelDivider(width: $panelWidth)
-                SidePanel(controller: controller, tab: $tab)
-                    .frame(width: panelWidth)
-            }
-        }
-    }
-
-    private var canvas: some View {
-        CanvasRepresentable(controller: controller)
-            .overlay(alignment: .topLeading) {
-                PaletteView(controller: controller).padding(Theme.Space.m)
-            }
+        Color.clear
+            .allowsHitTesting(false)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) { PaletteView(controller: controller) }
             .overlay(alignment: .topTrailing) {
-                if controller.selection != .none {
-                    InspectorView(controller: controller).padding(Theme.Space.m)
-                }
+                if controller.selection != .none { InspectorView(controller: controller) }
             }
             .overlay(alignment: .top) {
                 if let message = services.problem ?? controller.banner {
-                    BannerView(text: message) { controller.banner = nil }.padding(.top, Theme.Space.m)
+                    BannerView(text: message) { controller.banner = nil }
                 }
             }
-            .overlay(alignment: .bottomLeading) {
-                StatusStrip(controller: controller) {
-                    tab = .log
-                    showsPanel = true
-                }
-                .padding(Theme.Space.m)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                ZoomPill(controller: controller).padding(Theme.Space.m)
-            }
+            .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }
+            .overlay(alignment: .bottomTrailing) { ZoomPill(controller: controller) }
             .overlay {
                 if controller.isBlank, !controller.promptDismissed {
-                    BlankFlowPrompt(controller: controller) {
-                        tab = .orchestrator
-                        showsPanel = true
-                    }
+                    BlankFlowPrompt(controller: controller, showOrchestrator: showOrchestrator)
                 }
             }
             .animation(.easeOut(duration: Theme.Motion.base), value: controller.selection)
-    }
-}
-
-/// The line between the canvas and the side panel. Drag it to make the panel wider or narrower.
-private struct PanelDivider: View {
-    @Binding var width: Double
-    @State private var startWidth: Double?
-
-    var body: some View {
-        Rectangle()
-            .fill(Theme.ink.ui)
-            .frame(width: 1)
-            .overlay {
-                // A wider strip than the line itself, so it is easy to catch.
-                Color.clear
-                    .frame(width: 9)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                            .onChanged { drag in
-                                let from = startWidth ?? width
-                                startWidth = from
-                                width = min(760, max(300, from - drag.translation.width))
-                            }
-                            .onEnded { _ in startWidth = nil }
-                    )
-            }
     }
 }
 
@@ -197,7 +192,5 @@ struct WelcomeView: View {
                 .keyboardShortcut(.defaultAction)
         }
         .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.paper.ui)
     }
 }

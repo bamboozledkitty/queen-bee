@@ -6,8 +6,36 @@ import SwiftUI
 struct SidePanel: View {
     let controller: FlowController
     @Binding var tab: PanelTab
+    @Binding var width: Double
+    @State private var startWidth: Double?
 
     var body: some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay(alignment: .leading) { resizeEdge }
+    }
+
+    /// The panel's left edge. Drag it to make the panel wider or narrower.
+    private var resizeEdge: some View {
+        Color.clear
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let from = startWidth ?? width
+                        startWidth = from
+                        width = min(760, max(300, from - drag.translation.width))
+                    }
+                    .onEnded { _ in startWidth = nil }
+            )
+            .offset(x: -4)
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ForEach(PanelTab.allCases, id: \.self) { item in

@@ -238,8 +238,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         super.layout()
         if !didInitialScroll, bounds.width > 0 {
             didInitialScroll = true
-            // Start with the canvas's origin just clear of the palette.
-            document.scroll(CGPoint(x: -164, y: -16))
+            // Start with the canvas's origin just clear of the panels floating over its left edge.
+            document.scroll(CGPoint(x: -(AppServices.shared.canvasObstruction.left + 20), y: -30))
         }
     }
 
@@ -403,7 +403,10 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     /// The middle of what is on screen, in canvas points: where a new card goes.
     var visibleCenter: CGPoint {
         let r = scrollView.documentVisibleRect
-        return CGPoint(x: r.midX, y: r.midY)
+        // The middle of what the floating panels leave uncovered, not of the whole window.
+        let covered = AppServices.shared.canvasObstruction
+        let zoom = max(scrollView.magnification, 0.01)
+        return CGPoint(x: r.midX + (covered.left - covered.right) / 2 / zoom, y: r.midY)
     }
 
     func zoom(by factor: CGFloat) {
@@ -419,19 +422,28 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
     func zoomToFit() {
         guard let cards = controller?.flow.cards, !cards.isEmpty else { return }
-        var box = cards.map(CanvasGeometry.frame(of:)).reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -60, dy: -60)
-        scrollView.magnify(toFit: inClip(box))
-        // The palette floats over the canvas's left edge. Fit again with room for it, sized by
-        // the zoom the first fit landed on, so no card ends up underneath.
-        let palette = 150 / max(scrollView.magnification, 0.01)
-        box = CGRect(x: box.minX - palette, y: box.minY, width: box.width + palette, height: box.height)
-        scrollView.magnify(toFit: inClip(box))
+        let box = cards.map(CanvasGeometry.frame(of:)).reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -40, dy: -40)
+        fit(box)
+    }
+
+    /// Zooms so `box` fills the part of the canvas the floating panels leave uncovered.
+    /// The panels are a fixed size on screen, so their size in canvas points depends on the
+    /// zoom being solved for: fit once to find it, then again with the room they need.
+    private func fit(_ box: CGRect) {
+        let covered = AppServices.shared.canvasObstruction
+        var wanted = box
+        for _ in 0..<3 {
+            scrollView.magnify(toFit: inClip(wanted))
+            let zoom = max(scrollView.magnification, 0.01)
+            wanted = CGRect(x: box.minX - covered.left / zoom, y: box.minY - 30 / zoom,
+                            width: box.width + (covered.left + covered.right) / zoom, height: box.height + 90 / zoom)
+        }
+        scrollView.magnify(toFit: inClip(wanted))
         document.needsDisplay = true
     }
 
     func zoom(toCard id: String) {
         guard let card = controller?.flow.card(id) else { return }
-        scrollView.magnify(toFit: inClip(CanvasGeometry.frame(of: card).insetBy(dx: -40, dy: -40)))
-        document.needsDisplay = true
+        fit(CanvasGeometry.frame(of: card).insetBy(dx: -40, dy: -40))
     }
 }

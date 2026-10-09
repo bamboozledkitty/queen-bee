@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 /// The card types, floating at the canvas's corner. Click one to add it at the middle of
 /// what's on screen, or drag it to where you want it.
 struct PaletteView: View {
+    static let width: CGFloat = 132
     let controller: FlowController
 
     var body: some View {
@@ -17,7 +18,7 @@ struct PaletteView: View {
             }
         }
         .padding(Theme.Space.xs)
-        .frame(width: 132)
+        .frame(width: Self.width)
         .floatingPanel()
     }
 }
