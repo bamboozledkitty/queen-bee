@@ -9,6 +9,16 @@ All notable changes to Queen Bee are listed here. The format follows
 ### Added
 
 - A terminal installer, `scripts/install.sh`, that fetches the latest release, checks its signature and installs it without the Gatekeeper prompt.
+- A first-run walk-through of agents, logic cards and the orchestrator, which also checks that Claude Code is installed and new enough. **Help → Welcome to Queen Bee** shows it again.
+
+### Changed
+
+- Zooming from the zoom control, the menu, fit and a double-click on a card's title is animated. Hover, selection and panel changes ease instead of snapping.
+- A link being dragged previews the route it will take, and lands on the input of a card that would accept it.
+- The card settings panel is rebuilt: the name is edited in its header, settings sit in ruled rows, and Delete and the session's Start or Restart share a footer.
+- Clicking into a terminal no longer opens that card's settings. Click the card's title for those.
+- An empty flow shows a small note pointing at the orchestrator in place of the box in the middle of the canvas. Closing it is remembered.
+- Floating panels no longer cast a shadow.
 
 ## [0.1.1] - 2026-10-09
 

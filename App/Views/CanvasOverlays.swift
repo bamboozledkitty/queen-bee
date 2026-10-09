@@ -150,58 +150,81 @@ struct BannerView: View {
     }
 }
 
-/// What a new flow shows: one box to say what you want built, sent to the orchestrator.
-struct BlankFlowPrompt: View {
+/// What an empty flow shows: a short note beside the orchestrator, pointing at it. The
+/// orchestrator is where a flow gets described, so the note sends you there and stays out
+/// of the canvas's way.
+struct OrchestratorCallout: View {
     let controller: FlowController
+    /// The orchestrator's terminal is on screen for the arrow to point at.
+    let orchestratorIsShowing: Bool
     let showOrchestrator: () -> Void
-    @State private var text = ""
-    @FocusState private var isFocused: Bool
-
-    private var canSend: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && controller.orchestrator.isLive
-    }
+    @State private var nudged = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.m) {
-            HStack {
-                Text("Describe the flow you want")
-                    .font(.dsMono(Theme.Size.heading, .medium))
-                Spacer()
-                Button { controller.promptDismissed = true } label: {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+        let session = controller.orchestrator
+        let isOff = session.state == .notStarted || session.state == .exited
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Describe the flow you want")
+                        .font(.dsMono(Theme.Size.body, .medium))
+                    Spacer(minLength: Theme.Space.s)
+                    Button { AppServices.shared.dismissHint(forFlow: controller.flow.id) } label: {
+                        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                            .frame(width: 14, height: 14)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                    .help("Build it by hand")
                 }
-                .buttonStyle(.plain)
-                .help("Build it by hand")
-            }
-            TextField("A writer and a reviewer that loop until the review approves", text: $text, axis: .vertical)
-                .lineLimit(3...6)
-                .textFieldStyle(.plain)
-                .font(.dsSans(Theme.Size.title))
-                .padding(Theme.Space.s)
-                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
-                .focused($isFocused)
-                .onSubmit(send)
-            HStack {
-                Text("The orchestrator builds it on the canvas. Or drag cards in from the palette.")
+                Text(isOff ? "The orchestrator builds it on the canvas, but its session isn't running."
+                           : "Tell the orchestrator and it builds it here. Or drag cards in from the palette.")
                     .font(.dsSans(Theme.Size.caption))
                     .foregroundStyle(Theme.inkSecondary.ui)
-                Spacer()
-                Button("Build it", action: send)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canSend)
+                    .fixedSize(horizontal: false, vertical: true)
+                if isOff {
+                    Button("Start the orchestrator") {
+                        controller.startOrchestrator()
+                        showOrchestrator()
+                    }
+                    .buttonStyle(.panel())
+                    .padding(.top, 3)
+                } else if !orchestratorIsShowing {
+                    Button("Show the orchestrator", action: showOrchestrator)
+                        .buttonStyle(.panel())
+                        .padding(.top, 3)
+                }
+            }
+            .foregroundStyle(Theme.ink.ui)
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, 9)
+            .frame(width: 250, alignment: .leading)
+            .floatingPanel()
+
+            if orchestratorIsShowing, !isOff {
+                // The arrow reaches across the gap to the panel, and leans toward it now and then.
+                Arrow()
+                    .stroke(Theme.ink.ui, style: StrokeStyle(lineWidth: Theme.Stroke.link, lineCap: .round, lineJoin: .round))
+                    .frame(width: 30, height: 12)
+                    .offset(x: nudged ? 4 : 0)
+                    .onAppear {
+                        guard Theme.Motion.isAllowed else { return }
+                        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { nudged = true }
+                    }
             }
         }
-        .foregroundStyle(Theme.ink.ui)
-        .padding(Theme.Space.l)
-        .frame(width: 460)
-        .floatingPanel()
     }
 
-    private func send() {
-        guard canSend else { return }
-        controller.orchestrator.send("Build this flow on the canvas with your tools, then tell me what you made: " + text)
-        controller.promptDismissed = true
-        showOrchestrator()
+    private struct Arrow: Shape {
+        nonisolated func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.minX + 2, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.midY))
+            path.move(to: CGPoint(x: rect.maxX - 8, y: rect.minY + 1))
+            path.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.maxX - 8, y: rect.maxY - 1))
+            return path
+        }
     }
 }

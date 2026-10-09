@@ -42,6 +42,9 @@ struct QueenBeeApp: App {
                 }
                 .disabled(services.current == nil)
             }
+            CommandGroup(replacing: .help) {
+                Button("Welcome to Queen Bee") { services.showsWelcome = true }
+            }
             CommandGroup(after: .toolbar) {
                 Button("Zoom In") { services.current?.canvas?.zoom(by: 1.25) }
                     .keyboardShortcut("=")
@@ -156,6 +159,9 @@ enum LaunchArguments {
     /// `--float` keeps the window above others without taking focus. Terminals stop painting
     /// in a hidden window, so a check that looks at the window needs it on screen.
     static var floats: Bool { CommandLine.arguments.contains("--float") }
+
+    /// `--welcome` shows the first-run walk-through in a test copy, which otherwise skips it.
+    static var welcome: Bool { CommandLine.arguments.contains("--welcome") }
 
     /// `--open <folder>` adds that folder to the sidebar and shows its first flow.
     static func takeFolder() -> String? {

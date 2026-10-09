@@ -70,8 +70,6 @@ final class FlowController: ToolHost {
     private(set) var handOffs = 0
     /// The canvas's zoom, published by the canvas for the zoom pill.
     var zoom: Double = 1
-    /// The person closed the "describe the flow" box on a new flow, to build it by hand.
-    var promptDismissed = false
 
     @ObservationIgnored weak var canvas: CanvasView?
     @ObservationIgnored private(set) var sessions: [String: TerminalSession] = [:]

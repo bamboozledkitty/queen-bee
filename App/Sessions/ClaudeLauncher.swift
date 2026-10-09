@@ -29,6 +29,19 @@ struct ResolvedEnvironment: Sendable {
         return ResolvedEnvironment(path: path, claude: claude)
     }
 
+    /// The oldest Claude Code the session plugin works with.
+    static let minimumClaude = "2.1.287"
+
+    /// The installed Claude Code's version, like "2.1.295", or nil when it can't be asked.
+    nonisolated func claudeVersion() async -> String? {
+        guard let claude else { return nil }
+        var env: [Environment.Key: String] = [:]
+        for (k, v) in variables() { if let key = Environment.Key(rawValue: k) { env[key] = v } }
+        let out = try? await run(.path(FilePath(claude)), arguments: ["--version"], environment: .custom(env),
+                                 input: .none, output: .string(limit: 2_000), error: .discarded).standardOutput
+        return out?.split(whereSeparator: { $0 == " " || $0 == "\n" }).first { $0.first?.isNumber == true }.map(String.init)
+    }
+
     /// The environment a session or one-shot call runs with. Claude Code's own variables
     /// are left out: a session that inherits them thinks it is a child of another session
     /// and stops saving its transcript.
