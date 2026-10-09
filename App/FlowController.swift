@@ -25,7 +25,7 @@ nonisolated enum Selection: Equatable, Sendable {
 }
 
 /// Where the run on show has been, for one card.
-nonisolated struct RunMark: Equatable, Sendable {
+nonisolated struct RunMark: Equatable, Sendable, Codable {
     /// Messages that reached the card along a link.
     var arrivals = 0
     /// Times a message left the card.
@@ -44,10 +44,20 @@ nonisolated enum FlowActivity: Sendable {
     case quiet, running, needsYou, failed
 }
 
-nonisolated struct LogLine: Identifiable, Sendable {
-    let id = UUID()
+nonisolated struct LogLine: Identifiable, Sendable, Codable {
+    var id = UUID()
     let date: Date
     let text: String
+}
+
+/// What a flow's runs left behind, kept between launches: the log, each End card's answer,
+/// and the marks the last run made on cards and links.
+nonisolated struct RunHistory: Codable, Sendable {
+    var log: [LogLine] = []
+    var results: [String: String] = [:]
+    var marks: [String: RunMark] = [:]
+    var linkPasses: [String: Int] = [:]
+    var handOffs = 0
 }
 
 /// One open flow: the graph, its sessions, and its runs. Every change to the graph goes
@@ -90,6 +100,7 @@ final class FlowController: ToolHost {
     @ObservationIgnored private(set) var sessions: [String: TerminalSession] = [:]
     @ObservationIgnored private var engine: Engine?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var historyTask: Task<Void, Never>?
     @ObservationIgnored private var isOpen = false
     /// Agents whose plugin has reported a finished turn since their session started. Once a
     /// plugin has spoken it is loaded, and the app never routes that agent's replies itself.
@@ -130,6 +141,57 @@ final class FlowController: ToolHost {
         self.fileURL = fileURL
         self.project = project
         undoManager.groupsByEvent = false
+        loadHistory()
+    }
+
+    // MARK: History
+
+    /// Kept in the app's own folder, not the project's, so a run leaves nothing to commit.
+    private var historyURL: URL {
+        services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(flow.id).json")
+    }
+
+    private func loadHistory() {
+        guard let data = try? Data(contentsOf: historyURL), let history = try? JSONDecoder().decode(RunHistory.self, from: data) else { return }
+        log = history.log
+        results = history.results.filter { flow.card($0.key) != nil }
+        marks = history.marks.filter { flow.card($0.key) != nil }
+        linkPasses = history.linkPasses
+        handOffs = history.handOffs
+        // What was loaded is earlier runs; the orchestrator is only told about new ones.
+        runLogStart = log.count
+    }
+
+    private func scheduleHistorySave() {
+        historyTask?.cancel()
+        historyTask = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            self.saveHistory()
+        }
+    }
+
+    private func saveHistory() {
+        historyTask?.cancel()
+        historyTask = nil
+        let history = RunHistory(log: log, results: results, marks: marks, linkPasses: linkPasses, handOffs: handOffs)
+        guard let data = try? JSONEncoder().encode(history) else { return }
+        try? FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: historyURL, options: .atomic)
+    }
+
+    /// Empties the log. Answers and run marks stay until the next run replaces them.
+    func clearLog() {
+        log.removeAll()
+        runLogStart = 0
+        saveHistory()
+    }
+
+    /// The flow is being deleted: its history goes with it.
+    func forgetHistory() {
+        historyTask?.cancel()
+        historyTask = nil
+        try? FileManager.default.removeItem(at: historyURL)
     }
 
     // MARK: Opening and closing
@@ -146,6 +208,7 @@ final class FlowController: ToolHost {
 
     func shutDown() {
         saveNow()
+        if historyTask != nil { saveHistory() }
         sessions.values.forEach { $0.terminate() }
         sessions.removeAll()
         isOpen = false
@@ -509,7 +572,13 @@ final class FlowController: ToolHost {
         let event = payload["hook_event_name"]?.stringValue ?? ""
         let type = payload["notification_type"]?.stringValue
             ?? ((payload["message"]?.stringValue ?? "").localizedCaseInsensitiveContains("permission") ? "permission_prompt" : nil)
+        let wasWaiting = session.state == .needsYou
         session.apply(hook: event, notificationType: type)
+        if session.state == .needsYou, !wasWaiting {
+            let name = who == Self.orchestratorKey ? "The orchestrator" : flow.card(who)?.name ?? "An agent"
+            Notifier.post(title: "\(name) needs you", body: "In \(flow.name). It is waiting for an answer or a permission.",
+                          flowID: flow.id, cardID: who == Self.orchestratorKey ? nil : who)
+        }
         if event == "Stop", let reply = payload["last_assistant_message"]?.stringValue { session.lastReply = reply }
         guard who != Self.orchestratorKey else { return }
         switch event {
@@ -663,10 +732,14 @@ final class FlowController: ToolHost {
                 live.send(delivery.text)
             }
         }
+        scheduleHistorySave()
         if output.finished {
             isRunning = false
             liveLinks.removeAll()
             notifyOrchestrator(of: output)
+            let stopped = marks.values.contains(where: \.failed)
+            Notifier.post(title: stopped ? "\(flow.name) stopped" : "\(flow.name) finished",
+                          body: log.last?.text ?? "", flowID: flow.id, cardID: nil)
         } else if output.runID != nil {
             isRunning = true
         }
@@ -739,6 +812,7 @@ final class FlowController: ToolHost {
 
     private func append(_ text: String) {
         log.append(LogLine(date: Date(), text: text))
+        scheduleHistorySave()
         if log.count > 600 {
             log.removeFirst(log.count - 600)
             runLogStart = max(0, runLogStart - 1)

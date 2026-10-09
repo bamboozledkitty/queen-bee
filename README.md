@@ -54,11 +54,16 @@ open build/Build/Products/Debug/QueenBee.app
 - The first time you open the app, a short walk-through explains agents, logic cards and the orchestrator. **Help → Welcome to Queen Bee** shows it again.
 - An empty flow shows a note pointing at the orchestrator: describe the flow you want there and it builds it. Close the note to build by hand.
 - The **palette** at the canvas's top-left holds the card types. Click one to add it, or drag it to where you want it. Each agent card starts its own Claude Code session.
-- Drag a card by its title bar. Drag its bottom-right corner to resize it. Pinch to zoom and two-finger scroll to pan, or use the zoom control at the bottom-right.
+- Drag a card by its title bar. Drag its bottom-right corner to resize it. A dragged card lines up with its neighbours or settles on the grid; hold Option to place it freely. Pinch to zoom and two-finger scroll to pan, or use the zoom control at the bottom-right.
+- Shift-click cards, or drag a box on empty canvas, to select several. They move, duplicate (⌘D), copy, paste and delete together, and the arrow keys nudge them. Escape deselects.
+- Click the canvas, then ⌘Z undoes the last change to the flow, including changes the orchestrator made.
+- Right-click a card, a link or empty canvas for a menu.
+- Zoomed out below 50%, each card shows its name and state in large type in place of its contents.
 - Drag from a dot on a card's right edge onto another card to link them. Click a link to change its max passes or delete it.
 - Click a card's title to open its settings: rename it in the header, change its rows, and delete or restart it from the footer. Click inside a terminal to type in it; click empty canvas to give the keyboard back.
 - Write the Start card's command, then press **Run**. Cards the run passes through get a check and a count, travelled links turn green, and the link a message is on now shows orange dashes.
-- The panel on the right has the **Orchestrator**, the run **Log**, and the **Output** of each End card. The line at the canvas's bottom-left shows the latest step.
+- The panel on the right has the **Orchestrator**, the run **Log**, and the **Output** of each End card. The line at the canvas's bottom-left shows the latest step. The log, the output and the last run's marks are kept between launches.
+- When the app is in the background, a notification tells you that a card needs you or a run has ended. **Settings** turns this off.
 - A flow that needs you says so on its sidebar row, and the toolbar shows a button that takes you to the waiting card.
 - **View → Appearance** switches between light, dark and following the system.
 

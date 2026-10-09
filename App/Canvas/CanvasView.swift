@@ -239,6 +239,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         if let controller, abs(controller.zoom - zoom) > 0.004 {
             controller.zoom = zoom
             document.needsDisplay = true
+            cardViews.values.forEach { $0.zoom = scrollView.magnification }
         }
     }
 
@@ -274,6 +275,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                 cardViews[card.id]?.removeFromSuperview()
                 view = card.kind == .agent ? AgentCardView(card: card) : LogicCardView(card: card)
                 view.canvas = self
+                view.zoom = scrollView.magnification
                 document.addSubview(view, positioned: .below, relativeTo: overlay)
                 cardViews[card.id] = view
                 if didFirstSync { view.playDrawIn() }

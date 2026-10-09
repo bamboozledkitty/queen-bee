@@ -147,6 +147,15 @@ class CardView: NSView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let runBadge = BadgeLabel()
     private let resizeGrip = ResizeGripView()
+    /// Covers the card when the canvas is zoomed too far out to read: the name, large, and a
+    /// word on what the card is doing. It is also the handle the card is dragged by then.
+    private let overview = OverviewView()
+    private let overviewName = NSTextField(wrappingLabelWithString: "")
+    private let overviewDetail = NSTextField(labelWithString: "")
+    /// Below this zoom a card shows its overview.
+    static let overviewBelow: CGFloat = 0.5
+    /// The canvas's zoom, set by the canvas.
+    var zoom: CGFloat = 1 { didSet { if zoom != oldValue { applyZoom(from: oldValue) } } }
     private var inputDot: PortDotView?
     private var outputDots: [PortDotView] = []
     private var dragOrigins: [String: CGPoint] = [:]
@@ -183,15 +192,29 @@ class CardView: NSView {
         titleBar.addSubview(nameLabel)
         titleBar.addSubview(runBadge)
 
+        overview.wantsLayer = true
+        overview.layer?.opacity = 0
+        overviewName.alignment = .center
+        overviewName.textColor = Theme.ink
+        overviewName.maximumNumberOfLines = 2
+        overviewName.lineBreakMode = .byTruncatingTail
+        overviewDetail.alignment = .center
+        overviewDetail.textColor = Theme.inkSecondary
+        overviewDetail.lineBreakMode = .byTruncatingTail
+        overview.addSubview(overviewName)
+        overview.addSubview(overviewDetail)
+        body.addSubview(overview)
+
         addSubview(resizeGrip)
 
-        let move = NSPanGestureRecognizer(target: self, action: #selector(handleMove(_:)))
-        titleBar.addGestureRecognizer(move)
-        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:)))
-        titleBar.addGestureRecognizer(click)
-        let double = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
-        double.numberOfClicksRequired = 2
-        titleBar.addGestureRecognizer(double)
+        // The title bar is the handle, and so is the overview while it covers the card.
+        for handle in [titleBar, overview] {
+            handle.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(handleMove(_:))))
+            handle.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:))))
+            let double = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
+            double.numberOfClicksRequired = 2
+            handle.addGestureRecognizer(double)
+        }
         resizeGrip.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(handleResize(_:))))
 
         rebuildPorts()
@@ -233,8 +256,26 @@ class CardView: NSView {
         } else {
             runBadge.set("", tone: .plain)
         }
+        overviewName.stringValue = new.name
+        // A card still called by its kind's name doesn't need telling twice.
+        let said = overviewText.caseInsensitiveCompare(new.name) == .orderedSame ? nil : overviewText
+        let count = runCount > 0 ? (runCount > 1 ? "✓ \(runCount)" : "✓") : nil
+        overviewDetail.stringValue = [said, count].compactMap { $0 }.joined(separator: " · ")
         needsLayout = true
         needsDisplay = true
+    }
+
+    /// What the overview says under the name. Subclasses say what the card is doing.
+    var overviewText: String { card.kind.label }
+
+    private func applyZoom(from old: CGFloat) {
+        let shows = zoom < Self.overviewBelow
+        overview.isShowing = shows
+        if shows != (old < Self.overviewBelow) {
+            overview.layer?.ease("opacity", to: Float(shows ? 1 : 0), duration: Theme.Motion.standardDuration)
+        }
+        // The overview's type is sized to read the same on screen whatever the zoom.
+        if shows { needsLayout = true }
     }
 
     /// How many times the run has passed through this card. An End counts what reached it;
@@ -288,6 +329,19 @@ class CardView: NSView {
         }
         nameLabel.frame = NSRect(x: 29, y: 6, width: max(0, right - 29), height: 16)
 
+        overview.frame = body.bounds
+        if overview.isShowing {
+            let scale = 1 / max(zoom, 0.01)
+            overviewName.font = Theme.mono(min(44, 13 * scale), .medium)
+            overviewDetail.font = Theme.mono(min(32, 10 * scale))
+            let width = max(0, overview.bounds.width - 24)
+            let nameHeight = min(overviewName.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
+            let detailHeight = overviewDetail.intrinsicContentSize.height
+            let top = max(4, (overview.bounds.height - nameHeight - detailHeight - 4) / 2)
+            overviewName.frame = NSRect(x: 12, y: top, width: width, height: nameHeight)
+            overviewDetail.frame = NSRect(x: 12, y: top + nameHeight + 4, width: width, height: detailHeight)
+        }
+
         let origin = CGPoint(x: card.x - g, y: card.y)
         if let dot = inputDot { place(dot, at: CanvasGeometry.inputPoint(of: card), origin: origin) }
         for dot in outputDots { place(dot, at: CanvasGeometry.outputPoint(of: card, port: dot.port), origin: origin) }
@@ -333,6 +387,9 @@ class CardView: NSView {
         body.layer?.ease("borderWidth", to: outline.width, animated: hasDrawn)
         titleBar.layer?.ease("backgroundColor", to: (titleBar.isHovered ? Theme.barHover : Theme.bar).cgColor, animated: hasDrawn)
         titleRule.layer?.backgroundColor = Theme.hairline.cgColor
+        // From far out, the overview's tint is what says a card is live or where a run stopped.
+        let tint = context.mark.failed ? Theme.failTint : context.isLive ? Theme.liveTint : Theme.surface
+        overview.layer?.ease("backgroundColor", to: tint.cgColor, animated: hasDrawn)
         updateContentLayers()
         hasDrawn = true
     }
@@ -503,6 +560,13 @@ func ActionMenuItem(_ title: String, _ run: @escaping () -> Void) -> NSMenuItem 
     // A menu item doesn't keep its target alive, so it carries it.
     item.representedObject = action
     return item
+}
+
+/// The cover a card wears at low zoom. It only takes clicks while it is showing.
+final class OverviewView: NSView {
+    var isShowing = false
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { isShowing ? super.hitTest(point).map { _ in self } : nil }
 }
 
 class FlippedView: NSView {

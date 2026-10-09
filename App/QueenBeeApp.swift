@@ -110,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Theme.apply(Theme.mode)
+        Notifier.start()
 
         // `kill` and a logout send SIGTERM, which would skip applicationWillTerminate. Turn it into a normal quit.
         signal(SIGTERM, SIG_IGN)

@@ -67,6 +67,12 @@ struct SidePanel: View {
                 }
                 Spacer()
                 if tab == .orchestrator { orchestratorState }
+                if tab == .log, !controller.log.isEmpty {
+                    Button("Clear") { controller.clearLog() }
+                        .buttonStyle(.panel(.quiet))
+                        .padding(.trailing, Theme.Space.s)
+                        .help("Empty the log. Runs are kept here between launches.")
+                }
             }
             .background(Theme.bar.ui)
             .animation(Theme.Motion.standard, value: tab)
@@ -123,7 +129,7 @@ private struct LogList: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if controller.log.isEmpty {
-                        Text("Runs are logged here: each hand-off, each condition's answer, and why a run stopped.")
+                        Text("Runs are logged here: each hand-off, each condition's answer, and why a run stopped. The log is kept between launches.")
                             .font(.dsSans(Theme.Size.body))
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
