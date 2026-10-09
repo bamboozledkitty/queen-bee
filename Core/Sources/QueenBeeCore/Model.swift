@@ -1,0 +1,209 @@
+import Foundation
+
+/// What a card on the canvas is: an agent (a live Claude Code session) or one of the logic cards.
+public enum CardKind: String, Codable, CaseIterable, Sendable {
+    case agent, start
+    case ifElse = "if"
+    case switchCard = "switch"
+    case and, or, prompt, loop, end, note
+
+    public var label: String {
+        switch self {
+        case .agent: "Agent"
+        case .start: "Start"
+        case .ifElse: "If / Else"
+        case .switchCard: "Switch"
+        case .and: "And"
+        case .or: "Or"
+        case .prompt: "Prompt"
+        case .loop: "Loop until"
+        case .end: "End"
+        case .note: "Note"
+        }
+    }
+}
+
+/// How an If or Loop card checks a message.
+public enum CheckKind: String, Codable, CaseIterable, Sendable {
+    case judge, contains
+    case notContains = "not-contains"
+    case regex
+}
+
+public struct Card: Codable, Identifiable, Equatable, Sendable {
+    public var id: String
+    public var kind: CardKind
+    public var name: String
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+
+    // Agent
+    /// A standing brief, added to the session's system prompt.
+    public var instructions: String?
+    /// A model alias or id for `claude --model`; nil for the person's default.
+    public var model: String?
+    /// low, medium, high, xhigh or max; nil for the model's default.
+    public var effort: String?
+    /// manual, acceptEdits, plan or auto; nil for the person's default.
+    public var permissionMode: String?
+    /// The folder the session runs in; nil for the project folder.
+    public var cwd: String?
+    /// The Claude Code session behind the card, set the first time it starts.
+    public var sessionID: String?
+
+    // Start
+    /// The command a run begins with.
+    public var command: String?
+
+    // If, Loop
+    public var check: CheckKind?
+    /// The text, pattern or plain-English statement the check tests.
+    public var value: String?
+    /// Loop: tries before it gives up and takes Done.
+    public var maxTries: Int?
+
+    // Switch
+    public var branches: [String]?
+
+    // Prompt
+    /// The rewritten message; `{{message}}` and `{{from}}` are filled in.
+    public var template: String?
+
+    // End
+    /// A file to save the final answer to, relative to the project folder.
+    public var saveTo: String?
+
+    // Note
+    public var text: String?
+
+    public init(id: String, kind: CardKind, name: String, x: Double, y: Double, width: Double, height: Double) {
+        self.id = id; self.kind = kind; self.name = name
+        self.x = x; self.y = y; self.width = width; self.height = height
+    }
+
+    /// A new card of `kind` with that kind's default settings and size.
+    public static func make(kind: CardKind, id: String = Flow.newID(), name: String, x: Double, y: Double) -> Card {
+        var c = Card(id: id, kind: kind, name: name, x: x, y: y, width: 240, height: 96)
+        switch kind {
+        case .agent: c.width = 560; c.height = 380; c.instructions = ""
+        case .start: c.command = ""
+        case .ifElse: c.check = .judge; c.value = ""
+        case .switchCard: c.branches = ["A", "B"]
+        case .loop: c.check = .judge; c.value = ""; c.maxTries = 3
+        case .prompt: c.template = ""
+        case .end: c.saveTo = ""
+        case .note: c.text = ""; c.height = 120
+        case .and, .or: break
+        }
+        c.height = max(c.height, Card.minimumHeight(for: c))
+        return c
+    }
+
+    /// Room for the title, a summary line and one row per named output.
+    public static func minimumHeight(for card: Card) -> Double {
+        if card.kind == .agent { return 200 }
+        let named = ports(of: card).count > 1 ? Double(ports(of: card).count) * 24 : 0
+        return 72 + named
+    }
+}
+
+/// A connection from one card's output to another card's input.
+public struct Link: Codable, Identifiable, Equatable, Sendable {
+    public var id: String
+    public var from: String
+    /// The output of `from` it leaves: out, yes, no, a branch name, other, done or again.
+    public var port: String
+    public var to: String
+    /// How many times it may fire in one run, so loops always end.
+    public var maxPasses: Int
+
+    public init(id: String = Flow.newID(), from: String, port: String = "out", to: String, maxPasses: Int = 3) {
+        self.id = id; self.from = from; self.port = port; self.to = to; self.maxPasses = maxPasses
+    }
+}
+
+public struct Flow: Codable, Identifiable, Equatable, Sendable {
+    public static let currentVersion = 1
+
+    public var version: Int
+    public var id: String
+    public var name: String
+    public var cards: [Card]
+    public var links: [Link]
+    /// The Claude Code session of the flow's orchestrator, set the first time it starts.
+    public var orchestratorSessionID: String?
+    /// Post a notice to the orchestrator when a run finishes, stalls or hits a limit.
+    public var notifyOrchestrator: Bool
+
+    public init(id: String = Flow.newID(), name: String, cards: [Card] = [], links: [Link] = []) {
+        self.version = Flow.currentVersion
+        self.id = id; self.name = name; self.cards = cards; self.links = links
+        self.orchestratorSessionID = nil
+        self.notifyOrchestrator = true
+    }
+
+    /// Eight hex characters: short enough to read in a log, long enough not to collide in one project.
+    public static func newID() -> String {
+        String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)).lowercased()
+    }
+
+    public func card(_ id: String) -> Card? { cards.first { $0.id == id } }
+    public func links(from id: String, port: String? = nil) -> [Link] {
+        links.filter { $0.from == id && (port == nil || $0.port == port) }
+    }
+    public func links(into id: String) -> [Link] { links.filter { $0.to == id } }
+}
+
+/// A card's outputs, top to bottom.
+public func ports(of card: Card) -> [String] {
+    switch card.kind {
+    case .ifElse: ["yes", "no"]
+    case .switchCard: (card.branches ?? []) + ["other"]
+    case .loop: ["done", "again"]
+    case .end, .note: []
+    case .agent, .start, .and, .or, .prompt: ["out"]
+    }
+}
+
+/// Whether messages can be linked into a card.
+public func acceptsInput(_ card: Card) -> Bool {
+    card.kind != .start && card.kind != .note
+}
+
+public func portLabel(_ port: String) -> String {
+    switch port {
+    case "out": "Out"
+    case "yes": "Yes"
+    case "no": "No"
+    case "other": "Other"
+    case "done": "Done"
+    case "again": "Again"
+    default: port
+    }
+}
+
+/// Changes to a card's settings. A nil field is left as it is.
+public struct CardPatch: Equatable, Sendable {
+    public var name: String?
+    public var x: Double?
+    public var y: Double?
+    public var width: Double?
+    public var height: Double?
+    public var instructions: String?
+    public var model: String?
+    public var effort: String?
+    public var permissionMode: String?
+    public var cwd: String?
+    public var command: String?
+    public var check: CheckKind?
+    public var value: String?
+    public var maxTries: Int?
+    public var branches: [String]?
+    public var template: String?
+    public var saveTo: String?
+    public var text: String?
+
+    public init() {}
+}
