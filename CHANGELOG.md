@@ -6,6 +6,12 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-09
+
+### Fixed
+
+- **Queen Bee → Check for Updates…** was always greyed out. It now turns on once the updater is ready.
+
 ## [0.1.0] - 2026-10-09
 
 First public release.
@@ -29,5 +35,6 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bamboozledkitty/queen-bee/releases/tag/v0.1.0

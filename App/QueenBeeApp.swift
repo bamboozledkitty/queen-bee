@@ -18,7 +18,7 @@ struct QueenBeeApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") { delegate.updater.checkForUpdates(nil) }
-                    .disabled(!delegate.updater.updater.canCheckForUpdates)
+                    .disabled(!delegate.updateChecker.canCheck)
             }
             CommandGroup(after: .newItem) {
                 Button("New Flow") { services.current?.project.newFlow() ?? services.projects.first?.newFlow() }
@@ -118,6 +118,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Whether the updater is free to check, kept current for the menu.
+    private(set) lazy var updateChecker = UpdateChecker(updater.updater)
+
     /// Stops every session the app started, so no `claude` process outlives the app.
     func applicationWillTerminate(_ notification: Notification) {
         AppServices.shared.shutDown()
@@ -126,6 +129,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Sessions belong to the app, not to a window: closing the window leaves them running,
     // and clicking the Dock icon brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+/// Follows Sparkle's "can check now" flag, which changes as the updater starts up and while a check runs.
+/// The menu reads `canCheck`, so its item turns on and off with it.
+@Observable
+final class UpdateChecker {
+    private(set) var canCheck = false
+    @ObservationIgnored private var observation: NSKeyValueObservation?
+
+    init(_ updater: SPUUpdater) {
+        observation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] _, change in
+            let value = change.newValue ?? false
+            Task { @MainActor in self?.canCheck = value }
+        }
+    }
 }
 
 enum CardKindMenu {
