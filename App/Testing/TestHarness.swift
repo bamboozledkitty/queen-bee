@@ -79,6 +79,13 @@ enum TestHarness {
             let how = controller.canvas?.testScroll(cardID: cardID, dy: payload["dy"]?.doubleValue ?? -120,
                                                     mode: payload["mode"]?.stringValue ?? "direct")
             return ["posted": how.map(JSONValue.string) ?? .null]
+        case "edgeLink":
+            // A link dragged from a card to the canvas's edge, and held there until the card
+            // it is for pans into reach.
+            guard let cardID, let target = payload["to"]?.stringValue.flatMap({ controller.flow.resolveCard($0)?.id }) else { return ["error": "edgeLink needs card and to"] }
+            await controller.canvas?.testEdgeLink(from: cardID, port: payload["port"]?.stringValue ?? "out", to: target,
+                                                  edge: payload["edge"]?.stringValue ?? "right")
+            return [:]
         case "zoom":
             if let to = payload["to"]?.doubleValue { controller.canvas?.testSetMagnification(to) }
             return [:]

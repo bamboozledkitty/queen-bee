@@ -8,7 +8,7 @@ Claude Code sessions on Haiku, and checks what the app did.
     ./scripts/build.sh && ./scripts/e2e.py            # every scenario
     ./scripts/e2e.py guard loop                        # some of them
 
-Scenarios: guard, settings, scroll, fanout, switch, loop, exit, apifail, noclaude.
+Scenarios: guard, settings, scroll, pan, fanout, switch, loop, exit, apifail, noclaude.
 """
 import json
 import os
@@ -200,7 +200,10 @@ APIFAIL = flow("Apifail", [
     card("end", "Out", 900, 40),
 ], [("Start", "out", "Broken", 3), ("Broken", "out", "Out", 3)])
 
-FLOWS = {"guard": GUARD, "fanout": FANOUT, "switch": SWITCH, "loop": LOOP, "exit": EXIT, "apifail": APIFAIL}
+# Far is well out of view of a window that shows Near.
+PAN = flow("Pan", [card("start", "Near", 300, 200, command="Go"), card("end", "Far", 4000, 200)], [])
+
+FLOWS = {"guard": GUARD, "pan": PAN, "fanout": FANOUT, "switch": SWITCH, "loop": LOOP, "exit": EXIT, "apifail": APIFAIL}
 
 
 # ---- scenarios ----
@@ -310,6 +313,27 @@ def scenario_scroll(app):
     time.sleep(0.3)
     m1 = app.state(fid)["canvas"]["magnification"]
     check("zoom changes the canvas's magnification", abs(m0 - 1.0) < 0.01 and abs(m1 - 0.5) < 0.01, f"{m0} -> {m1}")
+
+
+def scenario_pan(app):
+    print("pan: a link held at the canvas's edge pans it to a card out of view", flush=True)
+    fid = PAN["id"]
+    app.open_flow(PAN)
+    app.op(fid, "fit", card="Near")
+    time.sleep(1)
+    app.op(fid, "zoom", to=1.0)
+    time.sleep(0.3)
+    before = app.state(fid)["canvas"]
+    check("the far card starts out of view", before["x"] + before["width"] < 4000, str(before))
+    app.op(fid, "edgeLink", card="Near", to="Far", edge="right")
+    s = app.state(fid)
+    after = s["canvas"]
+    check("holding a link at the right edge pans the canvas", after["x"] > before["x"] + 1000, f"x {before['x']} -> {after['x']}")
+    check("it pans along the edge's axis only", abs(after["y"] - before["y"]) < 1, f"y {before['y']} -> {after['y']}")
+    check("the link lands on the card that panned into view", s["links"] == 1, str(s["links"]))
+    app.op(fid, "edgeLink", card="Far", to="Far", edge="top")
+    top = app.state(fid)["canvas"]["y"]
+    check("panning stops at the canvas's limit", abs(top + 3000) < 1, str(top))
 
 
 def scenario_fanout(app):
@@ -438,12 +462,12 @@ def scenario_noclaude(project):
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "fanout", "switch", "loop", "exit", "apifail", "noclaude"]
+    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "noclaude"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     project = tempfile.mkdtemp(prefix="qb-e2e-")
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
-    for i, name in enumerate(["guard", "fanout", "switch", "loop", "exit", "apifail"]):
+    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail"]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)
 

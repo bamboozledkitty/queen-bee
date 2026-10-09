@@ -106,14 +106,25 @@ final class CanvasDocumentView: NSView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        sender.draggingPasteboard.types?.contains(Self.cardKindType) == true ? .copy : []
+        let operation = draggingUpdated(sender)
+        if operation != [] { canvas?.beginEdgePan() }
+        return operation
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        draggingEntered(sender)
+        sender.draggingPasteboard.types?.contains(Self.cardKindType) == true ? .copy : []
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        canvas?.endEdgePan()
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        canvas?.endEdgePan()
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        canvas?.endEdgePan()
         guard let kind = kind(in: sender) else { return false }
         canvas?.controller?.addCard(kind, at: convert(sender.draggingLocation, from: nil))
         return true
@@ -312,6 +323,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        endEdgePan()
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         scrollMonitor = nil
         responderObservation = nil
@@ -415,17 +427,103 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             let t = g.translation(in: document)
             marqueeStart = CGPoint(x: now.x - t.x, y: now.y - t.y)
             marqueeBase = NSEvent.modifierFlags.contains(.shift) ? controller.selection.cardIDs : []
+            beginEdgePan { [weak self] in
+                guard let self else { return }
+                self.stretchMarquee(to: self.pointer)
+            }
             fallthrough
         case .changed:
-            guard let start = marqueeStart else { return }
-            let box = CGRect(x: min(start.x, now.x), y: min(start.y, now.y), width: abs(now.x - start.x), height: abs(now.y - start.y))
-            overlay.marquee = box
-            let inside = controller.flow.cards.filter { CanvasGeometry.frame(of: $0).intersects(box) }.map(\.id)
-            controller.select(.of(marqueeBase.union(inside)))
+            stretchMarquee(to: now)
         default:
+            endEdgePan()
             marqueeStart = nil
             overlay.marquee = nil
         }
+    }
+
+    private func stretchMarquee(to now: CGPoint) {
+        guard let controller, let start = marqueeStart else { return }
+        let box = CGRect(x: min(start.x, now.x), y: min(start.y, now.y), width: abs(now.x - start.x), height: abs(now.y - start.y))
+        overlay.marquee = box
+        let inside = controller.flow.cards.filter { CanvasGeometry.frame(of: $0).intersects(box) }.map(\.id)
+        controller.select(.of(marqueeBase.union(inside)))
+    }
+
+    // MARK: Edge panning
+
+    /// How near the canvas's edge, in points on screen, a drag starts to pan it.
+    private static let edgePanZone: CGFloat = 40
+    /// How fast a drag pans the canvas, in points on screen a second: just inside the zone,
+    /// and pushed to the edge or past it.
+    private static let edgePanSpeeds: (slow: CGFloat, fast: CGFloat) = (120, 1400)
+    private var edgePanTimer: Timer?
+    private var edgePanMoved: (() -> Void)?
+    /// How deep in each edge's zone the drag has to get before that edge pans. A drag that
+    /// starts beside an edge, as a card's title bar often is, pans only when pushed further.
+    private var edgePanSlack: [CGFloat] = []
+    private var edgePanLast: TimeInterval = 0
+
+    /// Where the pointer is on the canvas right now, whether or not it has moved.
+    var pointer: CGPoint {
+        document.convert(testPointer ?? window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil)
+    }
+
+    /// Where a check says the pointer is, in the window, in place of the real one.
+    private var testPointer: NSPoint?
+
+    /// From now until `endEdgePan`, holding the pointer at the canvas's edge pans the canvas
+    /// that way. `moved` runs after each step, for the drag to catch up with the canvas that
+    /// has slid under a pointer that may be standing still.
+    func beginEdgePan(moved: @escaping () -> Void = {}) {
+        endEdgePan()
+        edgePanMoved = moved
+        edgePanSlack = edgeDepths().map { min(max($0, 0), Self.edgePanZone) }
+        edgePanLast = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.edgePanStep() }
+        }
+        // Common modes, so it also fires while a card is dragged in from the palette.
+        RunLoop.main.add(timer, forMode: .common)
+        edgePanTimer = timer
+    }
+
+    func endEdgePan() {
+        edgePanTimer?.invalidate()
+        edgePanTimer = nil
+        edgePanMoved = nil
+    }
+
+    /// How far into the zone along each edge the pointer is, in points on screen: the left
+    /// edge, the right, the top, the bottom. Past the zone's width it is outside the canvas.
+    private func edgeDepths() -> [CGFloat] {
+        let visible = scrollView.documentVisibleRect, zoom = scrollView.magnification, at = pointer
+        return [at.x - visible.minX, visible.maxX - at.x, at.y - visible.minY, visible.maxY - at.y]
+            .map { Self.edgePanZone - $0 * zoom }
+    }
+
+    private func edgePanStep() {
+        guard edgePanTimer != nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = CGFloat(min(now - edgePanLast, 0.1))
+        edgePanLast = now
+        let zoom = max(scrollView.magnification, 0.01)
+        var steps = edgeDepths()
+        for (edge, depth) in steps.enumerated() {
+            // Pulling back from an edge gives up the allowance the drag started with there.
+            edgePanSlack[edge] = min(edgePanSlack[edge], max(depth, 0))
+            let slack = edgePanSlack[edge]
+            let push = min(max(depth - slack, 0) / max(Self.edgePanZone - slack, 1), 1)
+            let speed = push > 0 ? Self.edgePanSpeeds.slow + push * push * (Self.edgePanSpeeds.fast - Self.edgePanSpeeds.slow) : 0
+            // The same speed on screen at any zoom.
+            steps[edge] = speed * elapsed / zoom
+        }
+        let visible = scrollView.documentVisibleRect, limits = document.bounds
+        let wanted = CGPoint(
+            x: min(max(visible.minX + steps[1] - steps[0], limits.minX), max(limits.maxX - visible.width, limits.minX)),
+            y: min(max(visible.minY + steps[3] - steps[2], limits.minY), max(limits.maxY - visible.height, limits.minY)))
+        guard wanted != visible.origin else { return }
+        document.scroll(wanted)
+        if scrollView.documentVisibleRect.origin != visible.origin { edgePanMoved?() }
     }
 
     // MARK: Dragging cards
@@ -493,6 +591,34 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         } else {
             takeFocus()
         }
+    }
+
+    /// Drags a link out of a card to an edge of the canvas and holds it there, as the canvas
+    /// pans, until the pointer is over the card it is meant for. Then lets go.
+    func testEdgeLink(from cardID: String, port: String, to targetID: String, edge: String) async {
+        guard let source = controller?.flow.card(cardID) else { return }
+        let start = CanvasGeometry.outputPoint(of: source, port: port)
+        testPointer = document.convert(start, to: nil)
+        beginEdgePan { [weak self] in
+            guard let self else { return }
+            self.showPendingLink(from: cardID, port: port, start: start, to: self.pointer)
+        }
+        // Five points inside the edge, level with the port.
+        let visible = scrollView.documentVisibleRect, inset = 5 / max(scrollView.magnification, 0.01)
+        let held: CGPoint = switch edge {
+        case "left": CGPoint(x: visible.minX + inset, y: start.y)
+        case "top": CGPoint(x: start.x, y: visible.minY + inset)
+        case "bottom": CGPoint(x: start.x, y: visible.maxY - inset)
+        default: CGPoint(x: visible.maxX - inset, y: start.y)
+        }
+        testPointer = document.convert(held, to: nil)
+        for _ in 0..<200 where card(at: pointer)?.id != targetID {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        endEdgePan()
+        clearPendingLink()
+        finishLink(from: cardID, port: port, at: pointer)
+        testPointer = nil
     }
 
     func testSetMagnification(_ value: Double) {

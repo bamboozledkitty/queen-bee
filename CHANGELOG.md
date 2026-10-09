@@ -6,6 +6,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Dragging to the edge of the canvas pans it, so a link, a card, a selection box, a resize or a new card from the palette can reach what is out of view.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added
