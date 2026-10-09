@@ -27,7 +27,7 @@ First public release.
 - Each session gets its own secret for talking to the app, and only the orchestrator's session can use the flow-editing tools.
 - An End card's save path can't leave the project folder through a symlink.
 - The test harness is compiled out of release builds.
-- Releases are signed with a Developer ID, use the hardened runtime and are notarized by Apple.
+- Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
 [Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/bamboozledkitty/queen-bee/releases/tag/v0.1.0

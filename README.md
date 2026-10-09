@@ -17,7 +17,13 @@ You need:
 - macOS 26 or later on Apple silicon.
 - [Claude Code](https://claude.com/claude-code) 2.1.287 or later, signed in. The app loads a small plugin into each session, which needs that version.
 
-Releases are signed and notarized, so the app opens without a Gatekeeper warning. It checks for updates by itself, and **Queen Bee → Check for Updates…** checks straight away. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+Releases are signed with a Developer ID but not yet notarized by Apple, so the first time you open Queen Bee macOS says it could not verify the app. To open it:
+
+1. Click **Done** on that message.
+2. Open **System Settings → Privacy & Security** and scroll to the Security section.
+3. Click **Open Anyway** beside the line about Queen Bee, then confirm.
+
+You only do this once. The app checks for updates by itself, and **Queen Bee → Check for Updates…** checks straight away. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 Queen Bee starts Claude Code sessions as you and is not sandboxed. Read [SECURITY.md](SECURITY.md) before opening flows from someone else.
 

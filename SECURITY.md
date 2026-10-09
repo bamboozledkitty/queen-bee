@@ -25,8 +25,8 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   `~/Library/Application Support/QueenBee/`, a folder only your account can open. Each session has its own secret,
   and only the orchestrator's secret unlocks the flow-editing tools. A program already running as you with shell
   access could read those secrets, so this limits agents, not other software on your account.
-- **Updates are signed.** The app only installs an update signed with the project's update key, from a download
-  that Apple has notarized.
+- **Updates are signed.** The app only installs an update signed with the project's update key. Releases are signed
+  with a Developer ID but are not yet notarized by Apple.
 
 ## Known limits
 

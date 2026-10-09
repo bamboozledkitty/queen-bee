@@ -5,6 +5,9 @@
 #   ./scripts/release.sh            build, sign, notarize, update appcast.xml; everything lands in dist/
 #   ./scripts/release.sh publish    the same, then commit appcast.xml, tag, push and create the GitHub release
 #
+# QB_SKIP_NOTARIZE=1 leaves out notarization, for when there is no active Apple Developer membership.
+# People then have to approve the app in System Settings the first time they open it.
+#
 # Needs: a "Developer ID Application" certificate in the keychain, a notarytool profile
 # (xcrun notarytool store-credentials queenbee-notary), the Sparkle update key in the keychain
 # (generate_keys --account queen-bee), and gh signed in.
@@ -46,7 +49,16 @@ sign "$APP/Contents/MacOS/qb"
 sign "$APP"
 codesign --verify --deep --strict "$APP"
 
-notarize() { xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait; }
+if [ "${QB_SKIP_NOTARIZE:-}" = "1" ]; then
+  echo "== Skipping notarization (QB_SKIP_NOTARIZE=1)"
+  notarize() { :; }
+  staple() { :; }
+  assess() { :; }
+else
+  notarize() { xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait; }
+  staple() { xcrun stapler staple "$1"; }
+  assess() { spctl --assess "$@"; }
+fi
 
 echo "== Notarizing the app"
 # The app first, so the copy people drag out of the disk image carries its own ticket and opens offline.
@@ -54,8 +66,8 @@ rm -rf "$OUT" && mkdir -p "$OUT"
 ditto -c -k --keepParent "$APP" "$OUT/app.zip"
 notarize "$OUT/app.zip"
 rm "$OUT/app.zip"
-xcrun stapler staple "$APP"
-spctl --assess --type execute -vv "$APP"
+staple "$APP"
+assess --type execute -vv "$APP"
 
 echo "== Building the disk image"
 STAGE=$(mktemp -d)
@@ -65,8 +77,8 @@ hdiutil create -quiet -volname "Queen Bee" -srcfolder "$STAGE" -ov -format UDZO 
 rm -rf "$STAGE"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 notarize "$DMG"
-xcrun stapler staple "$DMG"
-spctl --assess --type open --context context:primary-signature -vv "$DMG"
+staple "$DMG"
+assess --type open --context context:primary-signature -vv "$DMG"
 
 echo "== Writing the update feed"
 # The notes for this version are its section of the changelog.
