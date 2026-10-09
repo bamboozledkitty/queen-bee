@@ -17,7 +17,7 @@ All notable changes to Queen Bee are listed here. The format follows
 - Escape deselects, ⌃⌘S shows or hides the projects list, and ⌥⌘0 the side panel.
 - The run log, End-card output and the last run's marks are kept between launches, with a Clear button on the log.
 - Notifications when a card needs you or a run ends while the app is in the background, with a setting to turn them off.
-- Below 50% zoom, cards show their name and state in large type.
+- Below 40% zoom, cards show their name and state in large type.
 
 ### Fixed
 

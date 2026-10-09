@@ -6,6 +6,8 @@ Each agent is a live `claude` session in a terminal that sits on the canvas. You
 
 ![A finished run: cards the run passed through carry a check and a count, and travelled links are green](docs/queen-bee-flight-plan-light.jpg)
 
+The app follows light and dark. [The same run in dark](docs/queen-bee-flight-plan-dark.jpg).
+
 ## Install
 
 **From a terminal** (opens straight away):
@@ -52,13 +54,16 @@ open build/Build/Products/Debug/QueenBee.app
 
 - **Add Project Folder…** at the foot of the sidebar adds a folder. Each folder lists its flows, and **+** beside its name makes a new one.
 - The first time you open the app, a short walk-through explains agents, logic cards and the orchestrator. **Help → Welcome to Queen Bee** shows it again.
+
+  ![The walk-through's second step: every agent is a live terminal](docs/queen-bee-first-run.jpg)
+
 - An empty flow shows a note pointing at the orchestrator: describe the flow you want there and it builds it. Close the note to build by hand.
 - The **palette** at the canvas's top-left holds the card types. Click one to add it, or drag it to where you want it. Each agent card starts its own Claude Code session.
 - Drag a card by its title bar. Drag its bottom-right corner to resize it. A dragged card lines up with its neighbours or settles on the grid; hold Option to place it freely. Pinch to zoom and two-finger scroll to pan, or use the zoom control at the bottom-right.
 - Shift-click cards, or drag a box on empty canvas, to select several. They move, duplicate (⌘D), copy, paste and delete together, and the arrow keys nudge them. Escape deselects.
 - ⌘Z undoes the last change to the flow, including changes the orchestrator made. With the cursor in a text box, it undoes typing there first.
 - Right-click a card, a link or empty canvas for a menu.
-- Zoomed out below 50%, each card shows its name and state in large type in place of its contents.
+- Zoomed out below 40%, each card shows its name and state in large type in place of its contents.
 - Drag from a dot on a card's right edge onto another card to link them. Click a link to change its max passes or delete it.
 - Click a card's title to open its settings: rename it in the header, change its rows, and delete or restart it from the footer. Click inside a terminal to type in it; click empty canvas to give the keyboard back.
 - Write the Start card's command, then press **Run**. Cards the run passes through get a check and a count, travelled links turn green, and the link a message is on now shows orange dashes.

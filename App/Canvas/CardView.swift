@@ -153,7 +153,7 @@ class CardView: NSView {
     private let overviewName = NSTextField(wrappingLabelWithString: "")
     private let overviewDetail = NSTextField(labelWithString: "")
     /// Below this zoom a card shows its overview.
-    static let overviewBelow: CGFloat = 0.5
+    static let overviewBelow: CGFloat = 0.4
     /// The canvas's zoom, set by the canvas.
     var zoom: CGFloat = 1 { didSet { if zoom != oldValue { applyZoom(from: oldValue) } } }
     private var inputDot: PortDotView?
