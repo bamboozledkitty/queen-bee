@@ -139,13 +139,19 @@ final class FlowController: ToolHost {
     func addCard(_ kind: CardKind) {
         var made: Card?
         let center = canvas?.visibleCenter ?? CGPoint(x: 400, y: 300)
-        // Step each new card a little so several added in a row don't stack exactly.
-        let nudge = Double(flow.cards.count % 6) * 28
-        perform {
-            let size = Card.make(kind: kind, name: "x", x: 0, y: 0)
-            made = try $0.addCard(kind: kind, x: max(20, center.x - size.width / 2 + nudge),
-                                  y: max(20, center.y - size.height / 2 + nudge))
+        let size = Card.make(kind: kind, name: "x", x: 0, y: 0)
+        // Start at the middle of what's on screen, then step down and right until the card
+        // doesn't land on top of another one.
+        var spot = CGRect(x: max(20, center.x - size.width / 2), y: max(20, center.y - size.height / 2),
+                          width: size.width, height: size.height)
+        let taken = flow.cards.map(CanvasGeometry.frame(of:))
+        var tries = 0
+        while tries < 30, taken.contains(where: { $0.insetBy(dx: -16, dy: -16).intersects(spot) }) {
+            spot.origin.x += 48
+            spot.origin.y += 48
+            tries += 1
         }
+        perform { made = try $0.addCard(kind: kind, x: spot.minX, y: spot.minY) }
         if let made { selection = .card(made.id) }
     }
 

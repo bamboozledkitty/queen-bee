@@ -78,6 +78,11 @@ final class AppServices {
         projects[project.root] = nil
     }
 
+    func shutDown() {
+        projects.values.forEach { $0.close() }
+        unlink(socketPath)
+    }
+
     func register(_ controller: FlowController) {
         controllers[controller.flow.id] = WeakController(controller)
     }

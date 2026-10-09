@@ -49,6 +49,8 @@ struct QueenBeeApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var termSignal: DispatchSourceSignal?
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // A second copy would fight the first over the socket: hand over to the first and quit.
         let me = NSRunningApplication.current
@@ -59,6 +61,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(0)
         }
         AppServices.shared.start()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // `kill` and a logout send SIGTERM, which would skip applicationWillTerminate. Turn it into a normal quit.
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler { NSApp.terminate(nil) }
+        source.resume()
+        termSignal = source
+    }
+
+    /// Stops every session the app started, so no `claude` process outlives the window it ran in.
+    func applicationWillTerminate(_ notification: Notification) {
+        AppServices.shared.shutDown()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
