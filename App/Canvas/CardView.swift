@@ -5,29 +5,40 @@ import QueenBeeCore
 final class PortDotView: NSView {
     let port: String
     let isOutput: Bool
-    var isLinked = false { didSet { needsDisplay = true } }
-    private var isHovered = false { didSet { needsDisplay = true } }
+    var isLinked = false { didSet { if isLinked != oldValue { needsDisplay = true } } }
+    private var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
+    private let dot = CAShapeLayer()
+    private var hasDrawn = false
 
     init(port: String, isOutput: Bool) {
         self.port = port
         self.isOutput = isOutput
         let d = CanvasGeometry.portRadius * 2 + 6
         super.init(frame: NSRect(x: 0, y: 0, width: d, height: d))
+        wantsLayer = true
+        dot.lineWidth = Theme.Stroke.card
+        layer?.addSublayer(dot)
         toolTip = isOutput ? "\(portLabel(port)): drag to another card to link" : "Input"
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    override func draw(_ dirtyRect: NSRect) {
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
         // An output grows a little under the pointer, to say it can be dragged from.
         let r = CanvasGeometry.portRadius + (isHovered && isOutput ? 1.5 : 0)
-        let circle = NSRect(x: bounds.midX - r, y: bounds.midY - r, width: r * 2, height: r * 2)
-        let path = NSBezierPath(ovalIn: circle)
-        (isLinked || isHovered ? Theme.ink : Theme.surface).setFill()
-        path.fill()
-        Theme.ink.setStroke()
-        path.lineWidth = Theme.Stroke.card
-        path.stroke()
+        let circle = CGRect(x: bounds.midX - r, y: bounds.midY - r, width: r * 2, height: r * 2)
+        dot.frame = bounds
+        dot.strokeColor = Theme.ink.cgColor
+        dot.ease("path", to: CGPath(ellipseIn: circle, transform: nil), animated: hasDrawn)
+        dot.ease("fillColor", to: (isLinked || isHovered ? Theme.ink : Theme.surface).cgColor, animated: hasDrawn)
+        hasDrawn = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 
     override func updateTrackingAreas() {
@@ -136,10 +147,22 @@ class CardView: NSView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let runBadge = BadgeLabel()
     private let resizeGrip = ResizeGripView()
+    /// Covers the card when the canvas is zoomed too far out to read: the name, large, and a
+    /// word on what the card is doing. It is also the handle the card is dragged by then.
+    private let overview = OverviewView()
+    private let overviewName = NSTextField(wrappingLabelWithString: "")
+    private let overviewDetail = NSTextField(labelWithString: "")
+    /// Below this zoom a card shows its overview.
+    static let overviewBelow: CGFloat = 0.4
+    /// The canvas's zoom, set by the canvas.
+    var zoom: CGFloat = 1 { didSet { if zoom != oldValue { applyZoom(from: oldValue) } } }
     private var inputDot: PortDotView?
     private var outputDots: [PortDotView] = []
-    private var dragOrigin = CGPoint.zero
+    private var dragOrigins: [String: CGPoint] = [:]
     private var dragSize = CGSize.zero
+    /// What the view last showed, so a sync that changes nothing for this card costs nothing.
+    private var shown: (card: Card, context: CardContext)?
+    private var hasDrawn = false
     var linkDrop: LinkDrop = .none { didSet { if linkDrop != oldValue { needsDisplay = true } } }
 
     override var isFlipped: Bool { true }
@@ -169,15 +192,29 @@ class CardView: NSView {
         titleBar.addSubview(nameLabel)
         titleBar.addSubview(runBadge)
 
+        overview.wantsLayer = true
+        overview.layer?.opacity = 0
+        overviewName.alignment = .center
+        overviewName.textColor = Theme.ink
+        overviewName.maximumNumberOfLines = 2
+        overviewName.lineBreakMode = .byTruncatingTail
+        overviewDetail.alignment = .center
+        overviewDetail.textColor = Theme.inkSecondary
+        overviewDetail.lineBreakMode = .byTruncatingTail
+        overview.addSubview(overviewName)
+        overview.addSubview(overviewDetail)
+        body.addSubview(overview)
+
         addSubview(resizeGrip)
 
-        let move = NSPanGestureRecognizer(target: self, action: #selector(handleMove(_:)))
-        titleBar.addGestureRecognizer(move)
-        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:)))
-        titleBar.addGestureRecognizer(click)
-        let double = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
-        double.numberOfClicksRequired = 2
-        titleBar.addGestureRecognizer(double)
+        // The title bar is the handle, and so is the overview while it covers the card.
+        for handle in [titleBar, overview] {
+            handle.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(handleMove(_:))))
+            handle.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:))))
+            let double = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
+            double.numberOfClicksRequired = 2
+            handle.addGestureRecognizer(double)
+        }
         resizeGrip.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(handleResize(_:))))
 
         rebuildPorts()
@@ -190,8 +227,16 @@ class CardView: NSView {
         CanvasGeometry.frame(of: card).insetBy(dx: -gutter, dy: 0)
     }
 
+    /// Whether `update` would change anything. Dragging one card re-syncs the whole canvas
+    /// on every move of the pointer; the cards that didn't move skip the work.
+    func isCurrent(card new: Card, context: CardContext) -> Bool {
+        guard let shown else { return false }
+        return shown.card == new && shown.context == context
+    }
+
     /// Brings the view in line with the model. Subclasses add their own state on top.
     func update(card new: Card, context: CardContext) {
+        shown = (new, context)
         let portsChanged = ports(of: new) != ports(of: card) || acceptsInput(new) != acceptsInput(card)
         card = new
         self.context = context
@@ -211,8 +256,26 @@ class CardView: NSView {
         } else {
             runBadge.set("", tone: .plain)
         }
+        overviewName.stringValue = new.name
+        // A card still called by its kind's name doesn't need telling twice.
+        let said = overviewText.caseInsensitiveCompare(new.name) == .orderedSame ? nil : overviewText
+        let count = runCount > 0 ? (runCount > 1 ? "✓ \(runCount)" : "✓") : nil
+        overviewDetail.stringValue = [said, count].compactMap { $0 }.joined(separator: " · ")
         needsLayout = true
         needsDisplay = true
+    }
+
+    /// What the overview says under the name. Subclasses say what the card is doing.
+    var overviewText: String { card.kind.label }
+
+    private func applyZoom(from old: CGFloat) {
+        let shows = zoom < Self.overviewBelow
+        overview.isShowing = shows
+        if shows != (old < Self.overviewBelow) {
+            overview.layer?.ease("opacity", to: Float(shows ? 1 : 0), duration: Theme.Motion.standardDuration)
+        }
+        // The overview's type is sized to read the same on screen whatever the zoom.
+        if shows { needsLayout = true }
     }
 
     /// How many times the run has passed through this card. An End counts what reached it;
@@ -266,6 +329,19 @@ class CardView: NSView {
         }
         nameLabel.frame = NSRect(x: 29, y: 6, width: max(0, right - 29), height: 16)
 
+        overview.frame = body.bounds
+        if overview.isShowing {
+            let scale = 1 / max(zoom, 0.01)
+            overviewName.font = Theme.mono(min(44, 13 * scale), .medium)
+            overviewDetail.font = Theme.mono(min(32, 10 * scale))
+            let width = max(0, overview.bounds.width - 24)
+            let nameHeight = min(overviewName.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
+            let detailHeight = overviewDetail.intrinsicContentSize.height
+            let top = max(4, (overview.bounds.height - nameHeight - detailHeight - 4) / 2)
+            overviewName.frame = NSRect(x: 12, y: top, width: width, height: nameHeight)
+            overviewDetail.frame = NSRect(x: 12, y: top + nameHeight + 4, width: width, height: detailHeight)
+        }
+
         let origin = CGPoint(x: card.x - g, y: card.y)
         if let dot = inputDot { place(dot, at: CanvasGeometry.inputPoint(of: card), origin: origin) }
         for dot in outputDots { place(dot, at: CanvasGeometry.outputPoint(of: card, port: dot.port), origin: origin) }
@@ -306,11 +382,16 @@ class CardView: NSView {
     // appearance in force, so they follow a change of mode.
     override func updateLayer() {
         body.layer?.backgroundColor = Theme.surface.cgColor
-        body.layer?.borderColor = outline.color.cgColor
-        body.layer?.borderWidth = outline.width
-        titleBar.layer?.backgroundColor = (titleBar.isHovered ? Theme.barHover : Theme.bar).cgColor
+        // The outline and the title's tint ease, so selecting and hovering don't snap.
+        body.layer?.ease("borderColor", to: outline.color.cgColor, animated: hasDrawn)
+        body.layer?.ease("borderWidth", to: outline.width, animated: hasDrawn)
+        titleBar.layer?.ease("backgroundColor", to: (titleBar.isHovered ? Theme.barHover : Theme.bar).cgColor, animated: hasDrawn)
         titleRule.layer?.backgroundColor = Theme.hairline.cgColor
+        // From far out, the overview's tint is what says a card is live or where a run stopped.
+        let tint = context.mark.failed ? Theme.failTint : context.isLive ? Theme.liveTint : Theme.surface
+        overview.layer?.ease("backgroundColor", to: tint.cgColor, animated: hasDrawn)
         updateContentLayers()
+        hasDrawn = true
     }
 
     /// Subclasses colour their own layers here.
@@ -323,31 +404,62 @@ class CardView: NSView {
 
     // MARK: Appearing
 
-    /// A new card draws in like a line on a plan: its outline first, then what it holds.
+    /// A new card settles into place: it fades in while growing the last few percent.
     func playDrawIn() {
-        guard Theme.Motion.isAllowed else { return }
-        titleBar.alphaValue = 0
-        content.alphaValue = 0
-        alphaValue = 0
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Theme.Motion.base
-            animator().alphaValue = 1
-        } completionHandler: {
-            Task { @MainActor in
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = Theme.Motion.base
-                    self.titleBar.animator().alphaValue = 1
-                    self.content.animator().alphaValue = 1
-                }
-            }
-        }
+        guard Theme.Motion.isAllowed, let layer else { return }
+        // A view's layer is anchored at its corner, so the scale is taken about the middle by hand.
+        let middle = CGPoint(x: bounds.midX, y: bounds.midY)
+        var small = CATransform3DMakeTranslation(middle.x, middle.y, 0)
+        small = CATransform3DScale(small, 0.96, 0.96, 1)
+        small = CATransform3DTranslate(small, -middle.x, -middle.y, 0)
+        let grow = CABasicAnimation(keyPath: "transform")
+        grow.fromValue = small
+        grow.toValue = CATransform3DIdentity
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let group = CAAnimationGroup()
+        group.animations = [grow, fade]
+        group.duration = Theme.Motion.standardDuration
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(group, forKey: "drawIn")
     }
 
     // MARK: Gestures
 
     @objc private func handleClick(_ g: NSClickGestureRecognizer) {
-        canvas?.controller?.select(.card(card.id))
+        // Shift adds the card to what is selected, or takes it out.
+        if NSEvent.modifierFlags.contains(.shift) {
+            canvas?.controller?.toggleSelection(card.id)
+        } else {
+            canvas?.controller?.select(.card(card.id))
+        }
         canvas?.takeFocus()
+    }
+
+    // MARK: Menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let controller = canvas?.controller else { return nil }
+        // A right-click on a card outside the selection is about that card alone.
+        if !controller.selection.cardIDs.contains(card.id) { controller.select(.card(card.id)) }
+        canvas?.takeFocus()
+        let id = card.id
+        let several = controller.selection.cardIDs.count > 1
+        let menu = NSMenu()
+        if !several {
+            menu.addItem(menuItem("Zoom to Card") { [weak canvas] in canvas?.zoom(toCard: id) })
+            if card.kind == .agent {
+                let isLive = controller.session(forCard: id).isLive
+                menu.addItem(menuItem(isLive ? "Restart Session" : "Start Session") { [weak controller] in controller?.startSession(forCard: id) })
+            }
+            menu.addItem(.separator())
+        }
+        menu.addItem(menuItem("Duplicate") { [weak controller] in controller?.duplicateSelection() })
+        menu.addItem(menuItem("Copy") { [weak controller] in controller?.copySelection() })
+        menu.addItem(.separator())
+        menu.addItem(menuItem(several ? "Delete \(controller.selection.cardIDs.count) Cards" : "Delete") { [weak controller] in controller?.deleteSelection() })
+        return menu
     }
 
     @objc private func handleDoubleClick(_ g: NSClickGestureRecognizer) {
@@ -358,20 +470,18 @@ class CardView: NSView {
         guard let canvas else { return }
         switch g.state {
         case .began:
-            dragOrigin = CGPoint(x: card.x, y: card.y)
-            canvas.controller?.select(.card(card.id))
+            dragOrigins = canvas.controller?.dragOrigins(for: card.id) ?? [:]
+            canvas.controller?.beginGesture()
             // The card moves under the pointer, which would keep re-asking the title bar for
             // its open hand. Cursor regions are switched off until the drag ends.
             window?.disableCursorRects()
             NSCursor.closedHand.set()
         case .changed:
-            let t = g.translation(in: canvas.document)
-            canvas.controller?.moveCard(card.id, x: max(CardView.farLeft, dragOrigin.x + t.x), y: max(CardView.farLeft, dragOrigin.y + t.y))
+            canvas.drag(dragOrigins, primary: card.id, by: g.translation(in: canvas.document))
         case .ended, .cancelled, .failed:
-            if g.state == .ended {
-                let t = g.translation(in: canvas.document)
-                canvas.controller?.moveCard(card.id, x: max(CardView.farLeft, dragOrigin.x + t.x), y: max(CardView.farLeft, dragOrigin.y + t.y))
-            }
+            if g.state == .ended { canvas.drag(dragOrigins, primary: card.id, by: g.translation(in: canvas.document)) }
+            canvas.clearGuides()
+            canvas.controller?.endGesture("Move")
             window?.enableCursorRects()
             window?.invalidateCursorRects(for: titleBar)
         default: break
@@ -384,9 +494,20 @@ class CardView: NSView {
         case .began:
             dragSize = CGSize(width: card.width, height: card.height)
             canvas.controller?.select(.card(card.id))
+            canvas.controller?.beginGesture()
         case .changed, .ended:
             let t = g.translation(in: canvas.document)
-            canvas.controller?.resizeCard(card.id, width: dragSize.width + t.x, height: dragSize.height + t.y)
+            var width = dragSize.width + t.x, height = dragSize.height + t.y
+            // The corner being dragged settles on the grid. Option lets it rest anywhere.
+            if !NSEvent.modifierFlags.contains(.option) {
+                let step = CanvasGeometry.gridStep
+                width = ((card.x + width) / step).rounded() * step - card.x
+                height = ((card.y + height) / step).rounded() * step - card.y
+            }
+            canvas.controller?.resizeCard(card.id, width: width, height: height)
+            if g.state == .ended { canvas.controller?.endGesture("Resize") }
+        case .cancelled, .failed:
+            canvas.controller?.endGesture("Resize")
         default: break
         }
     }
@@ -408,7 +529,7 @@ class CardView: NSView {
 }
 
 /// What a card view needs to know beyond its own card.
-struct CardContext {
+struct CardContext: Equatable {
     var isSelected = false
     var isFocused = false
     /// The card is where the run is right now: an agent at work or waiting on a hand-off.
@@ -421,7 +542,33 @@ struct CardContext {
     var sessionState: SessionState = .notStarted
     /// The card's settings have changed since its session started.
     var needsRestart = false
+    /// A run is under way. Marks left by a run that has ended say where it went, not what is live.
+    var isRunning = false
     var mark = RunMark()
+}
+
+/// Runs a closure when its menu item is picked, for menus built on the spot.
+private final class MenuAction: NSObject {
+    let run: () -> Void
+    init(_ run: @escaping () -> Void) { self.run = run }
+    @objc func fire() { run() }
+}
+
+/// A menu item that runs `run`.
+func menuItem(_ title: String, _ run: @escaping () -> Void) -> NSMenuItem {
+    let action = MenuAction(run)
+    let item = NSMenuItem(title: title, action: #selector(MenuAction.fire), keyEquivalent: "")
+    item.target = action
+    // A menu item doesn't keep its target alive, so it carries it.
+    item.representedObject = action
+    return item
+}
+
+/// The cover a card wears at low zoom. It only takes clicks while it is showing.
+final class OverviewView: NSView {
+    var isShowing = false
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { isShowing ? super.hitTest(point).map { _ in self } : nil }
 }
 
 class FlippedView: NSView {

@@ -10,6 +10,9 @@ final class AgentCardView: CardView {
     private let startButton = NSButton(title: "Start session", target: nil, action: nil)
     private let terminalHolder = FlippedView()
     private weak var terminal: NSView?
+    private var stateText = ""
+
+    override var overviewText: String { stateText }
 
     override init(card: Card) {
         super.init(card: card)
@@ -40,14 +43,15 @@ final class AgentCardView: CardView {
     override func update(card new: Card, context: CardContext) {
         let state = context.sessionState
         // In a run, an agent that has been handed work but hasn't started on it yet is waiting.
-        let isWaiting = context.mark.arrivals > context.mark.passes && state == .idle
+        let isWaiting = context.isRunning && context.mark.arrivals > context.mark.passes && state == .idle
         let tone: BadgeLabel.Tone = switch state {
         case .working, .needsYou: .live
         case .failed, .exited: .fail
         case .idle: isWaiting ? .live : .plain
         case .notStarted, .starting: .plain
         }
-        stateBadge.set(isWaiting ? "waiting" : state.label.lowercased(), tone: tone)
+        stateText = isWaiting ? "waiting" : state.label.lowercased()
+        stateBadge.set(stateText, tone: tone)
         restartBadge.set(context.needsRestart ? "restart to apply" : "", tone: .live)
         let live = state != .notStarted && state != .exited
         startButton.isHidden = live

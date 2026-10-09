@@ -14,8 +14,8 @@ final class LinkLayerView: NSView {
     var passes: [String: Int] = [:] { didSet { needsDisplay = true } }
     /// Links a message is travelling now.
     var liveLinkIDs: Set<String> = [] { didSet { if liveLinkIDs != oldValue { refresh() } } }
-    /// A link being dragged out of a port, not made yet.
-    var pending: (from: CGPoint, to: CGPoint)? { didSet { needsDisplay = true } }
+    /// The route of a link being dragged out of a port, not made yet.
+    var pending: [CGPoint]? { didSet { needsDisplay = true } }
 
     private let marching = CAShapeLayer()
 
@@ -95,8 +95,7 @@ final class LinkLayerView: NSView {
         }
         if let pending {
             ctx.saveGState()
-            ctx.move(to: pending.from)
-            ctx.addLine(to: pending.to)
+            ctx.addPath(LinkRouter.path(through: pending))
             ctx.setStrokeColor(Theme.select.cgColor)
             ctx.setLineWidth(Theme.Stroke.link)
             ctx.setLineDash(phase: 0, lengths: [5, 4])

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import Observation
 import QueenBeeCore
@@ -7,10 +8,25 @@ nonisolated enum Selection: Equatable, Sendable {
     case none
     case card(String)
     case link(String)
+    /// Two or more cards, picked with Shift or by dragging a box round them.
+    case cards(Set<String>)
+
+    /// One card is `.card`, so its settings show; several are `.cards`.
+    static func of(_ ids: Set<String>) -> Selection {
+        ids.count > 1 ? .cards(ids) : ids.first.map { .card($0) } ?? .none
+    }
+
+    var cardIDs: Set<String> {
+        switch self {
+        case .card(let id): [id]
+        case .cards(let ids): ids
+        case .none, .link: []
+        }
+    }
 }
 
 /// Where the run on show has been, for one card.
-nonisolated struct RunMark: Equatable, Sendable {
+nonisolated struct RunMark: Equatable, Sendable, Codable {
     /// Messages that reached the card along a link.
     var arrivals = 0
     /// Times a message left the card.
@@ -29,10 +45,20 @@ nonisolated enum FlowActivity: Sendable {
     case quiet, running, needsYou, failed
 }
 
-nonisolated struct LogLine: Identifiable, Sendable {
-    let id = UUID()
+nonisolated struct LogLine: Identifiable, Sendable, Codable {
+    var id = UUID()
     let date: Date
     let text: String
+}
+
+/// What a flow's runs left behind, kept between launches: the log, each End card's answer,
+/// and the marks the last run made on cards and links.
+nonisolated struct RunHistory: Codable, Sendable {
+    var log: [LogLine] = []
+    var results: [String: String] = [:]
+    var marks: [String: RunMark] = [:]
+    var linkPasses: [String: Int] = [:]
+    var handOffs = 0
 }
 
 /// One open flow: the graph, its sessions, and its runs. Every change to the graph goes
@@ -70,13 +96,12 @@ final class FlowController: ToolHost {
     private(set) var handOffs = 0
     /// The canvas's zoom, published by the canvas for the zoom pill.
     var zoom: Double = 1
-    /// The person closed the "describe the flow" box on a new flow, to build it by hand.
-    var promptDismissed = false
 
     @ObservationIgnored weak var canvas: CanvasView?
     @ObservationIgnored private(set) var sessions: [String: TerminalSession] = [:]
     @ObservationIgnored private var engine: Engine?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var historyTask: Task<Void, Never>?
     @ObservationIgnored private var isOpen = false
     /// Agents whose plugin has reported a finished turn since their session started. Once a
     /// plugin has spoken it is loaded, and the app never routes that agent's replies itself.
@@ -84,6 +109,14 @@ final class FlowController: ToolHost {
     /// Hand-offs given to a plugin to send, by the receiving session's id, until it says how they went.
     @ObservationIgnored private var inFlight: [String: Delivery] = [:]
     @ObservationIgnored private var runLogStart = 0
+    /// Undo and redo for the graph, driven by the Edit menu.
+    @ObservationIgnored let undoManager = UndoManager()
+    /// Bumped whenever the undo stack changes, so the Edit menu's titles keep up.
+    private(set) var undoRevision = 0
+    /// The last change given an undo step, so a run of the same kind of change shares one.
+    @ObservationIgnored private var lastUndo: (key: String, at: Date)?
+    /// The flow as it was when a drag began. While set, the drag's steps don't each get an undo.
+    @ObservationIgnored private var gestureStart: Flow?
 
     private var services: AppServices { AppServices.shared }
     var warnings: [String: String] { QueenBeeCore.warnings(for: flow) }
@@ -110,6 +143,65 @@ final class FlowController: ToolHost {
         self.flow = flow
         self.fileURL = fileURL
         self.project = project
+        undoManager.groupsByEvent = false
+        loadHistory()
+    }
+
+    // MARK: History
+
+    /// Kept in the app's own folder, not the project's, so a run leaves nothing to commit.
+    /// A flow's id comes from its file, which may have been written by someone else, so it is
+    /// never used as a file name as it stands: anything but a plain id is replaced by its hash.
+    private var historyURL: URL {
+        let id = flow.id
+        let plain = !id.isEmpty && id.count <= 64 && id.unicodeScalars.allSatisfy {
+            ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "-"
+        }
+        let name = plain ? id : SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        return services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(name).json")
+    }
+
+    private func loadHistory() {
+        guard let data = try? Data(contentsOf: historyURL), let history = try? JSONDecoder().decode(RunHistory.self, from: data) else { return }
+        log = history.log
+        results = history.results.filter { flow.card($0.key) != nil }
+        marks = history.marks.filter { flow.card($0.key) != nil }
+        linkPasses = history.linkPasses
+        handOffs = history.handOffs
+        // What was loaded is earlier runs; the orchestrator is only told about new ones.
+        runLogStart = log.count
+    }
+
+    private func scheduleHistorySave() {
+        historyTask?.cancel()
+        historyTask = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            self.saveHistory()
+        }
+    }
+
+    private func saveHistory() {
+        historyTask?.cancel()
+        historyTask = nil
+        let history = RunHistory(log: log, results: results, marks: marks, linkPasses: linkPasses, handOffs: handOffs)
+        guard let data = try? JSONEncoder().encode(history) else { return }
+        try? FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: historyURL, options: .atomic)
+    }
+
+    /// Empties the log. Answers and run marks stay until the next run replaces them.
+    func clearLog() {
+        log.removeAll()
+        runLogStart = 0
+        saveHistory()
+    }
+
+    /// The flow is being deleted: its history goes with it.
+    func forgetHistory() {
+        historyTask?.cancel()
+        historyTask = nil
+        try? FileManager.default.removeItem(at: historyURL)
     }
 
     // MARK: Opening and closing
@@ -126,6 +218,7 @@ final class FlowController: ToolHost {
 
     func shutDown() {
         saveNow()
+        if historyTask != nil { saveHistory() }
         sessions.values.forEach { $0.terminate() }
         sessions.removeAll()
         isOpen = false
@@ -133,9 +226,10 @@ final class FlowController: ToolHost {
 
     // MARK: Editing
 
-    /// Applies a change to a copy of the flow and keeps it only if it is valid.
+    /// Applies a change to a copy of the flow and keeps it only if it is valid. `name` is what
+    /// the Edit menu calls it. Changes with the same `key` made close together undo as one.
     @discardableResult
-    private func perform(_ body: (inout Flow) throws -> Void) -> Bool {
+    private func perform(_ name: String, key: String? = nil, undoable: Bool = true, _ body: (inout Flow) throws -> Void) -> Bool {
         var copy = flow
         do {
             try body(&copy)
@@ -144,9 +238,81 @@ final class FlowController: ToolHost {
             return false
         }
         banner = nil
+        let old = flow
         flow = copy
+        if undoable { registerUndo(from: old, name, key: key) }
         reconcile()
         return true
+    }
+
+    // MARK: Undo
+
+    /// Makes the change from `old` to the flow as it is now undoable.
+    private func registerUndo(from old: Flow, _ name: String, key: String? = nil, within window: TimeInterval = 1.5) {
+        guard gestureStart == nil, old != flow else { return }
+        if let key, let last = lastUndo, last.key == key, Date().timeIntervalSince(last.at) < window {
+            // The step already on the stack goes back to before the first of these changes.
+            lastUndo = (key, Date())
+            return
+        }
+        lastUndo = key.map { ($0, Date()) }
+        // Each step is its own group. Left to group by event, changes that arrive from the
+        // orchestrator's tools rather than from a click all landed in one step.
+        undoManager.beginUndoGrouping()
+        undoManager.registerUndo(withTarget: self) { $0.restore(old, name) }
+        undoManager.setActionName(name)
+        undoManager.endUndoGrouping()
+        undoRevision += 1
+    }
+
+    /// The Edit menu's Undo and Redo. Text being typed keeps its own: with the cursor in a
+    /// text box that has something to take back, the command goes there. Everywhere else,
+    /// wherever the keyboard happens to be, it works on the flow.
+    func undo() {
+        if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.undoManager?.canUndo == true {
+            text.undoManager?.undo()
+        } else if undoManager.canUndo {
+            undoManager.undo()
+        }
+    }
+
+    func redo() {
+        if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.undoManager?.canRedo == true {
+            text.undoManager?.redo()
+        } else if undoManager.canRedo {
+            undoManager.redo()
+        }
+    }
+
+    var undoTitle: String { _ = undoRevision; return undoManager.canUndo ? undoManager.undoMenuItemTitle : "Undo" }
+    var redoTitle: String { _ = undoRevision; return undoManager.canRedo ? undoManager.redoMenuItemTitle : "Redo" }
+
+    /// Puts the graph back to `old`, and makes that undoable in turn. Sessions are not part
+    /// of the graph: a card that is still there keeps the session it has now.
+    private func restore(_ old: Flow, _ name: String) {
+        let current = flow
+        var back = old
+        back.orchestratorSessionID = current.orchestratorSessionID
+        for i in back.cards.indices {
+            if let now = current.card(back.cards[i].id) { back.cards[i].sessionID = now.sessionID }
+        }
+        lastUndo = nil
+        flow = back
+        undoManager.registerUndo(withTarget: self) { $0.restore(current, name) }
+        undoManager.setActionName(name)
+        undoRevision += 1
+        reconcile()
+    }
+
+    /// A drag is starting: everything until `endGesture` is one undo step.
+    func beginGesture() {
+        if gestureStart == nil { gestureStart = flow }
+    }
+
+    func endGesture(_ name: String) {
+        guard let start = gestureStart else { return }
+        gestureStart = nil
+        registerUndo(from: start, name)
     }
 
     /// After the graph changes: drop sessions of deleted cards, start sessions of new ones,
@@ -160,6 +326,9 @@ final class FlowController: ToolHost {
         switch selection {
         case .card(let id) where flow.card(id) == nil: selection = .none
         case .link(let id) where !flow.links.contains(where: { $0.id == id }): selection = .none
+        case .cards(let ids):
+            let left = ids.filter { flow.card($0) != nil }
+            if left != ids { selection = .of(left) }
         default: break
         }
         if isOpen, services.environment != nil { startMissingSessions() }
@@ -169,21 +338,107 @@ final class FlowController: ToolHost {
         if selection != new { selection = new }
     }
 
-    func moveCard(_ id: String, x: Double, y: Double) {
-        guard let i = flow.cards.firstIndex(where: { $0.id == id }) else { return }
-        flow.cards[i].x = x
-        flow.cards[i].y = y
+    /// Shift-click: adds a card to what is selected, or takes it out.
+    func toggleSelection(_ id: String) {
+        var ids = selection.cardIDs
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        selection = .of(ids)
+    }
+
+    func selectAll() {
+        selection = .of(Set(flow.cards.map(\.id)))
+    }
+
+    /// Where each card a drag of `id` moves is now. Dragging one of several selected cards
+    /// moves them all; dragging any other card selects it and moves it alone.
+    func dragOrigins(for id: String) -> [String: CGPoint] {
+        if !selection.cardIDs.contains(id) { selection = .card(id) }
+        var origins: [String: CGPoint] = [:]
+        for card in flow.cards where selection.cardIDs.contains(card.id) { origins[card.id] = CGPoint(x: card.x, y: card.y) }
+        return origins
+    }
+
+    /// Puts each card at its origin plus `offset`. Part of a drag, so it is undone with the drag.
+    func moveCards(from origins: [String: CGPoint], by offset: CGSize) {
+        // The whole group stops at the canvas's edge together, so it keeps its shape.
+        guard let left = origins.values.map(\.x).min(), let top = origins.values.map(\.y).min() else { return }
+        let dx = max(offset.width, CardView.farLeft - left), dy = max(offset.height, CardView.farLeft - top)
+        var copy = flow
+        for i in copy.cards.indices {
+            guard let origin = origins[copy.cards[i].id] else { continue }
+            copy.cards[i].x = origin.x + dx
+            copy.cards[i].y = origin.y + dy
+        }
+        if copy != flow { flow = copy }
+    }
+
+    /// The arrow keys: moves what is selected by a step.
+    func nudgeSelection(dx: Double, dy: Double) {
+        let ids = selection.cardIDs
+        guard !ids.isEmpty else { return }
+        let old = flow
+        let moving = flow.cards.filter { ids.contains($0.id) }
+        guard let left = moving.map(\.x).min(), let top = moving.map(\.y).min() else { return }
+        // Stopped at the canvas's edge as a group, so it keeps its shape.
+        let stepX = max(dx, CardView.farLeft - left), stepY = max(dy, CardView.farLeft - top)
+        for i in flow.cards.indices where ids.contains(flow.cards[i].id) {
+            flow.cards[i].x += stepX
+            flow.cards[i].y += stepY
+        }
+        registerUndo(from: old, "Move", key: "nudge")
     }
 
     func resizeCard(_ id: String, width: Double, height: Double) {
         var patch = CardPatch()
         patch.width = width
         patch.height = height
-        perform { try $0.updateCard(id, patch: patch) }
+        perform("Resize") { try $0.updateCard(id, patch: patch) }
     }
 
     func update(_ id: String, _ patch: CardPatch) {
-        perform { try $0.updateCard(id, patch: patch) }
+        // A text box undoing its own typing writes the old text back through here. That is
+        // the undo, not a new change, so it doesn't get a step of its own.
+        let textManager = (NSApp.keyWindow?.firstResponder as? NSTextView)?.undoManager
+        let isTextUndo = textManager?.isUndoing == true || textManager?.isRedoing == true
+        perform("Change \(flow.card(id)?.name ?? "Card")", key: "edit:\(id)", undoable: !isTextUndo) { try $0.updateCard(id, patch: patch) }
+    }
+
+    // MARK: Copying
+
+    /// What Copy puts on the pasteboard and Paste reads back: only this app writes or reads it.
+    static let fragmentType = NSPasteboard.PasteboardType("dev.queenbee.flow-fragment")
+
+    func duplicateSelection() {
+        let ids = selection.cardIDs
+        guard !ids.isEmpty else { return }
+        var made: [Card] = []
+        perform(ids.count == 1 ? "Duplicate Card" : "Duplicate Cards") { made = $0.insert($0.fragment(of: ids), dx: 48, dy: 48) }
+        if !made.isEmpty { selection = .of(Set(made.map(\.id))) }
+    }
+
+    func copySelection() {
+        let ids = selection.cardIDs
+        guard !ids.isEmpty, let data = try? JSONEncoder().encode(flow.fragment(of: ids)) else { return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setData(data, forType: Self.fragmentType)
+    }
+
+    var canPaste: Bool { NSPasteboard.general.data(forType: Self.fragmentType) != nil }
+
+    /// Pastes what was copied. With a point, as from the canvas's menu, its top-left card
+    /// lands there; without, it lands a step away from where it was copied.
+    func paste(at point: CGPoint? = nil) {
+        guard let data = NSPasteboard.general.data(forType: Self.fragmentType),
+              let fragment = try? JSONDecoder().decode(FlowFragment.self, from: data), !fragment.cards.isEmpty else { return }
+        var dx = 48.0, dy = 48.0
+        if let point, let left = fragment.cards.map(\.x).min(), let top = fragment.cards.map(\.y).min() {
+            dx = point.x - left
+            dy = point.y - top
+        }
+        var made: [Card] = []
+        perform("Paste") { made = $0.insert(fragment, dx: dx, dy: dy) }
+        if !made.isEmpty { selection = .of(Set(made.map(\.id))) }
     }
 
     /// Adds a card. With a point, as when one is dropped from the palette, the card is centred
@@ -209,24 +464,25 @@ final class FlowController: ToolHost {
         }
         var patch = CardPatch()
         if kind == .agent, let model = UserDefaults.standard.string(forKey: "defaultModel"), !model.isEmpty { patch.model = model }
-        perform { made = try $0.addCard(kind: kind, x: spot.minX, y: spot.minY, patch: patch) }
+        perform("Add \(kind.label)") { made = try $0.addCard(kind: kind, x: spot.minX, y: spot.minY, patch: patch) }
         if let made { selection = .card(made.id) }
     }
 
     func link(from: String, port: String, to: String) {
         var made: Link?
-        perform { made = try $0.addLink(from: from, port: port, to: to) }
+        perform("Link") { made = try $0.addLink(from: from, port: port, to: to) }
         if let made { selection = .link(made.id) }
     }
 
     func setMaxPasses(_ id: String, _ value: Int) {
-        perform { try $0.updateLink(id, maxPasses: value) }
+        perform("Change Link", key: "link:\(id)") { try $0.updateLink(id, maxPasses: value) }
     }
 
     func deleteSelection() {
         switch selection {
-        case .card(let id): perform { try $0.removeCard(id) }
-        case .link(let id): perform { try $0.removeLink(id) }
+        case .card(let id): perform("Delete Card") { try $0.removeCard(id) }
+        case .link(let id): perform("Delete Link") { try $0.removeLink(id) }
+        case .cards(let ids): perform("Delete Cards") { for id in ids { try $0.removeCard(id) } }
         case .none: break
         }
     }
@@ -234,7 +490,9 @@ final class FlowController: ToolHost {
     func rename(to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let old = flow
         flow.name = trimmed
+        registerUndo(from: old, "Rename Flow")
     }
 
     // MARK: Saving
@@ -359,7 +617,13 @@ final class FlowController: ToolHost {
         let event = payload["hook_event_name"]?.stringValue ?? ""
         let type = payload["notification_type"]?.stringValue
             ?? ((payload["message"]?.stringValue ?? "").localizedCaseInsensitiveContains("permission") ? "permission_prompt" : nil)
+        let wasWaiting = session.state == .needsYou
         session.apply(hook: event, notificationType: type)
+        if session.state == .needsYou, !wasWaiting {
+            let name = who == Self.orchestratorKey ? "The orchestrator" : flow.card(who)?.name ?? "An agent"
+            Notifier.post(title: "\(name) needs you", body: "In \(flow.name). It is waiting for an answer or a permission.",
+                          flowID: flow.id, cardID: who)
+        }
         if event == "Stop", let reply = payload["last_assistant_message"]?.stringValue { session.lastReply = reply }
         guard who != Self.orchestratorKey else { return }
         switch event {
@@ -513,10 +777,14 @@ final class FlowController: ToolHost {
                 live.send(delivery.text)
             }
         }
+        scheduleHistorySave()
         if output.finished {
             isRunning = false
             liveLinks.removeAll()
             notifyOrchestrator(of: output)
+            let stopped = marks.values.contains(where: \.failed)
+            Notifier.post(title: stopped ? "\(flow.name) stopped" : "\(flow.name) finished",
+                          body: log.last?.text ?? "", flowID: flow.id, cardID: nil)
         } else if output.runID != nil {
             isRunning = true
         }
@@ -589,6 +857,7 @@ final class FlowController: ToolHost {
 
     private func append(_ text: String) {
         log.append(LogLine(date: Date(), text: text))
+        scheduleHistorySave()
         if log.count > 600 {
             log.removeFirst(log.count - 600)
             runLogStart = max(0, runLogStart - 1)
@@ -609,7 +878,10 @@ final class FlowController: ToolHost {
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T {
         var copy = flow
         let value = try body(&copy)
+        let old = flow
         flow = copy
+        // The orchestrator builds a flow in a burst of calls. They undo together.
+        registerUndo(from: old, "Orchestrator's Changes", key: "orchestrator", within: 8)
         reconcile()
         return value
     }

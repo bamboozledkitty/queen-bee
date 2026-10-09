@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage(Theme.modeKey) private var mode = Theme.Mode.system.rawValue
     @AppStorage("defaultModel") private var defaultModel = ""
+    @AppStorage(Notifier.settingKey) private var notifies = true
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
@@ -17,6 +18,8 @@ struct SettingsView: View {
                 Text("Your Claude Code default").tag("")
                 ForEach(["fable", "opus", "sonnet", "haiku"], id: \.self) { Text($0.capitalized).tag($0) }
             }
+
+            Toggle("Notify me when a card needs me or a run ends", isOn: $notifies)
 
             LabeledContent("Claude Code") {
                 if let claude = services.environment?.claude {

@@ -57,6 +57,7 @@ struct WorkspaceView: View {
                         tab = .orchestrator
                         showsPanel = true
                     }
+                    .environment(\.orchestratorIsShowing, showsPanel && tab == .orchestrator)
                     .id(controller.flow.id)
                 } else {
                     Spacer(minLength: 0)
@@ -70,9 +71,15 @@ struct WorkspaceView: View {
                 }
             }
             .padding(Self.gap)
+
+            if services.showsWelcome {
+                OnboardingView { services.closeWelcome() }
+                    .transition(.opacity)
+            }
         }
-        .animation(.easeOut(duration: Theme.Motion.base), value: showsSidebar)
-        .animation(.easeOut(duration: Theme.Motion.base), value: showsPanel)
+        .animation(Theme.Motion.standard, value: services.showsWelcome)
+        .animation(Theme.Motion.standard, value: showsSidebar)
+        .animation(Theme.Motion.standard, value: showsPanel)
         .onChange(of: obstruction, initial: true) { services.canvasObstruction = obstruction }
         .navigationTitle(services.current?.flow.name ?? "Queen Bee")
         .navigationSubtitle(subtitle)
@@ -199,13 +206,20 @@ private struct TitlePlate: View {
 }
 
 /// What floats over the canvas between the two panels: the palette, the selected card's
-/// settings, a banner, the status line, the zoom control, and a new flow's prompt. Its empty
+/// settings, a banner, the status line, the zoom control, and an empty flow's pointer to the
+/// orchestrator. Its empty
 /// areas let clicks through to the canvas underneath.
 struct CanvasControls: View {
     let controller: FlowController
     let showLog: () -> Void
     let showOrchestrator: () -> Void
+    @Environment(\.orchestratorIsShowing) private var orchestratorIsShowing
     private var services: AppServices { AppServices.shared }
+
+    /// An empty flow points at the orchestrator until it is built in, or the note is closed.
+    private var showsCallout: Bool {
+        controller.isBlank && controller.selection == .none && !services.dismissedHints.contains(controller.flow.id)
+    }
 
     var body: some View {
         Color.clear
@@ -213,22 +227,35 @@ struct CanvasControls: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topLeading) { PaletteView(controller: controller) }
             .overlay(alignment: .topTrailing) {
-                if controller.selection != .none { InspectorView(controller: controller) }
+                if controller.selection != .none {
+                    InspectorView(controller: controller)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
+                }
             }
             .overlay(alignment: .top) {
                 if let message = services.problem ?? controller.banner {
-                    BannerView(text: message) { controller.banner = nil }
+                    BannerView(text: message) {
+                        if services.problem != nil { services.dismissProblem() } else { controller.banner = nil }
+                    }
                 }
             }
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }
             .overlay(alignment: .bottomTrailing) { ZoomPill(controller: controller) }
-            .overlay {
-                if controller.isBlank, !controller.promptDismissed {
-                    BlankFlowPrompt(controller: controller, showOrchestrator: showOrchestrator)
+            .overlay(alignment: .trailing) {
+                if showsCallout {
+                    // Halfway down the panel's edge, clear of a new flow's Start card and the zoom control.
+                    OrchestratorCallout(controller: controller, orchestratorIsShowing: orchestratorIsShowing, showOrchestrator: showOrchestrator)
+                        .transition(.opacity.combined(with: .offset(x: -8)))
                 }
             }
-            .animation(.easeOut(duration: Theme.Motion.base), value: controller.selection)
+            .animation(Theme.Motion.standard, value: controller.selection)
+            .animation(Theme.Motion.standard, value: showsCallout)
     }
+}
+
+extension EnvironmentValues {
+    /// The side panel is open on the orchestrator's tab.
+    @Entry var orchestratorIsShowing = false
 }
 
 struct WelcomeView: View {

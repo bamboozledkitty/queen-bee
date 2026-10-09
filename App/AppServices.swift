@@ -27,6 +27,27 @@ final class AppServices {
     }
     /// How much of the canvas the floating panels cover, published by the window for the canvas.
     @ObservationIgnored var canvasObstruction = CanvasObstruction(left: 400, right: 450)
+    /// The first-run walk-through is on screen.
+    var showsWelcome = false
+    /// Blank flows whose pointer to the orchestrator has been closed.
+    private(set) var dismissedHints: Set<String> = []
+    private static let hintsKey = "dismissedOrchestratorHints"
+
+    func dismissHint(forFlow id: String) {
+        dismissedHints.insert(id)
+        if remembersProjects { UserDefaults.standard.set(dismissedHints.sorted(), forKey: Self.hintsKey) }
+    }
+
+    /// Puts away the app's own message. It comes back if the problem does.
+    func dismissProblem() {
+        problem = nil
+    }
+
+    func closeWelcome() {
+        showsWelcome = false
+        if remembersProjects { UserDefaults.standard.set(true, forKey: OnboardingView.seenKey) }
+    }
+
     /// Flows kept at the top of the sidebar.
     private(set) var pinnedFlowIDs: Set<String> = []
 
@@ -59,6 +80,9 @@ final class AppServices {
         installPlugin()
         startServer()
         restoreProjects()
+        // A test run isn't a first run, unless it asks to see the walk-through.
+        showsWelcome = remembersProjects ? !UserDefaults.standard.bool(forKey: OnboardingView.seenKey) : LaunchArguments.welcome
+        if remembersProjects { dismissedHints = Set(UserDefaults.standard.stringArray(forKey: Self.hintsKey) ?? []) }
         Task {
             let resolved = await ResolvedEnvironment.resolve()
             self.environment = resolved

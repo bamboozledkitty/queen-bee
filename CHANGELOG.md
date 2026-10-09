@@ -9,6 +9,28 @@ All notable changes to Queen Bee are listed here. The format follows
 ### Added
 
 - A terminal installer, `scripts/install.sh`, that fetches the latest release, checks its signature and installs it without the Gatekeeper prompt.
+- A first-run walk-through of agents, logic cards and the orchestrator, which also checks that Claude Code is installed and new enough. **Help → Welcome to Queen Bee** shows it again.
+- Undo and redo for every change to a flow, including the orchestrator's, from the Edit menu.
+- Selecting several cards with Shift-click or a dragged box. Selected cards move, nudge with the arrow keys, duplicate, copy, paste and delete together.
+- Dragged cards line up with nearby cards, with a guide line, or settle on the grid. Option places a card freely.
+- Right-click menus on cards, links and the canvas.
+- Escape deselects, ⌃⌘S shows or hides the projects list, and ⌥⌘0 the side panel.
+- The run log, End-card output and the last run's marks are kept between launches, with a Clear button on the log.
+- Notifications when a card needs you or a run ends while the app is in the background, with a setting to turn them off.
+- Below 40% zoom, cards show their name and state in large type.
+
+### Fixed
+
+- The app's own message, such as Claude Code not being found, can be dismissed with a click.
+
+### Changed
+
+- Zooming from the zoom control, the menu, fit and a double-click on a card's title is animated. Hover, selection and panel changes ease instead of snapping.
+- A link being dragged previews the route it will take, and lands on the input of a card that would accept it.
+- The card settings panel is rebuilt: the name is edited in its header, settings sit in ruled rows, and Delete and the session's Start or Restart share a footer.
+- Clicking into a terminal no longer opens that card's settings. Click the card's title for those.
+- An empty flow shows a small note pointing at the orchestrator in place of the box in the middle of the canvas. Closing it is remembered.
+- Floating panels no longer cast a shadow.
 
 ## [0.1.1] - 2026-10-09
 

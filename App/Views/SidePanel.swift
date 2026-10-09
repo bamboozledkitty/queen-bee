@@ -8,6 +8,7 @@ struct SidePanel: View {
     @Binding var tab: PanelTab
     @Binding var width: Double
     @State private var startWidth: Double?
+    @Namespace private var tabs
 
     var body: some View {
         content
@@ -48,9 +49,13 @@ struct SidePanel: View {
                                     Text("\(count)").font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                                 }
                             }
-                            Rectangle()
-                                .fill(tab == item ? Theme.ink.ui : .clear)
-                                .frame(height: 2)
+                            // One rule shared by the tabs, so it slides to the tab you pick.
+                            ZStack {
+                                if tab == item {
+                                    Rectangle().fill(Theme.ink.ui).matchedGeometryEffect(id: "rule", in: tabs)
+                                }
+                            }
+                            .frame(height: 2)
                         }
                         .fixedSize()
                         .padding(.horizontal, Theme.Space.m)
@@ -62,8 +67,15 @@ struct SidePanel: View {
                 }
                 Spacer()
                 if tab == .orchestrator { orchestratorState }
+                if tab == .log, !controller.log.isEmpty {
+                    Button("Clear") { controller.clearLog() }
+                        .buttonStyle(.panel(.quiet))
+                        .padding(.trailing, Theme.Space.s)
+                        .help("Empty the log. Runs are kept here between launches.")
+                }
             }
             .background(Theme.bar.ui)
+            .animation(Theme.Motion.standard, value: tab)
             Rectangle().fill(Theme.hairline.ui).frame(height: 1)
 
             // The orchestrator's terminal stays in place under the other tabs, so switching
@@ -117,7 +129,7 @@ private struct LogList: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if controller.log.isEmpty {
-                        Text("Runs are logged here: each hand-off, each condition's answer, and why a run stopped.")
+                        Text("Runs are logged here: each hand-off, each condition's answer, and why a run stopped. The log is kept between launches.")
                             .font(.dsSans(Theme.Size.body))
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
@@ -136,7 +148,8 @@ private struct LogList: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Theme.Space.m)
             }
-            .onChange(of: controller.log.count) {
+            // By the last line, not the count: a full log stays the same length as it turns over.
+            .onChange(of: controller.log.last?.id) {
                 if let last = controller.log.last { proxy.scrollTo(last.id, anchor: .bottom) }
             }
             .onAppear {

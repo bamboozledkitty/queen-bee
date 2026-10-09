@@ -39,6 +39,7 @@ final class ProjectModel {
 
     func delete(_ controller: FlowController) {
         controller.shutDown()
+        controller.forgetHistory()
         try? store.delete(controller.fileURL)
         AppServices.shared.unregister(flowID: controller.flow.id)
         controllers.removeAll { $0 === controller }

@@ -82,6 +82,36 @@ enum TestHarness {
         case "zoom":
             if let to = payload["to"]?.doubleValue { controller.canvas?.testSetMagnification(to) }
             return [:]
+        case "fit":
+            // The zoom control's fit button, or a double-click on a card's title.
+            if let cardID { controller.canvas?.zoom(toCard: cardID) } else { controller.canvas?.zoomToFit() }
+            return [:]
+        case "pick":
+            // A click on a card's title, or on bare canvas when no card is named.
+            controller.select(cardID.map { .card($0) } ?? .none)
+            return [:]
+        case "add":
+            guard let kind = payload["kind"]?.stringValue.flatMap(CardKind.init(rawValue:)) else { return ["error": "add needs kind"] }
+            controller.addCard(kind)
+            return [:]
+        case "selectAll":
+            controller.selectAll()
+            return [:]
+        case "duplicate":
+            controller.duplicateSelection()
+            return [:]
+        case "delete":
+            controller.deleteSelection()
+            return [:]
+        case "nudge":
+            controller.nudgeSelection(dx: payload["dx"]?.doubleValue ?? 0, dy: payload["dy"]?.doubleValue ?? 0)
+            return [:]
+        case "undo":
+            controller.undo()
+            return [:]
+        case "redo":
+            controller.redo()
+            return [:]
         default:
             return ["error": "unknown op"]
         }
@@ -110,6 +140,10 @@ enum TestHarness {
         }
         return [
             "name": .string(controller.flow.name),
+            "cards": .array(controller.flow.cards.map { ["name": .string($0.name), "x": .number($0.x), "y": .number($0.y)] }),
+            "links": .number(Double(controller.flow.links.count)),
+            "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
+            "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),
             "isRunning": .bool(controller.isRunning),
             "log": .array(controller.log.map { .string($0.text) }),
             "results": .object(results),
