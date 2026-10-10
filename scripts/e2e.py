@@ -8,8 +8,10 @@ Claude Code sessions on Haiku, and checks what the app did.
     ./scripts/build.sh && ./scripts/e2e.py            # every scenario
     ./scripts/e2e.py guard loop                        # some of them
 
-Scenarios: guard, settings, scroll, pan, fanout, switch, loop, exit, apifail, noclaude.
+Scenarios: guard, settings, scroll, pan, fanout, switch, loop, exit, apifail, ask, gates, subflow, timed, deep, noclaude.
 """
+import atexit
+import glob
 import json
 import os
 import shutil
@@ -23,7 +25,9 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "build/Build/Products/Debug/QueenBee.app")
 # Unix socket paths are capped at 104 bytes, so the test copy's support folder has to be short.
-SUPPORT = os.path.expanduser("~/Library/Application Support/QueenBeeTest")
+# Each run has its own, named for its process, so two runs at once leave each other alone.
+SUPPORT_PREFIX = os.path.expanduser("~/Library/Application Support/QBTest-")
+SUPPORT = SUPPORT_PREFIX + str(os.getpid())
 
 results = []
 
@@ -61,7 +65,7 @@ class App:
         self.project = project
         self.support = support
         shutil.rmtree(support, ignore_errors=True)
-        before = set(pids())
+        atexit.register(shutil.rmtree, support, ignore_errors=True)
         cmd = ["open", "-g", "-n", APP, "--env", f"QB_SUPPORT_DIR={support}"]
         for k, v in (env or {}).items():
             cmd += ["--env", f"{k}={v}"]
@@ -71,9 +75,9 @@ class App:
         deadline = time.time() + 30
         self.pid = None
         while time.time() < deadline:
-            new = set(pids()) - before
-            if new and os.path.exists(os.path.join(support, "qb.sock")):
-                self.pid = new.pop()
+            mine = [p for p in pids() if uses(p, support)]
+            if mine and os.path.exists(os.path.join(support, "qb.sock")):
+                self.pid = mine[0]
                 break
             time.sleep(0.3)
         if self.pid is None:
@@ -122,6 +126,34 @@ class App:
 def pids():
     out = subprocess.run(["pgrep", "-x", "QueenBee"], capture_output=True, text=True).stdout.split()
     return [int(p) for p in out]
+
+
+def uses(pid, support):
+    """Whether a copy of the app was started on this support folder. Another run's copy never is."""
+    out = subprocess.run(["ps", "eww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+    return f"QB_SUPPORT_DIR={support} " in out + " "
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
+
+
+def sweep():
+    """Clears up after runs that died without tidying: quits the copy of the app each left
+    running and removes its folder. A run that is still going keeps its own."""
+    for folder in glob.glob(SUPPORT_PREFIX + "*"):
+        owner = os.path.basename(folder)[len("QBTest-"):].split("-")[0]
+        if owner.isdigit() and not alive(int(owner)):
+            for pid in pids():
+                if uses(pid, folder):
+                    subprocess.run(["kill", "-TERM", str(pid)])
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 # ---- building flows ----
@@ -204,7 +236,15 @@ APIFAIL = flow("Apifail", [
 # Far is well out of view of a window that shows Near.
 PAN = flow("Pan", [card("start", "Near", 300, 200, command="Go"), card("end", "Far", 4000, 200)], [])
 
-FLOWS = {"guard": GUARD, "pan": PAN, "fanout": FANOUT, "switch": SWITCH, "loop": LOOP, "exit": EXIT, "apifail": APIFAIL}
+ASK = flow("Ask", [
+    card("start", "Start", 40, 40, command="What is the password?"),
+    card("agent", "Asker", 340, 40, instructions="You don't know the password. When a hand-off asks for it, use your SendMessage tool once to ask "
+         "the session that runs this flow to send you a message containing only the word BANANA, then end your turn. "
+         "When that message arrives, reply with exactly the word it contains and nothing else."),
+    card("end", "Out", 900, 40),
+], [("Start", "out", "Asker", 1), ("Asker", "out", "Out", 1)])
+
+FLOWS = {"guard": GUARD, "pan": PAN, "fanout": FANOUT, "switch": SWITCH, "loop": LOOP, "exit": EXIT, "apifail": APIFAIL, "ask": ASK}
 
 
 # ---- scenarios ----
@@ -335,6 +375,20 @@ def scenario_pan(app):
     app.op(fid, "edgeLink", card="Far", to="Far", edge="top")
     top = app.state(fid)["canvas"]["y"]
     check("panning stops at the canvas's limit", abs(top + 3000) < 1, str(top))
+    # The two cards are further apart than the usual 20% floor can show between the panels.
+    app.op(fid, "fit")
+    time.sleep(1.5)
+    c = app.state(fid)["canvas"]
+    check("zoom to fit shows a wide flow whole, clear of the panels", c["clearFrom"] <= 300 and c["clearTo"] >= 4240, str(c))
+    wide = c["magnification"]
+    for dy in (-40, 40):
+        app.op(fid, "scroll", dy=dy, mode="direct", command=True)
+    check("the wheel doesn't zoom further out than the fit", app.state(fid)["canvas"]["magnification"] >= wide - 0.001, str(app.state(fid)["canvas"]))
+    app.op(fid, "zoom", to=1.0)
+    time.sleep(0.3)
+    app.op(fid, "zoom", to=0.05)
+    time.sleep(0.3)
+    check("zooming by hand still stops at 20%", abs(app.state(fid)["canvas"]["magnification"] - 0.2) < 0.01, str(app.state(fid)["canvas"]))
 
 
 def scenario_fanout(app):
@@ -423,6 +477,30 @@ def scenario_exit(app):
         check("Restart brings the session back", False, str(e)[:300])
 
 
+def scenario_ask(app):
+    print("ask: a turn that ends on a question to the orchestrator isn't passed on as the answer", flush=True)
+    fid = ASK["id"]
+    app.open_flow(ASK)
+    app.wait(fid, lambda s: s["orchestrator"]["state"] == "idle", 90, "the orchestrator to be ready")
+    app.op(fid, "run")
+    try:
+        s = app.wait(fid, lambda s: any("asked a question" in line for line in s["log"]), 120, "Asker to ask its question")
+    except TimeoutError as e:
+        check("the question turn is held back", False, str(e)[:400])
+        return
+    check("the question turn is held back", s["isRunning"] and not s["results"], f"{s['isRunning']} {s['results']}")
+    check("the log says the run hangs on the question", any("waiting on Asker" in line for line in s["log"]), str(s["log"][-4:]))
+    try:
+        s = app.wait(fid, lambda s: not s["isRunning"], 180, "the run to end once the orchestrator answered")
+    except TimeoutError as e:
+        check("the reply after the answer is what goes on", False, str(e)[:400])
+        app.op(fid, "stop")
+        return
+    # The link out of Asker allows one pass, so this only holds if the question turn didn't spend it.
+    check("the reply after the answer is what goes on", "BANANA" in s["results"].get("Out", ""), str(s["results"]))
+    check("nothing is left marked as waiting for an answer", s["awaitingAnswer"] == [], str(s["awaitingAnswer"]))
+
+
 def scenario_apifail(app):
     print("apifail: a turn that ends in an API error stops the run", flush=True)
     fid = APIFAIL["id"]
@@ -499,6 +577,10 @@ def scenario_gates(app):
     h = app.wait(fid, lambda s: s["holds"] and s["holds"][0]["card"] == "Check it", 20, "the approval")["holds"]
     check("the script's output reaches the approval", h[0]["text"] == "HELLO FROM THE START CARD", str(h))
     app.op(fid, "hold", answer="approve", text="HELLO, EDITED")
+    answered = time.time()
+    while not any("→ Approved" in line for line in app.state(fid)["log"]) and time.time() - answered < 20:
+        time.sleep(0.1)
+    check("an approval takes effect at once", time.time() - answered < 2, f"{time.time() - answered:.1f}s")
     s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to end")
     check("an approved, edited message goes on to Done", s["results"] == {"Done": "HELLO, EDITED"}, str(s["results"]))
     check("the links recorded what they carried", s["messages"] == 3, str(s["messages"]))
@@ -506,9 +588,11 @@ def scenario_gates(app):
     app.op(fid, "run")
     h = held(app, fid, "Check it")
     check("an allowed command runs without asking again", h[0]["card"] == "Check it" and not h[0]["needsAllow"], str(h))
-    app.op(fid, "hold", answer="reject")
+    app.op(fid, "hold", answer="reject", text="Too loud")
     s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to end")
-    check("a rejected message goes out Rejected", s["results"] == {"Binned": "HELLO FROM THE START CARD"}, str(s["results"]))
+    binned = s["results"].get("Binned", "")
+    check("a rejected message goes out Rejected with the reason ahead of it",
+          list(s["results"]) == ["Binned"] and binned.startswith("Too loud\n") and binned.endswith("\nHELLO FROM THE START CARD"), str(s["results"]))
     check("both runs are kept", [r["outcome"] for r in s["runs"]] == ["finished", "finished"], str(s["runs"]))
 
     first = s["runs"][0]["id"]
@@ -516,7 +600,7 @@ def scenario_gates(app):
     s = app.state(fid)
     check("an earlier run can be put back on the canvas", s["viewedRun"] == first and s["results"] == {"Done": "HELLO, EDITED"}, str(s["results"]))
     app.op(fid, "viewRun")
-    check("and the latest brought back", app.state(fid)["results"] == {"Binned": "HELLO FROM THE START CARD"})
+    check("and the latest brought back", app.state(fid)["results"] == {"Binned": binned})
 
     app.op(fid, "runFrom", card="Check it", message="straight to the gate")
     h = held(app, fid, "Check it")
@@ -726,7 +810,7 @@ def scenario_deep(app):
 def scenario_noclaude(project):
     print("noclaude: the app says so when Claude Code isn't installed", flush=True)
     empty = tempfile.mkdtemp(prefix="qb-nohome-")
-    support = SUPPORT + "NoClaude"
+    support = SUPPORT + "-nc"
     app = App(project, support=support, env={"HOME": empty, "CFFIXED_USER_HOME": empty, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"})
     try:
         deadline = time.time() + 40
@@ -740,16 +824,16 @@ def scenario_noclaude(project):
         check("it reports that Claude Code isn't installed", "can't find Claude Code" in (s.get("problem") or ""), str(s))
     finally:
         app.quit()
-        shutil.rmtree(support, ignore_errors=True)
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "subflow", "timed", "deep", "noclaude"]
+    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "subflow", "timed", "deep", "noclaude"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
+    sweep()
     project = tempfile.mkdtemp(prefix="qb-e2e-")
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
-    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "inner", "subflow", "timed"]
+    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "inner", "subflow", "timed"]
                              + [f"level{n}" for n in range(5)]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)
@@ -774,7 +858,6 @@ def main():
                     app.op(flow_id, "close")
         finally:
             app.quit()
-            shutil.rmtree(SUPPORT, ignore_errors=True)
     if "noclaude" in wanted:
         try:
             scenario_noclaude(project)

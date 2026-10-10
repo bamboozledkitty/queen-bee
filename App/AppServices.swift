@@ -340,7 +340,8 @@ final class AppServices {
             controller.handleHook(from: who, payload: request.payload)
             return [:]
         case "route":
-            let deliveries = await controller.handleRoute(from: who, answer: request.payload["answer"]?.stringValue ?? "")
+            let deliveries = await controller.handleRoute(from: who, answer: request.payload["answer"]?.stringValue ?? "",
+                                                          asked: request.payload["asked"]?.boolValue == true)
             return ["deliveries": .array(deliveries.map { ["to": .string($0.to), "text": .string($0.text)] })]
         case "sent":
             controller.handleSent(from: who, results: request.payload["results"]?.arrayValue ?? [])
@@ -348,7 +349,7 @@ final class AppServices {
         case "may-send":
             let verdict = controller.judgeSend(from: who, to: request.payload["to"]?.stringValue ?? "")
             if let reason = verdict.refusal { return ["allowed": false, "reason": .string(reason)] }
-            return ["allowed": true, "sessionId": verdict.sessionID.map(JSONValue.string) ?? .null]
+            return ["allowed": true, "sessionId": verdict.sessionID.map(JSONValue.string) ?? .null, "inFlow": .bool(verdict.inFlow)]
         case "mcp":
             // The tools edit and run the flow, so they answer only to the orchestrator's secret. That keeps an
             // agent from reaching them through its own helper; it is not a wall against an agent that can run

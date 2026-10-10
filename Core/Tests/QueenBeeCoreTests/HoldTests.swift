@@ -56,6 +56,20 @@ import Testing
         #expect(out.finished)
     }
 
+    @Test func rejectingWithANoteSendsTheNoteAheadOfTheMessage() async throws {
+        let flow = try flow(.approval)
+        let engine = Engine(judge: ScriptedJudge())
+        let hold = try await reachGate(flow, engine)
+        let text = try #require(Hold.rejection(note: "  Too formal. ", of: hold.text))
+        #expect(text.hasPrefix("Too formal.\n") && text.hasSuffix("\nDear all"))
+        let out = await engine.holdResolved(flow: flow, holdID: hold.id, port: "rejected", text: text)
+        #expect(out.results.map(\.text) == [text])
+    }
+
+    @Test func rejectingWithNoNoteLeavesTheMessageAsItWas() {
+        #expect(Hold.rejection(note: " \n", of: "Dear all") == nil)
+    }
+
     @Test func aHoldAnsweredTwiceOnlyCountsOnce() async throws {
         let flow = try flow(.approval)
         let engine = Engine(judge: ScriptedJudge())

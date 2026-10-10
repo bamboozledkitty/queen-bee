@@ -4,10 +4,15 @@ import type { EngineInterface, Register } from 'claude-code'
  * Loaded by Queen Bee into every session it starts. Two jobs: when the session's
  * turn ends, ask the app where the reply goes and send it there as a session
  * message; and refuse a SendMessage between two agents the canvas doesn't link.
+ * It also tells the app when the turn that just ended had asked another session of the flow
+ * a question: the answer comes as a new turn, so that turn's last words are not the reply.
  * The app is reached through its helper binary, named in QB_HELPER.
  */
 
 type Delivery = { to: string; text: string }
+
+/** Whether this session's model has got a message through to another session of its flow in the turn under way. */
+let asked = false
 
 /** Runs the helper with a JSON body on stdin and reads its JSON answer; null when it can't. */
 async function ask($: EngineInterface, command: string, body: unknown, timeoutMs: number): Promise<any> {
@@ -22,9 +27,9 @@ async function ask($: EngineInterface, command: string, body: unknown, timeoutMs
   }
 }
 
-async function handOff($: EngineInterface, answer: string) {
+async function handOff($: EngineInterface, answer: string, asked: boolean) {
   // Conditions on the way can take a few seconds each to judge.
-  const routed = await ask($, 'route', { answer }, 300000)
+  const routed = await ask($, 'route', { answer, asked }, 300000)
   const deliveries: Delivery[] = Array.isArray(routed?.deliveries) ? routed.deliveries : []
   if (deliveries.length === 0) return
   const results = []
@@ -38,10 +43,14 @@ async function handOff($: EngineInterface, answer: string) {
 export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId || e.isAborted || e.reason !== 'answer') return result
+    if (e.agentId) return result
+    // Read and cleared however the turn ended, so a turn that was cut short doesn't mark the next.
+    const askedThisTurn = asked
+    asked = false
+    if (e.isAborted || e.reason !== 'answer') return result
     if (!(await $.env.get('QB_SESSION'))) return result
     // Not awaited: the turn ends now, the hand-off follows.
-    void handOff($, e.answer).catch(() => {})
+    void handOff($, e.answer, askedThisTurn).catch(() => {})
     return result
   })
 
@@ -53,9 +62,11 @@ export const register: Register = on => {
     }
     // The recipient is a card of this flow. Other sessions on the machine may carry the same
     // name, so deliver to the card's own session and not to whoever the name finds.
-    if (verdict && typeof verdict.sessionId === 'string' && verdict.sessionId) {
-      return $.session.send({ to: { sessionId: verdict.sessionId }, text: e.text }).catch(err => ({ isDelivered: false as const, reason: String(err) }))
-    }
-    return next(e)
+    const sent = verdict && typeof verdict.sessionId === 'string' && verdict.sessionId
+      ? await $.session.send({ to: { sessionId: verdict.sessionId }, text: e.text }).catch(err => ({ isDelivered: false as const, reason: String(err) }))
+      : await next(e)
+    // Only a message that arrived can be answered.
+    if (verdict?.inFlow === true && sent.isDelivered) asked = true
+    return sent
   })
 }

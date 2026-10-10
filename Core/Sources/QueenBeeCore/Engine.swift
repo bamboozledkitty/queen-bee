@@ -69,6 +69,14 @@ public struct Hold: Equatable, Sendable {
     public init(id: String, cardID: String, kind: CardKind, text: String, fromName: String) {
         self.id = id; self.cardID = cardID; self.kind = kind; self.text = text; self.fromName = fromName
     }
+
+    /// What leaves an Approval by Rejected when the person said why: their note, then the
+    /// message they turned down. Nil when the note is blank, and the message goes on as it was.
+    public static func rejection(note: String, of message: String) -> String? {
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !note.isEmpty else { return nil }
+        return "\(note)\n\n--- The message that was rejected ---\n\(message)"
+    }
 }
 
 /// Everything one event caused.
@@ -86,6 +94,14 @@ public struct RunOutput: Equatable, Sendable {
     public var finished: Bool
     /// The run this call belonged to, nil if there was none.
     public var runID: String?
+    /// Agents the run has just come to hang on: each asked a question, has had no answer, and
+    /// nothing else is under way. Empty unless this call is what left the run that way.
+    public var stalledOn: [String] = []
+    /// Every agent the run is owed a reply from whose last turn ended on a question of its own.
+    /// Nil when this call didn't look, so what was known before still stands.
+    public var asking: [String]?
+    /// Whether the run hangs on those agents alone. Only meaningful alongside `asking`.
+    public var isStalled = false
 
     public init(deliveries: [Delivery] = [], log: [String] = [], results: [EndResult] = [],
                 visits: [CardVisit] = [], holds: [Hold] = [], finished: Bool = false, runID: String? = nil) {
@@ -115,6 +131,10 @@ public actor Engine {
         let id: String
         /// Agents handed a message and not heard from since.
         var pending: Set<String> = []
+        /// Agents whose last turn ended on a question of their own, not on their reply.
+        var asking: Set<String> = []
+        /// Whether the app has been told the run hangs on those agents.
+        var saidStalled = false
         var passes: [String: Int] = [:]
         var deliveries = 0
         /// And card id, then source card id, to the message waiting there.
@@ -200,12 +220,24 @@ public actor Engine {
         return output
     }
 
-    public func agentReplied(flow: Flow, cardID: String, text: String) async -> RunOutput {
+    /// An agent's turn ended. Its reply goes on along its card's links.
+    /// `waitingOnAnswer` is for a turn in which the agent asked someone a question: the answer
+    /// can only reach it as a new turn, so what it said on the way out is not its reply. Nothing
+    /// is passed on and the card stays owed, until the turn after the answer.
+    public func agentReplied(flow: Flow, cardID: String, text: String, waitingOnAnswer: Bool = false) async -> RunOutput {
         await takeTurn()
         defer { endTurn() }
 
         guard var state = run else { return RunOutput() }
         var output = RunOutput(runID: state.id)
+        if waitingOnAnswer {
+            if state.pending.contains(cardID), state.asking.insert(cardID).inserted {
+                output.log.append("\(flow.card(cardID)?.name ?? "An agent") asked a question and is waiting for the answer")
+            }
+            settle(state, &output)
+            return output
+        }
+        state.asking.remove(cardID)
         state.pending.remove(cardID)
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let card = flow.card(cardID) {
@@ -290,7 +322,15 @@ public actor Engine {
         if state.hitLimit || state.pending.isEmpty {
             run = nil
             output.finished = true
+            output.asking = []
         } else {
+            var state = state
+            // A held message is owed too, under its own key, so a run with one is not stalled.
+            let stalled = state.pending.isSubset(of: state.asking)
+            if stalled, !state.saidStalled { output.stalledOn = state.pending.sorted() }
+            output.asking = state.asking.sorted()
+            output.isStalled = stalled
+            state.saidStalled = stalled
             run = state
         }
     }

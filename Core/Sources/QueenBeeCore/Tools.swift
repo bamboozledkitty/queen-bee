@@ -372,7 +372,7 @@ public enum Tools {
     private static let cardProperty: JSONValue = ["type": "string", "description": "The card's name or id."]
 
     private static let settingProperties: [String: JSONValue] = [
-        "instructions": ["type": "string", "description": "agent: a standing brief the agent always follows."],
+        "instructions": ["type": "string", "description": "agent: a standing brief the agent always follows. Name the files and folders it reads and writes. It finds files with ls, find and grep in the shell, which need no approval, so don't forbid the shell outright."],
         "model": ["type": "string", "description": "agent: a model alias or id, such as opus, sonnet or haiku. An empty string goes back to the person's default."],
         "effort": ["type": "string", "description": "agent: low, medium, high, xhigh or max. An empty string goes back to the model's default."],
         "permission_mode": ["type": "string", "description": "agent: manual, acceptEdits, plan or auto. An empty string goes back to the person's default."],
