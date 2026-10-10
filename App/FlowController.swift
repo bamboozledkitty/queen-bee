@@ -188,6 +188,12 @@ final class FlowController: ToolHost {
     /// Agents whose plugin has reported a finished turn since their session started. Once a
     /// plugin has spoken it is loaded, and the app never routes that agent's replies itself.
     @ObservationIgnored private var pluginSpoke: Set<String> = []
+    /// Agents that have sent a question to another session in the turn they are in.
+    @ObservationIgnored private var askedThisTurn: Set<String> = []
+    /// Agents whose last turn ended on a question they are still owed an answer to.
+    private(set) var awaitingAnswer: Set<String> = []
+    /// How long a run may hang on an unanswered question before the person is told.
+    private static let unansweredAfter: Duration = .seconds(90)
     /// Hand-offs given to a plugin to send, by the receiving session's id, until it says how they went.
     @ObservationIgnored private var inFlight: [String: Delivery] = [:]
     @ObservationIgnored private var runLogStart = 0
@@ -1107,7 +1113,10 @@ final class FlowController: ToolHost {
         pluginSpoke.insert(who)
         sessions[who]?.lastReply = answer
         guard let engine = readyEngine() else { return [] }
-        return absorb(await engine.agentReplied(flow: flow, cardID: who, text: answer), sender: who)
+        // The answer to a question arrives as a new turn, so this turn's last words aren't the reply.
+        let asked = askedThisTurn.remove(who) != nil && isRunning
+        if asked { awaitingAnswer.insert(who) } else { awaitingAnswer.remove(who) }
+        return absorb(await engine.agentReplied(flow: flow, cardID: who, text: answer, waitingOnAnswer: asked), sender: who)
     }
 
     /// The plugin reports how its sends went. A hand-off that didn't arrive is typed in.
@@ -1136,6 +1145,7 @@ final class FlowController: ToolHost {
     func judgeSend(from who: String, to: String) -> SendVerdict {
         let address = to.lowercased()
         if who != Self.orchestratorKey, address.hasPrefix(ClaudeLauncher.orchestratorName(for: flow).lowercased()) {
+            askedThisTurn.insert(who)
             return SendVerdict(sessionID: flow.orchestratorSessionID)
         }
         let target = flow.cards
@@ -1151,7 +1161,25 @@ final class FlowController: ToolHost {
         if who != Self.orchestratorKey, let sender = flow.card(who), !linkedAgents(of: who).contains(target.id) {
             return SendVerdict(refusal: "\(sender.name) isn't linked to \(target.name) in the flow \"\(flow.name)\". Ask the person or the orchestrator to link the two cards first.")
         }
+        if who != Self.orchestratorKey { askedThisTurn.insert(who) }
         return SendVerdict(sessionID: target.sessionID)
+    }
+
+    /// The run hangs on agents that asked a question and have had no answer. The log says so at
+    /// once. If it is still so after a while, the person and the orchestrator are told.
+    private func noteStalled(on cards: [String]) {
+        let names = cards.compactMap { flow.card($0)?.name }.joined(separator: ", ")
+        guard !names.isEmpty else { return }
+        append("The run is waiting on \(names): a question it asked hasn't been answered, and nothing else is under way")
+        let runID = currentRun?.id
+        Task {
+            try? await Task.sleep(for: Self.unansweredAfter)
+            guard self.isRunning, self.currentRun?.id == runID, !self.awaitingAnswer.isDisjoint(with: cards) else { return }
+            Notifier.post(title: "\(self.flow.name) is waiting on \(names)", body: "It asked a question and hasn't had an answer. Answer it in its terminal, or stop the run.",
+                          flowID: self.flow.id, cardID: cards.first)
+            guard self.flow.notifyOrchestrator, self.orchestrator.isLive else { return }
+            self.orchestrator.send("[Queen Bee · notice] The run is stalled. \(names) asked a question, has had no answer, and nothing else is under way. Answer with SendMessage, or stop the run. This is information from the app, not a new request.")
+        }
     }
 
     /// The agents a card reaches, or is reached by, through logic cards alone.
@@ -1262,8 +1290,11 @@ final class FlowController: ToolHost {
             messages[travel.linkID] = Array(carried.suffix(Self.keptMessagesPerLink))
         }
         output.holds.forEach(take)
+        if !output.stalledOn.isEmpty { noteStalled(on: output.stalledOn) }
         scheduleHistorySave()
         if output.finished {
+            askedThisTurn.removeAll()
+            awaitingAnswer.removeAll()
             isRunning = false
             liveLinks.removeAll()
             // Whatever was waiting belonged to the run that has ended.
@@ -1515,9 +1546,10 @@ final class FlowController: ToolHost {
         resolve(id, port: "approved", text: text)
     }
 
-    func reject(_ id: String) {
-        guard holds.first(where: { $0.id == id })?.kind == .approval else { return }
-        resolve(id, port: "rejected", text: nil)
+    /// The person turned a held message down. A note saying why goes out ahead of the message.
+    func reject(_ id: String, note: String = "") {
+        guard let hold = holds.first(where: { $0.id == id }), hold.kind == .approval else { return }
+        resolve(id, port: "rejected", text: Hold.rejection(note: note, of: hold.text))
     }
 
     /// The person read a script's command and let it run. It is remembered for this card.

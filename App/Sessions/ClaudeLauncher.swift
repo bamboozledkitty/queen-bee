@@ -148,7 +148,7 @@ enum ClaudeLauncher {
 
         If a hand-off needs no response at all, reply with exactly "[no reply]" and nothing is passed on.
 
-        You may use SendMessage for a question mid-task, to an agent your card is linked to or to "\(orchestratorName(for: flow))", the session that runs this flow. Messages to agents you are not linked to are refused.
+        You may use SendMessage for a question mid-task, to an agent your card is linked to or to "\(orchestratorName(for: flow))", the session that runs this flow. Messages to agents you are not linked to are refused. The answer reaches you as a new message, so end your turn after asking. What you say in a turn where you asked a question is not passed on; the reply you give once you have the answer is.
         """
         let instructions = (card.instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !instructions.isEmpty { text += "\n\n# Your instructions as \(card.name)\n\(instructions)" }

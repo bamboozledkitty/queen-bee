@@ -8,7 +8,7 @@ Claude Code sessions on Haiku, and checks what the app did.
     ./scripts/build.sh && ./scripts/e2e.py            # every scenario
     ./scripts/e2e.py guard loop                        # some of them
 
-Scenarios: guard, settings, scroll, pan, fanout, switch, loop, exit, apifail, noclaude.
+Scenarios: guard, settings, scroll, pan, fanout, switch, loop, exit, apifail, ask, gates, subflow, timed, deep, noclaude.
 """
 import atexit
 import glob
@@ -232,7 +232,15 @@ APIFAIL = flow("Apifail", [
 # Far is well out of view of a window that shows Near.
 PAN = flow("Pan", [card("start", "Near", 300, 200, command="Go"), card("end", "Far", 4000, 200)], [])
 
-FLOWS = {"guard": GUARD, "pan": PAN, "fanout": FANOUT, "switch": SWITCH, "loop": LOOP, "exit": EXIT, "apifail": APIFAIL}
+ASK = flow("Ask", [
+    card("start", "Start", 40, 40, command="What is the password?"),
+    card("agent", "Asker", 340, 40, instructions="You don't know the password. When a hand-off asks for it, use your SendMessage tool once to ask "
+         "the session that runs this flow to send you a message containing only the word BANANA, then end your turn. "
+         "When that message arrives, reply with exactly the word it contains and nothing else."),
+    card("end", "Out", 900, 40),
+], [("Start", "out", "Asker", 1), ("Asker", "out", "Out", 1)])
+
+FLOWS = {"guard": GUARD, "pan": PAN, "fanout": FANOUT, "switch": SWITCH, "loop": LOOP, "exit": EXIT, "apifail": APIFAIL, "ask": ASK}
 
 
 # ---- scenarios ----
@@ -451,6 +459,30 @@ def scenario_exit(app):
         check("Restart brings the session back", False, str(e)[:300])
 
 
+def scenario_ask(app):
+    print("ask: a turn that ends on a question to the orchestrator isn't passed on as the answer", flush=True)
+    fid = ASK["id"]
+    app.open_flow(ASK)
+    app.wait(fid, lambda s: s["orchestrator"]["state"] == "idle", 90, "the orchestrator to be ready")
+    app.op(fid, "run")
+    try:
+        s = app.wait(fid, lambda s: any("asked a question" in line for line in s["log"]), 120, "Asker to ask its question")
+    except TimeoutError as e:
+        check("the question turn is held back", False, str(e)[:400])
+        return
+    check("the question turn is held back", s["isRunning"] and not s["results"], f"{s['isRunning']} {s['results']}")
+    check("the log says the run hangs on the question", any("waiting on Asker" in line for line in s["log"]), str(s["log"][-4:]))
+    try:
+        s = app.wait(fid, lambda s: not s["isRunning"], 180, "the run to end once the orchestrator answered")
+    except TimeoutError as e:
+        check("the reply after the answer is what goes on", False, str(e)[:400])
+        app.op(fid, "stop")
+        return
+    # The link out of Asker allows one pass, so this only holds if the question turn didn't spend it.
+    check("the reply after the answer is what goes on", "BANANA" in s["results"].get("Out", ""), str(s["results"]))
+    check("nothing is left marked as waiting for an answer", s["awaitingAnswer"] == [], str(s["awaitingAnswer"]))
+
+
 def scenario_apifail(app):
     print("apifail: a turn that ends in an API error stops the run", flush=True)
     fid = APIFAIL["id"]
@@ -546,7 +578,7 @@ def scenario_gates(app):
     s = app.state(fid)
     check("an earlier run can be put back on the canvas", s["viewedRun"] == first and s["results"] == {"Done": "HELLO, EDITED"}, str(s["results"]))
     app.op(fid, "viewRun")
-    check("and the latest brought back", app.state(fid)["results"] == {"Binned": "HELLO FROM THE START CARD"})
+    check("and the latest brought back", app.state(fid)["results"] == {"Binned": binned})
 
     app.op(fid, "runFrom", card="Check it", message="straight to the gate")
     h = held(app, fid, "Check it")
@@ -773,13 +805,13 @@ def scenario_noclaude(project):
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "subflow", "timed", "deep", "noclaude"]
+    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "subflow", "timed", "deep", "noclaude"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     sweep()
     project = tempfile.mkdtemp(prefix="qb-e2e-")
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
-    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "inner", "subflow", "timed"]
+    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "inner", "subflow", "timed"]
                              + [f"level{n}" for n in range(5)]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)

@@ -170,6 +170,43 @@ actor ScriptedJudge: Judge {
         #expect(empty.deliveries.isEmpty && empty.finished)
     }
 
+    @Test func aTurnThatEndsOnAQuestionIsNotTheAnswer() async throws {
+        var flow = try chain()
+        let from = try id("Writer", in: flow)
+        let link = try #require(flow.links.first { $0.from == from })
+        try flow.updateLink(link.id, maxPasses: 1)
+        let engine = Engine(judge: ScriptedJudge())
+        _ = await engine.start(flow: flow, startCardID: nil, command: nil)
+        let writer = try id("Writer", in: flow)
+
+        let asked = await engine.agentReplied(flow: flow, cardID: writer, text: "I've asked the orchestrator.", waitingOnAnswer: true)
+        #expect(asked.deliveries.isEmpty && asked.visits.isEmpty && !asked.finished)
+        #expect(asked.log == ["Writer asked a question and is waiting for the answer"])
+        // Nobody else is working, so the run now hangs on that answer.
+        #expect(asked.stalledOn == [writer])
+
+        // The answer came, and the turn after it is the reply. The link's one pass is still unspent.
+        let out = await engine.agentReplied(flow: flow, cardID: writer, text: "Old pond")
+        #expect(out.deliveries.count == 1 && out.deliveries.first?.text.hasSuffix("Old pond") == true)
+        #expect(out.stalledOn.isEmpty)
+    }
+
+    @Test func aRunWithOthersStillWorkingIsNotStalledByAQuestion() async throws {
+        let flow = try flow {
+            try $0.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+            try $0.addCard(kind: .agent, name: "A")
+            try $0.addCard(kind: .agent, name: "B")
+            try $0.addLink(from: "Start", to: "A")
+            try $0.addLink(from: "Start", to: "B")
+        }
+        let engine = Engine(judge: ScriptedJudge())
+        _ = await engine.start(flow: flow, startCardID: nil, command: nil)
+        let out = await engine.agentReplied(flow: flow, cardID: try id("A", in: flow), text: "Hold on", waitingOnAnswer: true)
+        #expect(out.stalledOn.isEmpty && !out.finished)
+        let then = await engine.agentReplied(flow: flow, cardID: try id("B", in: flow), text: "[no reply]")
+        #expect(then.stalledOn == [try id("A", in: flow)] && !then.finished)
+    }
+
     @Test func aReplyTypedIntoAnIdleAgentJoinsTheRun() async throws {
         let flow = try chain()
         let engine = Engine(judge: ScriptedJudge())

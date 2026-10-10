@@ -54,8 +54,10 @@ final class AgentCardView: CardView {
         case .idle: isWaiting ? .live : .plain
         case .notStarted, .starting: .plain
         }
-        stateText = isWaiting ? "waiting" : state.label.lowercased()
-        stateBadge.set(stateText, tone: tone)
+        // An agent that asked a question is idle, but the run is owed its reply.
+        let asked = state == .idle ? context.waiting : nil
+        stateText = asked ?? (isWaiting ? "waiting" : state.label.lowercased())
+        stateBadge.set(stateText, tone: asked == nil ? tone : .live)
         restartBadge.set(context.needsRestart ? "restart to apply" : "", tone: .live)
         costBadge.set(context.cost ?? "", tone: .plain)
         let live = state != .notStarted && state != .exited

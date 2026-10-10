@@ -110,7 +110,7 @@ enum TestHarness {
             guard let hold = controller.holds.first(where: { cardID == nil || $0.cardID == cardID }) else { return ["error": "nothing is held"] }
             switch payload["answer"]?.stringValue {
             case "approve": controller.approve(hold.id, text: payload["text"]?.stringValue ?? hold.text)
-            case "reject": controller.reject(hold.id)
+            case "reject": controller.reject(hold.id, note: payload["text"]?.stringValue ?? "")
             case "allow": controller.allowScript(hold.id)
             case "refuse": controller.refuseScript(hold.id)
             default: return ["error": "hold needs answer"]
@@ -233,6 +233,7 @@ enum TestHarness {
             "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
             "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),
             "isRunning": .bool(controller.isRunning),
+            "awaitingAnswer": .array(controller.flow.cards.filter { controller.awaitingAnswer.contains($0.id) }.map { .string($0.name) }),
             "log": .array(controller.log.map { .string($0.text) }),
             "results": .object(results),
             "sessions": .object(sessions),

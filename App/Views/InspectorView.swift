@@ -366,6 +366,7 @@ private struct ApprovalReview: View {
     let controller: FlowController
     let hold: PendingHold
     @State private var draft = ""
+    @State private var note = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
@@ -380,10 +381,16 @@ private struct ApprovalReview: View {
                 .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.live.ui))
                 .foregroundStyle(Theme.ink.ui)
+            TextField("Why you're rejecting it (optional)", text: $note, axis: .vertical)
+                .lineLimit(1...4)
+                .textFieldStyle(.plain)
+                .font(.dsSans(Theme.Size.body))
+                .fieldBox()
+                .foregroundStyle(Theme.ink.ui)
             HStack(spacing: Theme.Space.s) {
-                Button("Reject") { controller.reject(hold.id) }
+                Button("Reject") { controller.reject(hold.id, note: note) }
                     .buttonStyle(.panel())
-                    .help("Send the message on along the Rejected link, unchanged")
+                    .help("Send the message on along the Rejected link, with your reason ahead of it if you gave one")
                 Spacer()
                 Button(draft == hold.text ? "Approve" : "Approve edited") { controller.approve(hold.id, text: draft) }
                     .buttonStyle(.panel(.live))
