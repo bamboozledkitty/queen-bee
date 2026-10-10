@@ -8,6 +8,26 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Added
 
+- **Approval** cards, which hold a message until you approve, edit or reject it.
+- **Script** cards, which run a shell command and route on whether it succeeded. A command you didn't type yourself waits for you to allow it.
+- **Flow** cards, which run another of the project's flows as one step.
+- Resting the pointer on a card type in the palette explains it in a sentence, with an example.
+- A link's settings list the messages it carried in the run on show.
+- Every run is kept, with its path, answers and messages. The Log tab can put an earlier run back on the canvas.
+- **Run from here** starts a run at any card with a message you give it, and a card a run stopped at can be retried.
+- Cost: each agent's card shows what it used in the run, a figure beside the zoom control shows the flow's total, and clicking it breaks the total down by session and by run.
+- Agent roles: an agent's instructions, model, effort and permissions saved under a name and reused from the palette in any flow.
+- A Start card can run on a schedule (every so often, daily, or on chosen days) or when a file or folder in the project changes.
+- Groups: cards framed together under a name, which fold into one card.
+- **Tidy Up** (⇧⌘L) lays a flow out left to right in the order its links run.
+- **Find** (⌘F) goes to a card or flow by name, and a map in the corner shows the whole flow and where the window is looking.
+
+### Changed
+
+- A card only shows as live or waiting from run marks while a run is under way.
+
+### Added
+
 - Dragging to the edge of the canvas pans it, so a link, a card, a selection box, a resize or a new card from the palette can reach what is out of view.
 
 ## [0.2.0] - 2026-10-09

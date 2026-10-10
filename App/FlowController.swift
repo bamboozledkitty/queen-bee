@@ -222,6 +222,11 @@ final class FlowController: ToolHost {
         reschedule()
     }
 
+    /// What a remembered permission belongs to: this flow, in this project's folder. A flow's id
+    /// comes from its file, so on its own it could be made to match another project's flow and
+    /// borrow what was allowed there.
+    private var allowScope: String { project.root.standardizedFileURL.path + "|" + flow.id }
+
     // MARK: Schedules
 
     /// When the clock next starts a run from each Start card whose schedule is on, by card id.
@@ -232,12 +237,12 @@ final class FlowController: ToolHost {
 
     /// Whether a Start card's schedule is one the person turned on in this app.
     func isArmed(_ card: Card) -> Bool {
-        card.trigger.map { ScheduleArming.isArmed($0, flowID: flow.id, cardID: card.id) } ?? false
+        card.trigger.map { ScheduleArming.isArmed($0, flowID: allowScope, cardID: card.id) } ?? false
     }
 
     /// Sets what starts runs from a Start card, and turns it on: the person chose it.
     func setTrigger(_ trigger: Trigger?, onCard id: String) {
-        ScheduleArming.arm(trigger, flowID: flow.id, cardID: id)
+        ScheduleArming.arm(trigger, flowID: allowScope, cardID: id)
         let changed = perform("Change Schedule", key: "trigger:\(id)") {
             guard let index = $0.cards.firstIndex(where: { $0.id == id && $0.kind == .start }) else { return }
             $0.cards[index].trigger = trigger
@@ -1143,7 +1148,7 @@ final class FlowController: ToolHost {
         var pending = PendingHold(id: hold.id, cardID: hold.cardID, kind: hold.kind, text: hold.text, from: hold.fromName)
         if hold.kind == .script {
             pending.command = card.command ?? ""
-            pending.needsAllow = !ScriptRunner.isAllowed(pending.command, flowID: flow.id, cardID: card.id)
+            pending.needsAllow = !ScriptRunner.isAllowed(pending.command, flowID: allowScope, cardID: card.id)
         }
         if hold.kind == .flow {
             let inner = card.flowRef.flatMap { ref in project.controllers.first { $0.flow.id == ref } }
@@ -1269,7 +1274,7 @@ final class FlowController: ToolHost {
     /// The person read a script's command and let it run. It is remembered for this card.
     func allowScript(_ id: String) {
         guard let index = holds.firstIndex(where: { $0.id == id }) else { return }
-        ScriptRunner.allow(holds[index].command, flowID: flow.id, cardID: holds[index].cardID)
+        ScriptRunner.allow(holds[index].command, flowID: allowScope, cardID: holds[index].cardID)
         holds[index].needsAllow = false
         runScript(holds[index])
     }
@@ -1281,7 +1286,7 @@ final class FlowController: ToolHost {
         var patch = CardPatch()
         patch.command = command
         update(id, patch)
-        if flow.card(id)?.command == command { ScriptRunner.allow(command, flowID: flow.id, cardID: id) }
+        if flow.card(id)?.command == command { ScriptRunner.allow(command, flowID: allowScope, cardID: id) }
     }
 
     /// Adds what an event did to the per-card tallies. The links an event travelled stay live

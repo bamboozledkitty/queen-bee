@@ -2,7 +2,7 @@
 
 A Mac app for building and running flows of Claude Code agents on a canvas.
 
-Each agent is a live `claude` session in a terminal that sits on the canvas. You can click into any of them and type. Logic cards (If / Else, Switch, And, Or, Prompt, Loop until, End) route each agent's finished reply to the next cards. Every flow also has an orchestrator, a Claude Code session docked beside the canvas that can edit the flow, run it and talk to the agents.
+Each agent is a live `claude` session in a terminal that sits on the canvas. You can click into any of them and type. Logic cards (If / Else, Switch, And, Or, Prompt, Loop until, Approval, Script, Flow, End) route each agent's finished reply to the next cards. Every flow also has an orchestrator, a Claude Code session docked beside the canvas that can edit the flow, run it and talk to the agents.
 
 ![A finished run: cards the run passed through carry a check and a count, and travelled links are green](docs/queen-bee-flight-plan-light.jpg)
 
@@ -58,7 +58,12 @@ open build/Build/Products/Debug/QueenBee.app
   ![The walk-through's second step: every agent is a live terminal](docs/queen-bee-first-run.jpg)
 
 - An empty flow shows a note pointing at the orchestrator: describe the flow you want there and it builds it. Close the note to build by hand.
-- The **palette** at the canvas's top-left holds the card types. Click one to add it, or drag it to where you want it. Each agent card starts its own Claude Code session.
+- The **palette** at the canvas's top-left holds the card types. Click one to add it, or drag it to where you want it. Rest the pointer on one to read what it does. Each agent card starts its own Claude Code session.
+- An **Approval** card stops a run until you approve, edit or reject the message. A **Script** card runs a shell command and goes out Pass or Fail; a command you didn't type yourself asks before it first runs. A **Flow** card runs another flow of the project as one step.
+- A Start card's settings can make it run on a schedule or when a file changes. Schedules run only while Queen Bee is open.
+- **Run from here…** in a card's settings starts a run at that card with a message you give it. A card a run stopped at offers **Retry**.
+- An agent's settings can be saved as a **role**, which then sits under Agent in the palette for any flow.
+- Select several cards and choose **Group** (⌘G) to frame them under a name. Double-click the name to fold the group into one card. **Tidy Up** (⇧⌘L) lays the whole flow out left to right. **Find** (⌘F) goes to a card or flow by name. A map in the corner shows the whole flow once it has five cards or more.
 - Drag a card by its title bar. Drag its bottom-right corner to resize it. A dragged card lines up with its neighbours or settles on the grid; hold Option to place it freely. Pinch to zoom and two-finger scroll to pan, or use the zoom control at the bottom-right.
 - Shift-click cards, or drag a box on empty canvas, to select several. They move, duplicate (⌘D), copy, paste and delete together, and the arrow keys nudge them. Escape deselects.
 - ⌘Z undoes the last change to the flow, including changes the orchestrator made. With the cursor in a text box, it undoes typing there first.
@@ -67,7 +72,9 @@ open build/Build/Products/Debug/QueenBee.app
 - Drag from a dot on a card's right edge onto another card to link them. Click a link to change its max passes or delete it.
 - Click a card's title to open its settings: rename it in the header, change its rows, and delete or restart it from the footer. Click inside a terminal to type in it; click empty canvas to give the keyboard back.
 - Write the Start card's command, then press **Run**. Cards the run passes through get a check and a count, travelled links turn green, and the link a message is on now shows orange dashes.
-- The panel on the right has the **Orchestrator**, the run **Log**, and the **Output** of each End card. The line at the canvas's bottom-left shows the latest step. The log, the output and the last run's marks are kept between launches.
+- The panel on the right has the **Orchestrator**, the run **Log**, and the **Output** of each End card. The line at the canvas's bottom-left shows the latest step. Every run is kept between launches, and the Log tab's menu puts an earlier run back on the canvas.
+- Click a link to read the messages it carried in the run on show.
+- The figure beside the zoom control is what the flow has used, at API prices, as Claude Code reports it. Click it for a breakdown by agent and by run.
 - When the app is in the background, a notification tells you that a card needs you or a run has ended. **Settings** turns this off.
 - A flow that needs you says so on its sidebar row, and the toolbar shows a button that takes you to the waiting card.
 - **View → Appearance** switches between light, dark and following the system.
@@ -82,7 +89,7 @@ open build/Build/Products/Debug/QueenBee.app
 ## Tests
 
 ```sh
-cd Core && swift test        # 142 unit tests on the model, store, engine, link router, snapping and tools
+cd Core && swift test        # 162 unit tests on the model, store, engine, link router, snapping, layout, triggers and tools
 ./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about five minutes
 ```
 
