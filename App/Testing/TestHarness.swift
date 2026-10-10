@@ -28,6 +28,10 @@ enum TestHarness {
         ]
     }
 
+    #if !DEBUG
+    /// A release build has no back door: there is nothing here to drive.
+    static func handle(_ payload: JSONValue, controller: FlowController) async -> JSONValue { ["error": "not a test build"] }
+    #else
     static func handle(_ payload: JSONValue, controller: FlowController) async -> JSONValue {
         let cardRef = payload["card"]?.stringValue
         let cardID = cardRef == FlowController.orchestratorKey ? cardRef : cardRef.flatMap { controller.flow.resolveCard($0)?.id }
@@ -254,4 +258,5 @@ enum TestHarness {
             "canScroll": .bool(session.view.canScroll),
         ]
     }
+    #endif
 }

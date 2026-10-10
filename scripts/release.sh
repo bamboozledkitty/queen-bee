@@ -31,10 +31,18 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then echo "$TAG already exists. Raise M
 
 echo "== Building $VERSION"
 xcodegen generate --quiet
+# An app left by an earlier build must never be mistaken for this one, so it is removed first
+# and the build has to say it succeeded.
+rm -rf "$APP"
+BUILD_LOG=$(mktemp)
 xcodebuild -project QueenBee.xcodeproj -scheme QueenBee -configuration Release \
-  -derivedDataPath build -skipPackagePluginValidation -skipMacroValidation build 2>&1 \
-  | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+  -derivedDataPath build -skipPackagePluginValidation -skipMacroValidation build > "$BUILD_LOG" 2>&1 || true
+grep -E "error:|BUILD (SUCCEEDED|FAILED)" "$BUILD_LOG" || true
+grep -q "BUILD SUCCEEDED" "$BUILD_LOG" || { echo "The release build failed. Nothing was packaged."; rm -f "$BUILD_LOG"; exit 1; }
+rm -f "$BUILD_LOG"
 [ -d "$APP" ] || { echo "The build didn't produce $APP"; exit 1; }
+BUILT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+[ "$BUILT" = "$VERSION" ] || { echo "The built app says $BUILT, not $VERSION"; exit 1; }
 
 echo "== Signing"
 # Inside out: Sparkle's helpers, the framework, our helper, then the app.
