@@ -15,7 +15,7 @@ struct SettingsView: View {
             .onChange(of: mode) { Theme.apply(Theme.Mode(rawValue: mode) ?? .system) }
 
             Picker("New agents run on", selection: $defaultModel) {
-                Text("Your usual model").tag("")
+                Text("Your Claude Code default").tag("")
                 ForEach(["fable", "opus", "sonnet", "haiku"], id: \.self) { Text($0.capitalized).tag($0) }
             }
 

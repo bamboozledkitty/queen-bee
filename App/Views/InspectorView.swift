@@ -226,14 +226,13 @@ private struct CardSettings: View {
         row("Model") {
             let known = ["fable", "opus", "sonnet", "haiku"]
             let custom = (card.model ?? "").isEmpty || known.contains(card.model ?? "") ? [] : [(value: card.model ?? "", label: card.model ?? "")]
-            MenuField(options: [(value: "", label: "Your usual model")] + known.map { (value: $0, label: $0.capitalized) } + custom,
+            MenuField(options: [(value: "", label: "Your default")] + known.map { (value: $0, label: $0.capitalized) } + custom,
                       selection: card.model ?? "") { v in patch { $0.model = v } }
         }
         row("Effort") {
-            MenuField(options: [(value: "", label: "The model's usual"), (value: "low", label: "Low"), (value: "medium", label: "Medium"),
-                                (value: "high", label: "High"), (value: "xhigh", label: "Very high"), (value: "max", label: "Maximum")],
+            MenuField(options: [(value: "", label: "Model default")] + Card.effortLevels.map { (value: $0, label: $0) },
                       selection: card.effort ?? "") { v in patch { $0.effort = v } }
-                .help("How hard the agent thinks before it answers. Higher is slower and uses more.")
+                .help("Claude Code's effort level: how hard the agent thinks before it answers. Higher is slower and uses more.")
         }
         if let all = controller.usage[card.id], !all.isZero {
             row("Cost") {
@@ -244,11 +243,10 @@ private struct CardSettings: View {
             }
         }
         row("Permissions") {
-            MenuField(options: [(value: "", label: "Your usual setting"), (value: "manual", label: "Ask before each action"),
-                                (value: "acceptEdits", label: "Edit files without asking"), (value: "plan", label: "Plan only, change nothing"),
-                                (value: "auto", label: "Decide for itself")],
+            MenuField(options: [(value: "", label: "Your default"), (value: "manual", label: "Manual"),
+                                (value: "acceptEdits", label: "Accept edits"), (value: "plan", label: "Plan"), (value: "auto", label: "Auto")],
                       selection: card.permissionMode ?? "") { v in patch { $0.permissionMode = v } }
-                .help("What the agent may do without stopping to ask you first")
+                .help("Claude Code's permission mode. Manual asks before each action, Accept edits changes files without asking, Plan only plans and changes nothing, and Auto decides for itself.")
         }
     }
 

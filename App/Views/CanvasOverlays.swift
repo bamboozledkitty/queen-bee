@@ -438,8 +438,8 @@ struct CostBreakdown: View {
                             Image(systemName: row.icon).font(.system(size: 10, weight: .medium)).frame(width: 14)
                             Text(row.name).font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
                             Spacer(minLength: Theme.Space.s)
+                            Text(row.usage.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                             Text(row.usage.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
-                                .help(row.usage.tokenCount)
                         }
                         // The bar is this session's share of the most expensive one.
                         GeometryReader { space in
@@ -452,8 +452,8 @@ struct CostBreakdown: View {
                 HStack {
                     Text("In all").font(.dsMono(Theme.Size.caption, .medium))
                     Spacer()
+                    Text(total.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                     Text(total.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
-                        .help(total.tokenCount)
                 }
                 .padding(.top, 4)
             }
