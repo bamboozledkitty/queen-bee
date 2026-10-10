@@ -457,6 +457,13 @@ class CardView: NSView {
             }
             menu.addItem(.separator())
         }
+        if !several, acceptsInput(card) {
+            menu.addItem(menuItem("Run from Here…") { [weak controller] in
+                controller?.select(.card(id))
+                controller?.runFromCardID = id
+            })
+            menu.addItem(.separator())
+        }
         menu.addItem(menuItem("Duplicate") { [weak controller] in controller?.duplicateSelection() })
         menu.addItem(menuItem("Copy") { [weak controller] in controller?.copySelection() })
         menu.addItem(.separator())

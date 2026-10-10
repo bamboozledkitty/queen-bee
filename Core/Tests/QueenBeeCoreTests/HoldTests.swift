@@ -100,3 +100,21 @@ import Testing
         #expect(warnings(for: flow)[gate.id] == "Nothing on Approved")
     }
 }
+
+@Suite struct TravelTests {
+    @Test func eachLinkRecordsWhatItCarried() async throws {
+        var flow = Flow(name: "Test")
+        var start = CardPatch()
+        start.command = "Go"
+        try flow.addCard(kind: .start, name: "Start", patch: start)
+        try flow.addCard(kind: .agent, name: "Writer")
+        try flow.addCard(kind: .end, name: "Done")
+        let first = try flow.addLink(from: "Start", to: "Writer")
+        let second = try flow.addLink(from: "Writer", to: "Done")
+        let engine = Engine(judge: ScriptedJudge())
+        let began = await engine.start(flow: flow, startCardID: nil, command: nil)
+        #expect(began.travels == [Travel(linkID: first.id, text: "Go", fromName: "Start")])
+        let replied = await engine.agentReplied(flow: flow, cardID: try #require(flow.resolveCard("Writer")).id, text: "A draft")
+        #expect(replied.travels == [Travel(linkID: second.id, text: "A draft", fromName: "Writer")])
+    }
+}

@@ -112,6 +112,24 @@ private struct CardSettings: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            if controller.marks[card.id]?.failed == true, !controller.isRunning, controller.lastMessage(into: card.id) != nil {
+                HStack(spacing: Theme.Space.s) {
+                    Text("The run stopped here.")
+                        .font(.dsSans(Theme.Size.caption))
+                    Spacer()
+                    Button("Retry") { controller.retry(card.id) }
+                        .buttonStyle(.panel())
+                        .help("Give this card the same message again and carry on from here")
+                }
+                .foregroundStyle(Theme.failInk.ui)
+                .padding(.horizontal, Theme.Space.m)
+                .padding(.vertical, 6)
+                .background(Theme.failTint.ui)
+                .overlay(alignment: .top) { rule }
+            }
+            if controller.runFromCardID == card.id {
+                RunFromHere(controller: controller, card: card)
+            }
             if !pending.isEmpty {
                 // The session is still running on what it was started with. Say so beside
                 // the buttons that settle it.
@@ -166,6 +184,11 @@ private struct CardSettings: View {
                 .buttonStyle(.panel(.quiet))
                 .help("Delete this card and its links")
             Spacer()
+            if acceptsInput(card), controller.runFromCardID != card.id {
+                Button("Run from here…") { controller.runFromCardID = card.id }
+                    .buttonStyle(.panel(.quiet))
+                    .help("Start a run at this card with a message you give it, without running what comes before")
+            }
             if card.kind == .agent {
                 let session = controller.session(forCard: card.id)
                 if pending.isEmpty {
@@ -318,6 +341,84 @@ private struct ScriptReview: View {
     }
 }
 
+/// What a link carried in the run on show, newest first.
+private struct LinkMessages: View {
+    let messages: [LinkMessage]
+
+    private static let time: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
+    var body: some View {
+        section {
+            field(messages.isEmpty ? "Messages" : messages.count == 1 ? "1 message in this run" : "\(messages.count) messages in this run") {
+                if messages.isEmpty {
+                    Text("Nothing has gone along this link in the run on show.")
+                        .font(.dsSans(Theme.Size.caption))
+                        .foregroundStyle(Theme.inkSecondary.ui)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: Theme.Space.s) {
+                            ForEach(messages.reversed()) { message in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("\(Self.time.string(from: message.date)) · from \(message.from)")
+                                        .font(.dsMono(Theme.Size.caption))
+                                        .foregroundStyle(Theme.inkSecondary.ui)
+                                    Text(message.text)
+                                        .font(.dsSans(Theme.Size.body))
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(6)
+                                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 260)
+                }
+            }
+        }
+    }
+}
+
+/// Starts a run at this card, with a message you give it: by default the last one it received.
+private struct RunFromHere: View {
+    let controller: FlowController
+    let card: Card
+    @State private var draft = ""
+
+    var body: some View {
+        section {
+            field("The message \(card.name) gets") {
+                TextEditor(text: $draft)
+                    .font(.dsSans(Theme.Size.body))
+                    .frame(height: 96)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 5)
+                    .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
+                HStack {
+                    Button("Cancel") { controller.runFromCardID = nil }
+                        .buttonStyle(.panel(.quiet))
+                    Spacer()
+                    Button("Run from here") {
+                        let text = draft
+                        controller.runFromCardID = nil
+                        Task { await controller.run(from: card.id, message: text) }
+                    }
+                    .buttonStyle(.panel(.filled))
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.isRunning)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .onAppear { draft = controller.lastMessage(into: card.id)?.text ?? "" }
+    }
+}
+
 /// What can be done to several cards at once.
 private struct SeveralSettings: View {
     let controller: FlowController
@@ -381,6 +482,7 @@ private struct LinkSettings: View {
                 StepField(value: link.maxPasses, range: 1...50) { controller.setMaxPasses(link.id, $0) }
             }
             note("A link stops passing messages once it has fired this many times in one run, so loops always end.")
+            LinkMessages(messages: controller.messages[link.id] ?? [])
             HStack {
                 Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }
                     .buttonStyle(.panel(.quiet))

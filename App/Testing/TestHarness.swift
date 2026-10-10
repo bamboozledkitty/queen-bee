@@ -116,6 +116,12 @@ enum TestHarness {
             guard let cardID, let command = payload["command"]?.stringValue else { return ["error": "script needs card and command"] }
             controller.setScriptCommand(cardID, command)
             return [:]
+        case "runFrom":
+            guard let cardID, let message = payload["message"]?.stringValue else { return ["error": "runFrom needs card and message"] }
+            return ["status": .string(await controller.run(from: cardID, message: message))]
+        case "viewRun":
+            controller.view(run: payload["run"]?.stringValue)
+            return [:]
         case "selectAll":
             controller.selectAll()
             return [:]
@@ -164,6 +170,9 @@ enum TestHarness {
             "name": .string(controller.flow.name),
             "cards": .array(controller.flow.cards.map { ["name": .string($0.name), "x": .number($0.x), "y": .number($0.y)] }),
             "links": .number(Double(controller.flow.links.count)),
+            "runs": .array(controller.runs.map { ["id": .string($0.id), "outcome": .string($0.outcome.rawValue), "command": .string($0.command)] }),
+            "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
+            "messages": .number(Double(controller.messages.values.reduce(0) { $0 + $1.count })),
             "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "text": .string($0.text), "needsAllow": .bool($0.needsAllow)] }),
             "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
             "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),

@@ -45,6 +45,17 @@ public struct CardVisit: Equatable, Sendable {
     }
 }
 
+/// A message that went along a link, for showing what each link carried.
+public struct Travel: Equatable, Sendable {
+    public let linkID: String
+    public let text: String
+    public let fromName: String
+
+    public init(linkID: String, text: String, fromName: String) {
+        self.linkID = linkID; self.text = text; self.fromName = fromName
+    }
+}
+
 /// A message stopped at a card that can't answer straight away: an Approval waiting for the
 /// person, or a Script waiting for its command to finish. The app answers with `holdResolved`.
 public struct Hold: Equatable, Sendable {
@@ -69,6 +80,8 @@ public struct RunOutput: Equatable, Sendable {
     public var visits: [CardVisit]
     /// Messages now waiting at an Approval or a Script card.
     public var holds: [Hold]
+    /// Each message that went along a link, in order.
+    public var travels: [Travel] = []
     /// True when this call ended the run.
     public var finished: Bool
     /// The run this call belonged to, nil if there was none.
@@ -149,6 +162,36 @@ public actor Engine {
         var output = RunOutput(runID: state.id)
         output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: "out"))
         await send(Message(text: text, fromName: "Start", fromStart: true), from: card, in: flow, state: &state, output: &output)
+        settle(state, &output)
+        return output
+    }
+
+    /// Starts a run part-way through a flow: `message` arrives at `cardID` as if a link had
+    /// brought it. For trying one stretch of a flow again without running what comes before it.
+    public func start(flow: Flow, at cardID: String, message text: String, fromName: String) async -> RunOutput {
+        await takeTurn()
+        defer { endTurn() }
+
+        if let run {
+            return RunOutput(log: ["A run is already going. Stop it before starting another."], runID: run.id)
+        }
+        guard let card = flow.card(cardID), acceptsInput(card) else {
+            return RunOutput(log: ["Nothing to run: that card takes no input"], finished: true)
+        }
+        guard !Self.isBlank(text) else {
+            return RunOutput(log: ["Nothing to run: there is no message to give \(card.name)"], finished: true)
+        }
+        var state = Run(id: Flow.newID())
+        var output = RunOutput(runID: state.id)
+        output.log.append("Run started at \(card.name)")
+        // No link brought this message, so it has none to count against.
+        let entry = Link(id: "", from: "", to: card.id)
+        let message = Message(text: text, fromName: fromName, fromStart: false)
+        let next = await arrive(message, at: card, by: entry, in: flow, state: &state, output: &output)
+        output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: next?.port))
+        if let next, !state.hitLimit {
+            await send(next.message, from: card, port: next.port, in: flow, state: &state, output: &output)
+        }
         settle(state, &output)
         return output
     }
@@ -265,6 +308,7 @@ public actor Engine {
                 continue
             }
             state.passes[link.id] = passes + 1
+            output.travels.append(Travel(linkID: link.id, text: message.text, fromName: message.fromName))
 
             arrivals += 1
             if arrivals > Self.maxArrivalsPerEvent {

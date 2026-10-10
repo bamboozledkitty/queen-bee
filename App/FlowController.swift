@@ -65,6 +65,32 @@ nonisolated struct LogLine: Identifiable, Sendable, Codable {
     let text: String
 }
 
+/// One message a link carried in a run.
+nonisolated struct LinkMessage: Codable, Equatable, Sendable, Identifiable {
+    var id = UUID()
+    let date: Date
+    let from: String
+    let text: String
+}
+
+/// One run, kept so it can be looked at again: where it went, what each link carried and how it ended.
+nonisolated struct RunRecord: Codable, Identifiable, Sendable {
+    enum Outcome: String, Codable, Sendable { case finished, stopped, failed }
+
+    let id: String
+    let started: Date
+    var ended: Date
+    var outcome: Outcome
+    /// What the run began with, in a few words.
+    var command: String
+    var log: [LogLine]
+    var results: [String: String]
+    var marks: [String: RunMark]
+    var linkPasses: [String: Int]
+    var messages: [String: [LinkMessage]]
+    var handOffs: Int
+}
+
 /// What a flow's runs left behind, kept between launches: the log, each End card's answer,
 /// and the marks the last run made on cards and links.
 nonisolated struct RunHistory: Codable, Sendable {
@@ -73,6 +99,9 @@ nonisolated struct RunHistory: Codable, Sendable {
     var marks: [String: RunMark] = [:]
     var linkPasses: [String: Int] = [:]
     var handOffs = 0
+    // Added after the first release that kept history, so a file from then still loads.
+    var messages: [String: [LinkMessage]]?
+    var runs: [RunRecord]?
 }
 
 /// One open flow: the graph, its sessions, and its runs. Every change to the graph goes
@@ -108,6 +137,17 @@ final class FlowController: ToolHost {
     private var liveLinks: [String: Set<String>] = [:]
     /// Hand-offs made in the latest run.
     private(set) var handOffs = 0
+    /// What each link carried in the run on show, oldest first.
+    private(set) var messages: [String: [LinkMessage]] = [:]
+    /// Earlier runs, oldest first.
+    private(set) var runs: [RunRecord] = []
+    /// The earlier run the canvas is showing in place of the latest, if any.
+    private(set) var viewedRunID: String?
+    /// The card whose "run from here" box is open in the settings panel.
+    var runFromCardID: String?
+    @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
+    /// How many runs are kept, and how much of each message.
+    private static let keptRuns = 20, keptMessageLength = 8_000, keptMessagesPerLink = 10
     /// Messages waiting at Approval and Script cards in the run that is going.
     private(set) var holds: [PendingHold] = []
     @ObservationIgnored private var scriptTasks: [String: Task<Void, Never>] = [:]
@@ -186,6 +226,8 @@ final class FlowController: ToolHost {
         marks = history.marks.filter { flow.card($0.key) != nil }
         linkPasses = history.linkPasses
         handOffs = history.handOffs
+        messages = history.messages ?? [:]
+        runs = history.runs ?? []
         // What was loaded is earlier runs; the orchestrator is only told about new ones.
         runLogStart = log.count
     }
@@ -202,15 +244,69 @@ final class FlowController: ToolHost {
     private func saveHistory() {
         historyTask?.cancel()
         historyTask = nil
-        let history = RunHistory(log: log, results: results, marks: marks, linkPasses: linkPasses, handOffs: handOffs)
+        // What is saved as "now" is always the latest run, even while an earlier one is on show.
+        let latest = viewedRunID == nil ? nil : runs.last
+        let history = RunHistory(log: log, results: latest?.results ?? results, marks: latest?.marks ?? marks,
+                                 linkPasses: latest?.linkPasses ?? linkPasses, handOffs: latest?.handOffs ?? handOffs,
+                                 messages: latest?.messages ?? messages, runs: runs)
         guard let data = try? JSONEncoder().encode(history) else { return }
         try? FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: historyURL, options: .atomic)
     }
 
+    // MARK: Looking at earlier runs
+
+    /// The log on show: an earlier run's when one is being looked at, else everything.
+    var shownLog: [LogLine] {
+        viewedRunID.flatMap { id in runs.first { $0.id == id }?.log } ?? log
+    }
+
+    /// Puts an earlier run's marks, messages and answers on the canvas, or the latest with nil.
+    func view(run id: String?) {
+        guard !isRunning else { return }
+        let record = id.flatMap { id in runs.first { $0.id == id } } ?? runs.last
+        guard let record else { return }
+        results = record.results.filter { flow.card($0.key) != nil }
+        marks = record.marks.filter { flow.card($0.key) != nil }
+        linkPasses = record.linkPasses
+        messages = record.messages
+        handOffs = record.handOffs
+        viewedRunID = record.id == runs.last?.id ? nil : record.id
+    }
+
+    /// A run is about to begin: the canvas is cleared of the last one.
+    private func clearForRun() {
+        results.removeAll()
+        marks.removeAll()
+        linkPasses.removeAll()
+        liveLinks.removeAll()
+        messages.removeAll()
+        handOffs = 0
+        viewedRunID = nil
+        runLogStart = log.count
+    }
+
+    private func finishRecord(_ output: RunOutput) {
+        guard let run = currentRun else { return }
+        currentRun = nil
+        let outcome: RunRecord.Outcome = marks.values.contains(where: \.failed) ? .failed
+            : output.log.contains("Run stopped") ? .stopped : .finished
+        runs.append(RunRecord(id: run.id, started: run.started, ended: Date(), outcome: outcome, command: run.command,
+                              log: Array(log.dropFirst(runLogStart)), results: results, marks: marks, linkPasses: linkPasses,
+                              messages: messages, handOffs: handOffs))
+        if runs.count > Self.keptRuns { runs.removeFirst(runs.count - Self.keptRuns) }
+    }
+
+    /// The last message that reached a card in the run on show: what "run from here" starts with.
+    func lastMessage(into cardID: String) -> LinkMessage? {
+        flow.links(into: cardID).compactMap { messages[$0.id]?.last }.max { $0.date < $1.date }
+    }
+
     /// Empties the log. Answers and run marks stay until the next run replaces them.
     func clearLog() {
         log.removeAll()
+        runs.removeAll()
+        viewedRunID = nil
         runLogStart = 0
         saveHistory()
     }
@@ -750,17 +846,40 @@ final class FlowController: ToolHost {
     @discardableResult
     func run(command: String? = nil) async -> String {
         guard let engine = readyEngine() else { return services.problem ?? "Claude Code isn't ready yet." }
-        if !isRunning {
-            results.removeAll()
-            marks.removeAll()
-            linkPasses.removeAll()
-            liveLinks.removeAll()
-            handOffs = 0
-            runLogStart = log.count
-        }
+        if !isRunning { clearForRun() }
         let output = await engine.start(flow: flow, startCardID: nil, command: command)
+        if let id = output.runID, !isRunning {
+            let first = command ?? flow.cards.first { $0.kind == .start }?.command ?? ""
+            currentRun = (id, Date(), String(first.prefix(200)))
+        }
         absorb(output, sender: nil)
         return output.log.last ?? (output.runID.map { "Run \($0) started" } ?? "Nothing to run")
+    }
+
+    /// Starts a run part-way through: `message` arrives at the card as if a link had brought it.
+    @discardableResult
+    func run(from cardID: String, message: String, sender: String = "You") async -> String {
+        guard let engine = readyEngine() else { return services.problem ?? "Claude Code isn't ready yet." }
+        guard !isRunning else {
+            banner = "A run is already going. Stop it before starting another."
+            return banner ?? ""
+        }
+        clearForRun()
+        let output = await engine.start(flow: flow, at: cardID, message: message, fromName: sender)
+        if let id = output.runID {
+            currentRun = (id, Date(), "From \(flow.card(cardID)?.name ?? "a card"): \(message.prefix(160))")
+        }
+        absorb(output, sender: nil)
+        return output.log.last ?? "Nothing to run"
+    }
+
+    /// Tries the card a run stopped at again, with the message it was given.
+    func retry(_ cardID: String) {
+        guard let last = lastMessage(into: cardID) else {
+            banner = "There is no message to give this card again."
+            return
+        }
+        Task { await run(from: cardID, message: last.text, sender: last.from) }
     }
 
     func stop() async {
@@ -795,6 +914,11 @@ final class FlowController: ToolHost {
                 live.send(delivery.text)
             }
         }
+        for travel in output.travels {
+            var carried = messages[travel.linkID] ?? []
+            carried.append(LinkMessage(date: Date(), from: travel.fromName, text: String(travel.text.prefix(Self.keptMessageLength))))
+            messages[travel.linkID] = Array(carried.suffix(Self.keptMessagesPerLink))
+        }
         output.holds.forEach(take)
         scheduleHistorySave()
         if output.finished {
@@ -804,6 +928,7 @@ final class FlowController: ToolHost {
             scriptTasks.values.forEach { $0.cancel() }
             scriptTasks.removeAll()
             holds.removeAll()
+            finishRecord(output)
             notifyOrchestrator(of: output)
             let stopped = marks.values.contains(where: \.failed)
             Notifier.post(title: stopped ? "\(flow.name) stopped" : "\(flow.name) finished",

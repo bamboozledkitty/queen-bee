@@ -67,6 +67,9 @@ struct SidePanel: View {
                 }
                 Spacer()
                 if tab == .orchestrator { orchestratorState }
+                if tab == .log, !controller.runs.isEmpty {
+                    RunPicker(controller: controller)
+                }
                 if tab == .log, !controller.log.isEmpty {
                     Button("Clear") { controller.clearLog() }
                         .buttonStyle(.panel(.quiet))
@@ -77,6 +80,21 @@ struct SidePanel: View {
             .background(Theme.bar.ui)
             .animation(Theme.Motion.standard, value: tab)
             Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+            if let id = controller.viewedRunID, let run = controller.runs.first(where: { $0.id == id }) {
+                // The canvas is showing an earlier run. Say so, with the way back.
+                HStack(spacing: Theme.Space.s) {
+                    Text("Showing the run from \(RunPicker.label(for: run.started)).")
+                        .font(.dsSans(Theme.Size.caption))
+                    Spacer()
+                    Button("Back to latest") { controller.view(run: nil) }
+                        .buttonStyle(.panel())
+                }
+                .foregroundStyle(Theme.ink.ui)
+                .padding(.horizontal, Theme.Space.m)
+                .padding(.vertical, 5)
+                .background(Theme.barHover.ui)
+                Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+            }
 
             // The orchestrator's terminal stays in place under the other tabs, so switching
             // back to it is instant and it never loses its size.
@@ -114,6 +132,44 @@ struct SidePanel: View {
     }
 }
 
+/// Picks which run the canvas and the log show: the latest, or an earlier one.
+struct RunPicker: View {
+    let controller: FlowController
+
+    static func label(for date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm" : "d MMM HH:mm"
+        return f.string(from: date)
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(controller.runs.reversed()) { run in
+                let isShown = controller.viewedRunID == run.id || (controller.viewedRunID == nil && run.id == controller.runs.last?.id)
+                Toggle(isOn: Binding(get: { isShown }, set: { _ in controller.view(run: run.id) })) {
+                    Text("\(Self.label(for: run.started)) · \(run.outcome.rawValue) · \(run.handOffs) hand-offs")
+                    Text(run.command)
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(controller.viewedRunID == nil ? "Latest run" : "Earlier run")
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .font(.dsMono(Theme.Size.caption, .medium))
+            .foregroundStyle(Theme.inkSecondary.ui)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(controller.isRunning)
+        .padding(.trailing, Theme.Space.s)
+        .help(controller.isRunning ? "Earlier runs can be looked at once this one ends" : "Show an earlier run on the canvas and in the log")
+    }
+}
+
 /// What the runs did, newest at the bottom.
 private struct LogList: View {
     let controller: FlowController
@@ -128,12 +184,12 @@ private struct LogList: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    if controller.log.isEmpty {
+                    if controller.shownLog.isEmpty {
                         Text("Runs are logged here: each hand-off, each condition's answer, and why a run stopped. The log is kept between launches.")
                             .font(.dsSans(Theme.Size.body))
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
-                    ForEach(controller.log) { line in
+                    ForEach(controller.shownLog) { line in
                         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                             Text(Self.time.string(from: line.date))
                                 .foregroundStyle(Theme.inkSecondary.ui)
