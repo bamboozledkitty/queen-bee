@@ -47,7 +47,9 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
     case .flow:
         if blank(card.flowRef) { return "Choose a flow" }
         if nothing(on: "done") { return "Nothing on Done" }
-    case .or, .prompt, .end:
+    case .end:
+        if Checks.isProtectedSavePath(card.saveTo ?? "") { return "Can't save there" }
+    case .or, .prompt:
         break
     }
 

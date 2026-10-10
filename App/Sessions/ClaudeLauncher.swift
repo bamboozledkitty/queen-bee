@@ -115,9 +115,11 @@ enum ClaudeLauncher {
                              environment: ResolvedEnvironment) -> LaunchSpec? {
         guard let claude = environment.claude else { return nil }
         let key = "\(flow.id)/orchestrator"
+        // The session's secret is in its environment (see `spec`) and Claude Code fills these in from there.
+        // Written out here it would sit on the command line, where `ps` shows it to every other process.
         let server: JSONValue = ["mcpServers": ["queenbee": [
             "command": .string(services.helperPath), "args": ["mcp"],
-            "env": ["QB_SOCKET": .string(services.socketPath), "QB_SESSION": .string(services.credential(for: key))],
+            "env": ["QB_SOCKET": "${QB_SOCKET}", "QB_SESSION": "${QB_SESSION}"],
         ]]]
         let args = common(sessionID: sessionID, name: orchestratorName(for: flow),
                           systemPrompt: orchestratorPrompt(flow: flow), services: services)

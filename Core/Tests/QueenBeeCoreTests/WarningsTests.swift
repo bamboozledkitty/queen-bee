@@ -124,4 +124,15 @@ import Testing
         try flow.addLink(from: "Rewrite", to: "Writer")
         #expect(warnings(for: flow)[rewrite.id] == nil)
     }
+
+    @Test func anEndCardThatWouldSaveIntoAProtectedFolderWarns() throws {
+        var flow = Flow(name: "F")
+        try flow.addCard(kind: .agent, name: "Writer")
+        let end = try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "Writer", to: "Done")
+        // A flow file can arrive with a path the app would have refused.
+        let index = try #require(flow.cards.firstIndex { $0.id == end.id })
+        flow.cards[index].saveTo = ".claude/settings.json"
+        #expect(warnings(for: flow)[end.id] == "Can't save there")
+    }
 }

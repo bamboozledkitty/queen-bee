@@ -23,6 +23,10 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   It only runs a command you typed into its settings or allowed yourself on this Mac. A command written by the
   orchestrator, pasted in, or arriving in a flow file stops the run and asks you first. What you allowed is kept in
   the app's own settings, not in the flow file.
+- **End cards write files.** An End card can save the final answer to a file in the project folder, and the
+  orchestrator can set that up without asking. A save can't leave the project folder, and it is refused inside
+  `.git`, `.claude` and `.queenbee`, where a file could change what git, Claude Code or Queen Bee does next. Any
+  other file in the project can be overwritten.
 - **Schedules start runs with nobody watching.** A Start card can run on the clock or when a file in the project
   changes, while the app is open. A schedule only fires once you have set it or turned it on in this app, and only
   for the command you set it with, so one that arrives in a flow file stays off until you agree. If the orchestrator
@@ -38,8 +42,9 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   from the web or a file can end up in front of the orchestrator, so the usual prompt-injection caution applies.
 - **The app's socket is local.** The helper talks to the app over a unix socket in
   `~/Library/Application Support/QueenBee/`, a folder only your account can open. Each session has its own secret,
-  and only the orchestrator's secret unlocks the flow-editing tools. A program already running as you with shell
-  access could read those secrets, so this limits agents, not other software on your account.
+  and only the orchestrator's secret unlocks the flow-editing tools. That keeps an agent from using those tools through
+  its own session. It is not a wall against anything that can run commands as you: other software on your account,
+  or an agent you have allowed to run any shell command, could read another session's secret.
 - **Updates are signed.** The app only installs an update signed with the project's update key. Releases are signed
   with a Developer ID but are not yet notarized by Apple.
 

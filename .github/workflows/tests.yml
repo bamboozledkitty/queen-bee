@@ -1,0 +1,16 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    name: Core unit tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        working-directory: Core
+        run: swift test
