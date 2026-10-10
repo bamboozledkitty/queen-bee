@@ -296,6 +296,11 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.warning = warnings[card.id]
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
+            if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
+                context.isLive = true
+                context.waiting = hold.kind == .approval ? "Waiting for you to approve"
+                    : hold.needsAllow ? "Waiting for you to allow its command" : "Running its command…"
+            }
             context.mark = controller.marks[card.id] ?? RunMark()
             context.isRunning = controller.isRunning
             if card.kind == .agent, let agentView = view as? AgentCardView {

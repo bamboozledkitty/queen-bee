@@ -171,7 +171,7 @@ final class UpdateChecker {
 }
 
 enum CardKindMenu {
-    static let kinds: [CardKind] = [.agent, .start, .ifElse, .switchCard, .and, .or, .prompt, .loop, .end, .note]
+    static let kinds: [CardKind] = [.agent, .start, .ifElse, .switchCard, .and, .or, .prompt, .loop, .approval, .script, .end, .note]
 }
 
 enum LaunchArguments {

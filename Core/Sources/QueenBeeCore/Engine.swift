@@ -45,6 +45,21 @@ public struct CardVisit: Equatable, Sendable {
     }
 }
 
+/// A message stopped at a card that can't answer straight away: an Approval waiting for the
+/// person, or a Script waiting for its command to finish. The app answers with `holdResolved`.
+public struct Hold: Equatable, Sendable {
+    public let id: String
+    public let cardID: String
+    public let kind: CardKind
+    /// The message that is waiting.
+    public let text: String
+    public let fromName: String
+
+    public init(id: String, cardID: String, kind: CardKind, text: String, fromName: String) {
+        self.id = id; self.cardID = cardID; self.kind = kind; self.text = text; self.fromName = fromName
+    }
+}
+
 /// Everything one event caused.
 public struct RunOutput: Equatable, Sendable {
     public var deliveries: [Delivery]
@@ -52,15 +67,17 @@ public struct RunOutput: Equatable, Sendable {
     public var results: [EndResult]
     /// Every card a message reached, in order.
     public var visits: [CardVisit]
+    /// Messages now waiting at an Approval or a Script card.
+    public var holds: [Hold]
     /// True when this call ended the run.
     public var finished: Bool
     /// The run this call belonged to, nil if there was none.
     public var runID: String?
 
     public init(deliveries: [Delivery] = [], log: [String] = [], results: [EndResult] = [],
-                visits: [CardVisit] = [], finished: Bool = false, runID: String? = nil) {
+                visits: [CardVisit] = [], holds: [Hold] = [], finished: Bool = false, runID: String? = nil) {
         self.deliveries = deliveries; self.log = log; self.results = results
-        self.visits = visits; self.finished = finished; self.runID = runID
+        self.visits = visits; self.holds = holds; self.finished = finished; self.runID = runID
     }
 }
 
@@ -91,6 +108,8 @@ public actor Engine {
         var waiting: [String: [String: Message]] = [:]
         var fired: Set<String> = []
         var tries: [String: Int] = [:]
+        /// Messages waiting at Approval and Script cards, by hold id.
+        var held: [String: (cardID: String, message: Message)] = [:]
         var hitLimit = false
     }
 
@@ -155,6 +174,32 @@ public actor Engine {
         settle(state, &output)
         return output
     }
+
+    /// The person answered an Approval, or a Script's command finished. `port` is the output the
+    /// message leaves by. `text` replaces the message: the person's edit, or what the script printed.
+    public func holdResolved(flow: Flow, holdID: String, port: String, text: String?) async -> RunOutput {
+        await takeTurn()
+        defer { endTurn() }
+
+        guard var state = run else { return RunOutput() }
+        var output = RunOutput(runID: state.id)
+        guard let held = state.held.removeValue(forKey: holdID) else { return output }
+        state.pending.remove(Self.holdKey(holdID))
+        if let card = flow.card(held.cardID) {
+            var message = held.message
+            if let text, !Self.isBlank(text) { message.text = text }
+            if card.kind == .script { message.fromName = card.name; message.fromStart = false }
+            output.log.append("\(Self.title(card)) → \(portLabel(port))")
+            output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: port))
+            await send(message, from: card, port: port, in: flow, state: &state, output: &output)
+        } else {
+            output.log.append("A card that was holding a message is no longer in the flow")
+        }
+        settle(state, &output)
+        return output
+    }
+
+    private static func holdKey(_ id: String) -> String { "hold:" + id }
 
     public func agentFailed(flow: Flow, cardID: String, reason: String) async -> RunOutput {
         await takeTurn()
@@ -335,6 +380,18 @@ public actor Engine {
             let saveTo = card.saveTo.flatMap { Self.isBlank($0) ? nil : $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             output.results.append(EndResult(cardID: card.id, cardName: card.name, text: message.text, saveTo: saveTo))
             output.log.append("\(title) got the final answer from \(message.fromName)")
+            return nil
+
+        case .approval, .script:
+            if card.kind == .script, Self.isBlank(card.command ?? "") {
+                output.log.append("\(title) has no command, so it counts as Fail")
+                return ("fail", message)
+            }
+            let hold = Hold(id: Flow.newID(), cardID: card.id, kind: card.kind, text: message.text, fromName: message.fromName)
+            state.held[hold.id] = (card.id, message)
+            state.pending.insert(Self.holdKey(hold.id))
+            output.holds.append(hold)
+            output.log.append(card.kind == .approval ? "\(title) is waiting for you" : "\(title) is running its command")
             return nil
 
         case .note, .start:

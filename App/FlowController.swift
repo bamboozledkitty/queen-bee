@@ -40,6 +40,20 @@ nonisolated struct RunMark: Equatable, Sendable, Codable {
     var failed = false
 }
 
+/// A message waiting at an Approval or Script card in the run that is going.
+nonisolated struct PendingHold: Identifiable, Equatable, Sendable {
+    let id: String
+    let cardID: String
+    let kind: CardKind
+    /// The message that is waiting.
+    let text: String
+    let from: String
+    /// A script's command, as it was when the run reached the card.
+    var command = ""
+    /// A script whose command the person hasn't allowed yet.
+    var needsAllow = false
+}
+
 /// What a flow needs from you right now, for its row in the sidebar.
 nonisolated enum FlowActivity: Sendable {
     case quiet, running, needsYou, failed
@@ -94,6 +108,9 @@ final class FlowController: ToolHost {
     private var liveLinks: [String: Set<String>] = [:]
     /// Hand-offs made in the latest run.
     private(set) var handOffs = 0
+    /// Messages waiting at Approval and Script cards in the run that is going.
+    private(set) var holds: [PendingHold] = []
+    @ObservationIgnored private var scriptTasks: [String: Task<Void, Never>] = [:]
     /// The canvas's zoom, published by the canvas for the zoom pill.
     var zoom: Double = 1
 
@@ -124,7 +141,8 @@ final class FlowController: ToolHost {
 
     /// Agent cards whose session is waiting on the person, in canvas order.
     var cardsNeedingYou: [Card] {
-        flow.cards.filter { $0.kind == .agent && sessions[$0.id]?.state == .needsYou }
+        let waiting = Set(holds.filter { $0.kind == .approval || $0.needsAllow }.map(\.cardID))
+        return flow.cards.filter { ($0.kind == .agent && sessions[$0.id]?.state == .needsYou) || waiting.contains($0.id) }
     }
 
     var activity: FlowActivity {
@@ -777,10 +795,15 @@ final class FlowController: ToolHost {
                 live.send(delivery.text)
             }
         }
+        output.holds.forEach(take)
         scheduleHistorySave()
         if output.finished {
             isRunning = false
             liveLinks.removeAll()
+            // Whatever was waiting belonged to the run that has ended.
+            scriptTasks.values.forEach { $0.cancel() }
+            scriptTasks.removeAll()
+            holds.removeAll()
             notifyOrchestrator(of: output)
             let stopped = marks.values.contains(where: \.failed)
             Notifier.post(title: stopped ? "\(flow.name) stopped" : "\(flow.name) finished",
@@ -789,6 +812,68 @@ final class FlowController: ToolHost {
             isRunning = true
         }
         return forPlugin
+    }
+
+    // MARK: Approval and Script cards
+
+    /// A message has stopped at an Approval or a Script card.
+    private func take(_ hold: Hold) {
+        guard let card = flow.card(hold.cardID) else { return }
+        var pending = PendingHold(id: hold.id, cardID: hold.cardID, kind: hold.kind, text: hold.text, from: hold.fromName)
+        if hold.kind == .script {
+            pending.command = card.command ?? ""
+            pending.needsAllow = !ScriptRunner.isAllowed(pending.command, flowID: flow.id, cardID: card.id)
+        }
+        holds.append(pending)
+        if pending.kind == .approval {
+            Notifier.post(title: "\(card.name) needs your approval", body: String(hold.text.prefix(200)), flowID: flow.id, cardID: card.id)
+        } else if pending.needsAllow {
+            append("\(card.name) is waiting for you to allow its command")
+            Notifier.post(title: "\(card.name) needs you", body: "Allow its command to run: \(pending.command.prefix(160))", flowID: flow.id, cardID: card.id)
+        } else {
+            runScript(pending)
+        }
+    }
+
+    private func runScript(_ hold: PendingHold) {
+        guard let environment = services.environment else { return resolve(hold.id, port: "fail", text: "Claude Code's environment isn't ready.") }
+        let folder = project.root
+        scriptTasks[hold.id] = Task {
+            let result = await ScriptRunner.run(hold.command, message: hold.text, from: hold.from, in: folder, environment: environment)
+            guard !Task.isCancelled else { return }
+            self.scriptTasks[hold.id] = nil
+            self.resolve(hold.id, port: result.passed ? "pass" : "fail", text: result.output)
+        }
+    }
+
+    /// Answers a hold and lets the run carry on from its card.
+    private func resolve(_ id: String, port: String, text: String?) {
+        guard holds.contains(where: { $0.id == id }), let engine else { return }
+        holds.removeAll { $0.id == id }
+        Task { self.absorb(await engine.holdResolved(flow: self.flow, holdID: id, port: port, text: text), sender: nil) }
+    }
+
+    /// The person approved a held message, perhaps after editing it.
+    func approve(_ id: String, text: String) { resolve(id, port: "approved", text: text) }
+
+    func reject(_ id: String) { resolve(id, port: "rejected", text: nil) }
+
+    /// The person read a script's command and let it run. It is remembered for this card.
+    func allowScript(_ id: String) {
+        guard let index = holds.firstIndex(where: { $0.id == id }) else { return }
+        ScriptRunner.allow(holds[index].command, flowID: flow.id, cardID: holds[index].cardID)
+        holds[index].needsAllow = false
+        runScript(holds[index])
+    }
+
+    func refuseScript(_ id: String) { resolve(id, port: "fail", text: "The command was not allowed to run.") }
+
+    /// The person typed a Script card's command, which also allows it: they wrote it.
+    func setScriptCommand(_ id: String, _ command: String) {
+        var patch = CardPatch()
+        patch.command = command
+        update(id, patch)
+        if flow.card(id)?.command == command { ScriptRunner.allow(command, flowID: flow.id, cardID: id) }
     }
 
     /// Adds what an event did to the per-card tallies. The links an event travelled stay live

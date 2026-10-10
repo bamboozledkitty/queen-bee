@@ -38,6 +38,11 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
     case .and:
         // An And waits for one message per card that links in, so two links from one card are one input.
         if Set(incoming.map(\.from)).count < 2 { return "Needs 2+ inputs" }
+    case .approval:
+        if nothing(on: "approved") { return "Nothing on Approved" }
+    case .script:
+        if blank(card.command) { return "Write the command" }
+        if nothing(on: "pass") { return "Nothing on Pass" }
     case .or, .prompt, .end:
         break
     }

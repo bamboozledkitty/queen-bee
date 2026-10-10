@@ -179,7 +179,7 @@ extension Flow {
                 card.permissionMode = Self.setOrCleared(mode)
             }
             if let cwd = patch.cwd { card.cwd = Self.setOrCleared(cwd) }
-        case .start:
+        case .start, .script:
             if let command = patch.command { card.command = command }
         case .ifElse, .loop:
             if let check = patch.check { card.check = check }
@@ -191,7 +191,7 @@ extension Flow {
             if let template = patch.template { card.template = template }
         case .end:
             if let saveTo = patch.saveTo { card.saveTo = saveTo }
-        case .note:
+        case .note, .approval:
             if let text = patch.text { card.text = text }
         case .and, .or:
             break

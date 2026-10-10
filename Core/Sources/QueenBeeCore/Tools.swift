@@ -168,7 +168,7 @@ public enum Tools {
                 let status = snapshot.agents[card.id]
                 fields["state"] = .string(status?.state ?? "not started")
                 fields["has_last_reply"] = .bool(!(status?.lastReply ?? "").isEmpty)
-            case .start:
+            case .start, .script:
                 fields["command"] = text(card.command)
             case .ifElse, .loop:
                 fields["check"] = text(card.check?.rawValue)
@@ -180,7 +180,7 @@ public enum Tools {
                 fields["template"] = text(card.template)
             case .end:
                 fields["save_to"] = text(card.saveTo)
-            case .note:
+            case .note, .approval:
                 fields["text"] = text(card.text)
             case .and, .or:
                 break
@@ -227,6 +227,11 @@ public enum Tools {
             - loop: checks the message. Outputs: done (the check holds, or max_tries is used up) and again.
             - end: records the final answer and saves it to a file if save_to is set. No outputs.
             - note: text for people. Carries no messages and cannot be linked.
+            - approval: holds the message until the person approves or rejects it. They can edit it first. \
+            Outputs: approved, rejected. Put one before anything that can't be taken back, such as sending an email.
+            - script: runs a shell command in the project folder, with the message on its standard input and in \
+            $QB_MESSAGE. Outputs: pass (it exited with 0) and fail. What it printed is passed on. The person is \
+            asked to allow a command they did not type themselves the first time a run reaches it.
             Only pass the settings that belong to the kind. Leave out x and y to place the card to the right of the \
             others, which is usually what you want. An agent card is 560 points wide and 380 tall, and the other \
             cards are about 240 by 100, so if you do give positions leave 60 points between cards. A card that \
@@ -307,7 +312,7 @@ public enum Tools {
         "effort": ["type": "string", "description": "agent: low, medium, high, xhigh or max. An empty string goes back to the model's default."],
         "permission_mode": ["type": "string", "description": "agent: manual, acceptEdits, plan or auto. An empty string goes back to the person's default."],
         "cwd": ["type": "string", "description": "agent: the folder the session works in. An empty string goes back to the project folder."],
-        "command": ["type": "string", "description": "start: the message a run begins with."],
+        "command": ["type": "string", "description": "start: the message a run begins with. script: the shell command to run."],
         "check": ["type": "string", "enum": .array(CheckKind.allCases.map { .string($0.rawValue) }),
                   "description": "if, loop: how value is tested. judge: Claude decides whether value, a plain-English statement, is true of the message. contains and not-contains: the message has or lacks the text in value, ignoring case. regex: the message matches the pattern in value."],
         "value": ["type": "string", "description": "if, loop: the statement, text or pattern the check tests."],
@@ -315,7 +320,7 @@ public enum Tools {
         "branches": ["type": "array", "items": ["type": "string"], "description": "switch: the branch names. Each one becomes an output."],
         "template": ["type": "string", "description": "prompt: the rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from."],
         "save_to": ["type": "string", "description": "end: a file to save the final answer to, relative to the project folder."],
-        "text": ["type": "string", "description": "note: the note's text."],
+        "text": ["type": "string", "description": "note: the note's text. approval: what the person should check before approving."],
     ]
 
     private static func schema(_ properties: [String: JSONValue], required: [String] = [], withSettings: Bool = false) -> JSONValue {
@@ -332,8 +337,8 @@ private struct Arguments: Sendable {
     /// so the orchestrator finds out instead of believing the change was made.
     private static let settings: [(key: String, kinds: Set<CardKind>)] = [
         ("instructions", [.agent]), ("model", [.agent]), ("effort", [.agent]), ("permission_mode", [.agent]), ("cwd", [.agent]),
-        ("command", [.start]), ("check", [.ifElse, .loop]), ("value", [.ifElse, .loop]), ("max_tries", [.loop]),
-        ("branches", [.switchCard]), ("template", [.prompt]), ("save_to", [.end]), ("text", [.note]),
+        ("command", [.start, .script]), ("check", [.ifElse, .loop]), ("value", [.ifElse, .loop]), ("max_tries", [.loop]),
+        ("branches", [.switchCard]), ("template", [.prompt]), ("save_to", [.end]), ("text", [.note, .approval]),
     ]
 
     private func value(_ key: String) -> JSONValue? {

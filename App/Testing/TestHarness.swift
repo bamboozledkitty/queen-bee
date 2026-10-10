@@ -101,6 +101,21 @@ enum TestHarness {
             guard let kind = payload["kind"]?.stringValue.flatMap(CardKind.init(rawValue:)) else { return ["error": "add needs kind"] }
             controller.addCard(kind)
             return [:]
+        case "hold":
+            // Answers the first held message the way the settings panel's buttons do.
+            guard let hold = controller.holds.first(where: { cardID == nil || $0.cardID == cardID }) else { return ["error": "nothing is held"] }
+            switch payload["answer"]?.stringValue {
+            case "approve": controller.approve(hold.id, text: payload["text"]?.stringValue ?? hold.text)
+            case "reject": controller.reject(hold.id)
+            case "allow": controller.allowScript(hold.id)
+            case "refuse": controller.refuseScript(hold.id)
+            default: return ["error": "hold needs answer"]
+            }
+            return [:]
+        case "script":
+            guard let cardID, let command = payload["command"]?.stringValue else { return ["error": "script needs card and command"] }
+            controller.setScriptCommand(cardID, command)
+            return [:]
         case "selectAll":
             controller.selectAll()
             return [:]
@@ -149,6 +164,7 @@ enum TestHarness {
             "name": .string(controller.flow.name),
             "cards": .array(controller.flow.cards.map { ["name": .string($0.name), "x": .number($0.x), "y": .number($0.y)] }),
             "links": .number(Double(controller.flow.links.count)),
+            "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "text": .string($0.text), "needsAllow": .bool($0.needsAllow)] }),
             "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
             "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),
             "isRunning": .bool(controller.isRunning),

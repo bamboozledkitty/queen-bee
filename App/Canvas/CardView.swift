@@ -580,6 +580,8 @@ struct CardContext: Equatable {
     var warning: String?
     var inputCount = 0
     var result: String?
+    /// What a card holding a message is waiting on, in a few words.
+    var waiting: String?
     var sessionState: SessionState = .notStarted
     /// The card's settings have changed since its session started.
     var needsRestart = false

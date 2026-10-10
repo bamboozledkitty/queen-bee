@@ -27,6 +27,8 @@ private struct PaletteRow: View {
     let kind: CardKind
     let add: () -> Void
     @State private var isHovered = false
+    /// The pointer has rested on the row long enough to want to know what the card is.
+    @State private var showsHelp = false
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
@@ -43,6 +45,22 @@ private struct PaletteRow: View {
         .background(isHovered ? Theme.barHover.ui : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+        .task(id: isHovered) {
+            guard isHovered else { return showsHelp = false }
+            try? await Task.sleep(for: .milliseconds(450))
+            if !Task.isCancelled { showsHelp = true }
+        }
+        // Beside the palette, level with the row, and never in the pointer's way.
+        .overlay(alignment: .topLeading) {
+            if showsHelp {
+                CardHelpView(kind: kind)
+                    .offset(x: PaletteView.width + Theme.Space.xs)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .offset(x: -6)))
+            }
+        }
+        .zIndex(showsHelp ? 1 : 0)
+        .animation(Theme.Motion.standard, value: showsHelp)
         .onTapGesture(perform: add)
         .onDrag {
             // A type of the app's own, so a terminal under the pointer leaves the drop for the canvas.
@@ -54,8 +72,84 @@ private struct PaletteRow: View {
             }
             return provider
         }
-        .help("Click to add a \(kind.label) card, or drag it onto the canvas")
         .animation(Theme.Motion.quick, value: isHovered)
+    }
+}
+
+/// What a kind of card does, in a sentence anyone can follow, and one small example.
+struct CardHelpView: View {
+    let kind: CardKind
+
+    var body: some View {
+        let help = CardHelp.text(for: kind)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: CanvasGeometry.icon(for: kind)).font(.system(size: 11, weight: .medium))
+                Text(kind.label).font(.dsMono(Theme.Size.body, .medium))
+            }
+            Text(help.what)
+                .font(.dsSans(Theme.Size.body))
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("For example").font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                Text(help.example)
+                    .font(.dsSans(Theme.Size.caption))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+            Text("Click to add it, or drag it onto the canvas.")
+                .font(.dsSans(Theme.Size.caption))
+                .foregroundStyle(Theme.inkSecondary.ui)
+        }
+        .foregroundStyle(Theme.ink.ui)
+        .padding(Theme.Space.m)
+        .frame(width: 250, alignment: .leading)
+        .floatingPanel()
+    }
+}
+
+enum CardHelp {
+    static func text(for kind: CardKind) -> (what: String, example: String) {
+        switch kind {
+        case .agent:
+            ("A live Claude Code session that does one job. It is given a message, does the work, and its reply goes to whatever it is linked to.",
+             "A Writer drafts a slogan, and the draft goes on to a Reviewer.")
+        case .start:
+            ("Where a run begins. It holds the first message and sends it when you press Run.",
+             "“Write a slogan for a neighbourhood bakery.”")
+        case .ifElse:
+            ("Asks a yes-or-no question about the message. The message goes out Yes or out No.",
+             "“Does the review approve the draft?” Yes goes to Done. No goes back to the Writer.")
+        case .switchCard:
+            ("Sorts each message into one of several branches that you name. Claude reads the message and picks the branch that fits. A message that fits none goes out Other.",
+             "With branches bug, feature and question, a crash report goes out bug and reaches the agent that fixes bugs.")
+        case .and:
+            ("Waits until every card linked into it has answered, then passes all the answers on together.",
+             "Three researchers each report back, and one Writer gets all three reports at once.")
+        case .or:
+            ("Passes on the first answer to arrive and ignores the ones that come after.",
+             "Ask two agents the same question and use whichever answers first.")
+        case .prompt:
+            ("Rewrites the message before it goes on, using a template you write.",
+             "“Summarise this in one line: {{message}}” turns a long report into a short brief for the next agent.")
+        case .loop:
+            ("Sends the work round again until a condition is met, or until it has tried enough times.",
+             "Again goes back to the Writer until the review approves, for at most 3 tries. Then Done.")
+        case .approval:
+            ("Stops the run and waits for you. You read the message, change it if you like, then approve or reject it.",
+             "Before an agent sends an email: Approved goes to the sender, Rejected goes back to the Writer.")
+        case .script:
+            ("Runs a command on your Mac and checks whether it worked. No AI is involved, so it is quick and certain.",
+             "Run “npm test”. Pass goes to Done. Fail goes back to the Coder with the errors.")
+        case .end:
+            ("Where a run's answer lands. It shows the final answer and can save it to a file.",
+             "Save the approved slogan to slogan.txt.")
+        case .note:
+            ("A sticky note for people. Agents never see it.",
+             "“Ask Priya before changing the Reviewer's instructions.”")
+        }
     }
 }
 

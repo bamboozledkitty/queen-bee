@@ -6,6 +6,10 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
     case ifElse = "if"
     case switchCard = "switch"
     case and, or, prompt, loop, end, note
+    /// Holds a message until the person approves or rejects it.
+    case approval
+    /// Runs a shell command and routes on whether it succeeded.
+    case script
 
     public var label: String {
         switch self {
@@ -19,6 +23,8 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
         case .loop: "Loop until"
         case .end: "End"
         case .note: "Note"
+        case .approval: "Approval"
+        case .script: "Script"
         }
     }
 }
@@ -100,6 +106,8 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
         case .prompt: c.template = ""
         case .end: c.saveTo = ""
         case .note: c.text = ""; c.height = 120
+        case .approval: c.text = ""
+        case .script: c.command = ""
         case .and, .or: break
         }
         c.height = max(c.height, Card.minimumHeight(for: c))
@@ -167,6 +175,8 @@ public func ports(of card: Card) -> [String] {
     case .ifElse: ["yes", "no"]
     case .switchCard: (card.branches ?? []) + ["other"]
     case .loop: ["done", "again"]
+    case .approval: ["approved", "rejected"]
+    case .script: ["pass", "fail"]
     case .end, .note: []
     case .agent, .start, .and, .or, .prompt: ["out"]
     }
@@ -185,6 +195,10 @@ public func portLabel(_ port: String) -> String {
     case "other": "Other"
     case "done": "Done"
     case "again": "Again"
+    case "approved": "Approved"
+    case "rejected": "Rejected"
+    case "pass": "Pass"
+    case "fail": "Fail"
     default: port
     }
 }

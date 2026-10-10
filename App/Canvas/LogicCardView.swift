@@ -66,9 +66,9 @@ final class LogicCardView: CardView {
 
     override func update(card new: Card, context: CardContext) {
         super.update(card: new, context: context)
-        let progress = runProgress(of: new, context: context)
-        summaryLabel.stringValue = context.result ?? progress ?? CardSummary.text(for: new, inputs: context.inputCount)
-        summaryLabel.textColor = context.result != nil ? Theme.ink : progress != nil ? Theme.liveInk : Theme.inkSecondary
+        let progress = context.waiting ?? runProgress(of: new, context: context)
+        summaryLabel.stringValue = progress ?? context.result ?? CardSummary.text(for: new, inputs: context.inputCount)
+        summaryLabel.textColor = progress != nil ? Theme.liveInk : context.result != nil ? Theme.ink : Theme.inkSecondary
         warningLabel.stringValue = context.warning ?? ""
         warningLabel.isHidden = context.warning == nil
 
@@ -134,6 +134,12 @@ enum CardSummary {
             let file = card.saveTo ?? ""
             return file.isEmpty ? "The final answer shows here" : "Saves to \(file)"
         case .note: return card.text ?? ""
+        case .approval:
+            let ask = (card.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return ask.isEmpty ? "Waits for you to approve" : ask
+        case .script:
+            let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
+            return first.isEmpty ? "Write the command" : first
         }
     }
 

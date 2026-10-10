@@ -86,6 +86,22 @@ private struct CardSettings: View {
                 note("Passes on the first reply in a run and drops later ones.")
             case .note:
                 EditorField("Note", text: card.text ?? "") { v in patch { $0.text = v } }
+            case .approval:
+                LineField("What to check before approving", placeholder: "Is this email right to send?",
+                          text: card.text ?? "", lines: 1...3) { v in patch { $0.text = v } }
+                if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
+                    ApprovalReview(controller: controller, hold: hold)
+                        .id(hold.id)
+                } else {
+                    note("A run stops here and waits for you. You can edit the message, then approve or reject it.")
+                }
+            case .script:
+                EditorField("Command", text: card.command ?? "", mono: true) { v in controller.setScriptCommand(card.id, v) }
+                note("Runs in the project folder. The message arrives on standard input and in $QB_MESSAGE. Exit code 0 goes out Pass, anything else Fail, and what the command printed is passed on.")
+                if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
+                    ScriptReview(controller: controller, hold: hold)
+                        .id(hold.id)
+                }
             }
 
             if let warning = controller.warnings[card.id] {
@@ -220,6 +236,85 @@ private struct CardSettings: View {
         var p = CardPatch()
         change(&p)
         controller.update(card.id, p)
+    }
+}
+
+/// A message waiting at an Approval card: read it, change it if need be, then send it on or back.
+private struct ApprovalReview: View {
+    let controller: FlowController
+    let hold: PendingHold
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            Text("From \(hold.from). Waiting for you.")
+                .font(.dsMono(Theme.Size.caption, .medium))
+            TextEditor(text: $draft)
+                .font(.dsSans(Theme.Size.body))
+                .frame(height: 150)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 5)
+                .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.live.ui))
+                .foregroundStyle(Theme.ink.ui)
+            HStack(spacing: Theme.Space.s) {
+                Button("Reject") { controller.reject(hold.id) }
+                    .buttonStyle(.panel())
+                    .help("Send the message out the Rejected output, as it arrived")
+                Spacer()
+                Button(draft == hold.text ? "Approve" : "Approve edited") { controller.approve(hold.id, text: draft) }
+                    .buttonStyle(.panel(.live))
+                    .help("Send the message out the Approved output")
+            }
+        }
+        .foregroundStyle(Theme.liveInk.ui)
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.liveTint.ui)
+        .overlay(alignment: .top) { rule }
+        .onAppear { draft = hold.text }
+    }
+}
+
+/// A Script card whose run is waiting on its command: to be allowed, or to finish.
+private struct ScriptReview: View {
+    let controller: FlowController
+    let hold: PendingHold
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            if hold.needsAllow {
+                Text("You didn't type this command, so it hasn't run. Read it, then allow it or fail the step.")
+                    .font(.dsSans(Theme.Size.caption))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(hold.command)
+                    .font(.dsMono(Theme.Size.caption))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+                    .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .foregroundStyle(Theme.ink.ui)
+                HStack(spacing: Theme.Space.s) {
+                    Button("Fail the step") { controller.refuseScript(hold.id) }
+                        .buttonStyle(.panel())
+                    Spacer()
+                    Button("Allow and run") { controller.allowScript(hold.id) }
+                        .buttonStyle(.panel(.live))
+                        .help("Runs the command now, and lets this card run it in later runs until it changes")
+                }
+            } else {
+                Text("Running its command…")
+                    .font(.dsMono(Theme.Size.caption, .medium))
+            }
+        }
+        .foregroundStyle(Theme.liveInk.ui)
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.liveTint.ui)
+        .overlay(alignment: .top) { rule }
     }
 }
 
@@ -379,12 +474,14 @@ private struct LineField: View {
 private struct EditorField: View {
     let title: String
     let text: String
+    var mono = false
     let commit: (String) -> Void
     @State private var draft = ""
 
-    init(_ title: String, text: String, commit: @escaping (String) -> Void) {
+    init(_ title: String, text: String, mono: Bool = false, commit: @escaping (String) -> Void) {
         self.title = title
         self.text = text
+        self.mono = mono
         self.commit = commit
     }
 
@@ -392,7 +489,7 @@ private struct EditorField: View {
         section {
             field(title) {
                 TextEditor(text: $draft)
-                    .font(.dsSans(Theme.Size.body))
+                    .font(mono ? .dsMono(Theme.Size.caption) : .dsSans(Theme.Size.body))
                     .frame(height: 84)
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 3)

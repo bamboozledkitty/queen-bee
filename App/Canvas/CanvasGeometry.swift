@@ -52,6 +52,8 @@ enum CanvasGeometry {
         case .loop: "repeat"
         case .end: "flag"
         case .note: "note.text"
+        case .approval: "checkmark.seal"
+        case .script: "chevron.left.forwardslash.chevron.right"
         }
     }
 }
