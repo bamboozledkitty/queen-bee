@@ -16,6 +16,9 @@ actor FakeHost: ToolHost {
 
     init(flow: Flow = Flow(name: "Review")) { self.flow = flow }
 
+    func subflowHost(named name: String) async throws -> any ToolHost { throw FlowError.notFound("No sub-flow called \"\(name)\"") }
+    func createSubflow(name: String?, card: String?) async throws -> String { throw FlowError.invalid("Not here") }
+
     func set(agent id: String, _ status: AgentStatus) { agents[id] = status }
     func set(running: Bool) { self.running = running }
     func set(log: [String]) { self.log = log }

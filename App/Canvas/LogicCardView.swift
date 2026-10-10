@@ -67,7 +67,10 @@ final class LogicCardView: CardView {
     override func update(card new: Card, context: CardContext) {
         super.update(card: new, context: context)
         let progress = context.waiting ?? runProgress(of: new, context: context)
-        summaryLabel.stringValue = progress ?? context.result ?? CardSummary.text(for: new, inputs: context.inputCount)
+        var summary = CardSummary.text(for: new, inputs: context.inputCount)
+        // A schedule that came in the file, or came back with an undo, is off until the person turns it on.
+        if new.kind == .start, new.trigger != nil, !context.isArmed { summary += " · off" }
+        summaryLabel.stringValue = progress ?? context.result ?? summary
         summaryLabel.textColor = progress != nil ? Theme.liveInk : context.result != nil ? Theme.ink : Theme.inkSecondary
         warningLabel.stringValue = context.warning ?? ""
         warningLabel.isHidden = context.warning == nil

@@ -63,7 +63,7 @@ private struct PaletteRow: View {
         }
         // Beside the palette, level with the row, and never in the pointer's way.
         .overlay(alignment: .topLeading) {
-            if showsHelp || (role == nil && AppServices.shared.pinnedHelp == kind.rawValue) {
+            if showsHelp {
                 CardHelpView(kind: kind, role: role)
                     .offset(x: PaletteView.width + Theme.Space.xs)
                     .allowsHitTesting(false)
@@ -286,7 +286,8 @@ struct FindPanel: View {
         guard !wanted.isEmpty else { return [] }
         var found: [Match] = []
         // The flow on screen first, then the others.
-        let flows = services.allFlows.sorted { a, _ in a.flow.id == services.selectedFlowID }
+        let current = services.allFlows.filter { $0.flow.id == services.selectedFlowID }
+        let flows = current + services.allFlows.filter { $0.flow.id != services.selectedFlowID }
         for controller in flows {
             if controller.flow.name.localizedCaseInsensitiveContains(wanted) { found.append(Match(controller: controller, card: nil)) }
             for card in controller.flow.cards where card.name.localizedCaseInsensitiveContains(wanted)

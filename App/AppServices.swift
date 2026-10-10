@@ -87,8 +87,6 @@ final class AppServices {
 
     /// The find panel is open.
     var showsFind = false
-    /// A palette row whose help is held open, for checks that can't hover a pointer.
-    var pinnedHelp: String?
     /// The first-run walk-through is on screen.
     var showsWelcome = false
     /// Blank flows whose pointer to the orchestrator has been closed.

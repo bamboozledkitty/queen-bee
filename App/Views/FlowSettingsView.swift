@@ -48,7 +48,7 @@ struct FlowSettingsView: View {
                                 if digits != limit { limit = digits }
                                 if !digits.isEmpty { commitLimit() }
                             }
-                        Text(controller.ownSubflowLimit == 1 ? "level deep" : "levels deep")
+                        Text(Nesting.levels(controller.ownSubflowLimit).hasSuffix("s") ? "levels deep" : "level deep")
                             .font(.dsSans(Theme.Size.caption))
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
@@ -56,7 +56,7 @@ struct FlowSettingsView: View {
                 let below = controller.levelsBelow
                 if below > controller.ownSubflowLimit {
                     // Lowering the limit under what is already built deletes nothing.
-                    Label("This flow already goes \(below) \(below == 1 ? "level" : "levels") deep. The levels past the limit are kept, marked on their Flow cards, and come out Fail when a run reaches them.",
+                    Label("This flow already goes \(Nesting.levels(below)) deep. The levels past the limit are kept, marked on their Flow cards, and come out Fail when a run reaches them.",
                           systemImage: "exclamationmark.triangle")
                         .font(.dsSans(Theme.Size.caption))
                         .foregroundStyle(Theme.failInk.ui)
@@ -70,7 +70,7 @@ struct FlowSettingsView: View {
                 // A sub-flow goes by the flow at the top, so there is one place to set the limit.
                 VStack(alignment: .leading, spacing: 6) {
                     Text(controller.levelsLeft >= 0
-                         ? "This sub-flow may go \(controller.levelsLeft) more \(controller.levelsLeft == 1 ? "level" : "levels") down."
+                         ? "This sub-flow may go \(Nesting.levels(controller.levelsLeft)) further down."
                          : "This sub-flow is past the limit, so it is kept but won't be run from the flow above.")
                         .font(.dsSans(Theme.Size.body))
                         .fixedSize(horizontal: false, vertical: true)
@@ -79,7 +79,7 @@ struct FlowSettingsView: View {
                             services.selectedFlowID = outer.flow.id
                             outer.showsFlowSettings = true
                         } label: {
-                            Text("The limit is set on \(outer.flow.name): \(outer.ownSubflowLimit) \(outer.ownSubflowLimit == 1 ? "level" : "levels")")
+                            Text("The limit is set on \(outer.flow.name): \(Nesting.levels(outer.ownSubflowLimit))")
                         }
                         .buttonStyle(.panel())
                         .help("Go to \(outer.flow.name)'s settings")

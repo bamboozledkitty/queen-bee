@@ -14,6 +14,12 @@ final class ProjectModel {
 
     var name: String { root.lastPathComponent }
 
+    /// The flow with this id, if it is open in the project.
+    func controller(_ id: String) -> FlowController? { controllers.first { $0.flow.id == id } }
+
+    /// Every flow in the project, for working out how they nest.
+    var nesting: Nesting { Nesting(flows: controllers.map(\.flow)) }
+
     init(root: URL) {
         self.root = root
         store = FlowStore(root: root)

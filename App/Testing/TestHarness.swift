@@ -122,17 +122,6 @@ enum TestHarness {
         case "viewRun":
             controller.view(run: payload["run"]?.stringValue)
             return [:]
-        case "showCost":
-            controller.showsCost = true
-            return [:]
-        case "saveRole":
-            guard let cardID else { return ["error": "saveRole needs card"] }
-            controller.saveRole(fromCard: cardID)
-            return ["roles": .array(AppServices.shared.roles.map { .string($0.name) })]
-        case "addRole":
-            guard let role = AppServices.shared.roles.first(where: { $0.name == payload["role"]?.stringValue }) else { return ["error": "no such role"] }
-            controller.addCard(.agent, role: role)
-            return [:]
         case "trigger":
             // Sets what starts runs from a Start card, the way the settings panel does.
             guard let cardID else { return ["error": "trigger needs card"] }
@@ -156,10 +145,6 @@ enum TestHarness {
         case "limit":
             controller.setSubflowLimit(Int(payload["levels"]?.doubleValue ?? 3))
             return [:]
-        case "flowSettings":
-            controller.select(.none)
-            controller.showsFlowSettings = true
-            return [:]
         case "drag":
             // The calls a drag of a card's title bar makes, in order.
             guard let cardID else { return ["error": "drag needs card"] }
@@ -177,18 +162,9 @@ enum TestHarness {
             guard let cardID else { return ["error": "retry needs card"] }
             controller.retry(cardID)
             return [:]
-        case "center":
-            controller.canvas?.center(on: CGPoint(x: payload["x"]?.doubleValue ?? 0, y: payload["y"]?.doubleValue ?? 0))
-            return [:]
-        case "help":
-            AppServices.shared.pinnedHelp = payload["kind"]?.stringValue
-            return [:]
         case "back":
             if let outer = AppServices.shared.flowTrail.dropLast().last { AppServices.shared.goBack(to: outer) }
             return ["now": .string(AppServices.shared.current?.flow.name ?? "")]
-        case "find":
-            AppServices.shared.showsFind = true
-            return [:]
         case "tidy":
             controller.tidy()
             return [:]
@@ -199,23 +175,11 @@ enum TestHarness {
             guard let group = controller.selectedGroup else { return ["error": "no group is selected"] }
             controller.setFolded(payload["folded"]?.boolValue ?? true, group: group.id)
             return [:]
-        case "selectAll":
-            controller.selectAll()
-            return [:]
-        case "duplicate":
-            controller.duplicateSelection()
-            return [:]
         case "delete":
             controller.deleteSelection()
             return [:]
-        case "nudge":
-            controller.nudgeSelection(dx: payload["dx"]?.doubleValue ?? 0, dy: payload["dy"]?.doubleValue ?? 0)
-            return [:]
         case "undo":
             controller.undo()
-            return [:]
-        case "redo":
-            controller.redo()
             return [:]
         default:
             return ["error": "unknown op"]
@@ -253,7 +217,6 @@ enum TestHarness {
             "flows": .array(controller.project.controllers.map { .string($0.flow.name) }),
             "trail": .number(Double(AppServices.shared.flowTrail.count)),
             "canRun": .bool(controller.canRun),
-            "levelsAbove": .number(Double(controller.levelsAbove)),
             "levelsLeft": .number(Double(controller.levelsLeft)),
             "blank": .bool(controller.isBlank),
             "warnings": .object(Dictionary(uniqueKeysWithValues: controller.warnings.map { (controller.flow.card($0.key)?.name ?? $0.key, JSONValue.string($0.value)) })),

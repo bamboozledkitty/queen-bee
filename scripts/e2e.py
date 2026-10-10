@@ -669,8 +669,7 @@ def scenario_deep(app):
     app.op(ids[1], "select")
     time.sleep(2)
     s = app.state(ids[4])
-    check("each flow knows how far down it sits", s["levelsAbove"] == 4 and s["levelsLeft"] == -1 and app.state(ids[1])["levelsLeft"] == 2,
-          f"{s['levelsAbove']} {s['levelsLeft']}")
+    check("each flow knows how far down it sits", s["levelsLeft"] == -1 and app.state(ids[1])["levelsLeft"] == 2, str(s["levelsLeft"]))
     app.op(ids[0], "select")
     app.op(ids[0], "run")
     s = app.wait(ids[0], lambda s: not s["isRunning"] and s["runs"], 40, "the run to end")
@@ -699,7 +698,7 @@ def scenario_deep(app):
     r = app.op(ids[4], "tool", name="add_card", arguments={"kind": "flow", "name": "Deeper"})
     check("the orchestrator can't add a Flow card below the limit", r["isError"] and "deeper" in r["text"], str(r))
     r = app.op(ids[3], "tool", name="update_card", arguments={"card": "Next", "flow": "Level0"})
-    check("or point a flow at one that already runs it", r["isError"] and "round" in r["text"], str(r))
+    check("or point a Flow card at a flow that isn't below it", r["isError"] and "below" in r["text"], str(r))
     r = app.op(ids[2], "tool", name="get_flow", arguments={})
     check("and is told how many levels it has left", '"sub_flow_levels_left":1' in r["text"].replace(" ", ""), r["text"][-160:])
     # Mouse navigation, on a canvas with no terminals to get in the way.

@@ -508,10 +508,6 @@ class CardView: NSView, NSGestureRecognizerDelegate {
             dragOrigins = canvas.controller?.dragOrigins(for: card.id) ?? [:]
             beginDrag(g, in: canvas) { [weak self] in self?.moveToPointer() }
             canvas.controller?.beginGesture()
-            // The card moves under the pointer, which would keep re-asking the title bar for
-            // its open hand. Cursor regions are switched off until the drag ends.
-            window?.disableCursorRects()
-            NSCursor.closedHand.set()
         case .changed:
             moveToPointer()
         case .ended, .cancelled, .failed:
@@ -519,8 +515,6 @@ class CardView: NSView, NSGestureRecognizerDelegate {
             canvas.endEdgePan()
             canvas.clearGuides()
             canvas.controller?.endGesture("Move")
-            window?.enableCursorRects()
-            window?.invalidateCursorRects(for: titleBar)
         default: break
         }
     }
@@ -621,11 +615,15 @@ struct CardContext: Equatable {
     var needsRestart = false
     /// A run is under way. Marks left by a run that has ended say where it went, not what is live.
     var isRunning = false
+    /// A Start card's schedule is one the person has turned on.
+    var isArmed = false
     var mark = RunMark()
 }
 
 /// A press that begins the instant the button goes down, used to close the hand over something
-/// that can be dragged. It runs alongside the click and drag gestures and never replaces them.
+/// that can be dragged. It runs alongside the click and drag gestures and never replaces them,
+/// and it owns the pointer for as long as the button is down: cursor regions are switched off,
+/// or the handle moving under the pointer would keep asking for the open hand back.
 enum GrabGesture {
     static func make(target: AnyObject, action: Selector, delegate: NSGestureRecognizerDelegate) -> NSPressGestureRecognizer {
         let press = NSPressGestureRecognizer(target: target, action: action)

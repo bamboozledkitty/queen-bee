@@ -24,13 +24,16 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   orchestrator, pasted in, or arriving in a flow file stops the run and asks you first. What you allowed is kept in
   the app's own settings, not in the flow file.
 - **Schedules start runs with nobody watching.** A Start card can run on the clock or when a file in the project
-  changes, while the app is open. A schedule only fires once you have set it or turned it on in this app, so one
-  that arrives in a flow file stays off until you agree. A copied Start card never brings its schedule with it.
+  changes, while the app is open. A schedule only fires once you have set it or turned it on in this app, and only
+  for the command you set it with, so one that arrives in a flow file stays off until you agree. If the orchestrator
+  changes that command, or an agent's instructions, folder or permissions, the flow's schedules go off until you turn
+  them on again. A copied Start card never brings its schedule with it.
 - **Sub-flows have a depth limit.** A Flow card runs another flow of the same project. How deep that can nest is
   set on the flow at the top, three levels unless changed and never more than ten, and a run stops at the limit, so
   flows can't be chained without end.
 - **An orchestrator works downward only.** A flow's orchestrator can edit its own flow and the sub-flows below it,
-  and can make new sub-flows there. It cannot edit the flows above or beside its own.
+  and can make new sub-flows there. It cannot edit the flows above or beside its own, and it can only point a Flow
+  card at a flow already below its own or at a sub-flow nothing uses yet; linking any other flow in is yours to do.
 - **The orchestrator can edit and run the flow without asking.** Its tools are pre-approved. Text an agent reads
   from the web or a file can end up in front of the orchestrator, so the usual prompt-injection caution applies.
 - **The app's socket is local.** The helper talks to the app over a unix socket in

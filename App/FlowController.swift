@@ -1,5 +1,4 @@
 import AppKit
-import CryptoKit
 import Foundation
 import Observation
 import QueenBeeCore
@@ -48,7 +47,7 @@ nonisolated struct PendingHold: Identifiable, Equatable, Sendable {
     /// The message that is waiting.
     let text: String
     let from: String
-    /// A script's command, as it was when the run reached the card.
+    /// What the card is running: a Script card's command, or the name of the flow a Flow card runs.
     var command = ""
     /// A script whose command the person hasn't allowed yet.
     var needsAllow = false
@@ -158,17 +157,18 @@ final class FlowController: ToolHost {
     /// The cost breakdown is open over the canvas.
     var showsCost = false
     /// How many more levels of sub-flow the run that is going may still enter.
-    @ObservationIgnored private var runLevelsLeft = FlowController.usualSubflowLimit
+    @ObservationIgnored private var runLevelsLeft = Nesting.usualLimit
     /// The flow's own settings are open over the canvas.
     var showsFlowSettings = false
     /// The card whose "run from here" box is open in the settings panel.
     var runFromCardID: String?
     @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
     /// How many runs are kept, and how much of each message.
-    private static let keptRuns = 20, keptMessageLength = 8_000, keptMessagesPerLink = 10
+    private static let keptRuns = 20, runsWithMessages = 3, keptMessageLength = 8_000, keptMessagesPerLink = 10
     /// Messages waiting at Approval and Script cards in the run that is going.
     private(set) var holds: [PendingHold] = []
-    @ObservationIgnored private var scriptTasks: [String: Task<Void, Never>] = [:]
+    /// The work behind each hold that runs by itself: a script's command, or a Flow card's inner run.
+    @ObservationIgnored private var holdTasks: [String: Task<Void, Never>] = [:]
     /// The canvas's zoom, published by the canvas for the zoom pill.
     var zoom: Double = 1
     /// The part of the canvas the window is showing, published by the canvas for the minimap.
@@ -251,13 +251,13 @@ final class FlowController: ToolHost {
 
     /// Whether a Start card's schedule is one the person turned on in this app.
     func isArmed(_ card: Card) -> Bool {
-        card.trigger.map { ScheduleArming.isArmed($0, flowID: allowScope, cardID: card.id) } ?? false
+        card.trigger.map { ScheduleArming.isArmed($0, command: card.command ?? "", scope: allowScope, cardID: card.id) } ?? false
     }
 
     /// Sets what starts runs from a Start card, and turns it on: the person chose it.
     func setTrigger(_ trigger: Trigger?, onCard id: String) {
-        guard flow.card(id)?.kind == .start else { return }
-        ScheduleArming.arm(trigger, flowID: allowScope, cardID: id)
+        guard let card = flow.card(id), card.kind == .start else { return }
+        ScheduleArming.arm(trigger, command: card.command ?? "", scope: allowScope, cardID: id)
         let changed = perform("Change Schedule", key: "trigger:\(id)") {
             guard let index = $0.cards.firstIndex(where: { $0.id == id && $0.kind == .start }) else { return }
             $0.cards[index].trigger = trigger
@@ -316,17 +316,18 @@ final class FlowController: ToolHost {
         }
         for (id, path) in wanted where watchers[id] == nil {
             let watcher = FileWatcher(url: URL(fileURLWithPath: path)) { [weak self] changed in
-                Task { @MainActor in self?.fileChanged(id, path: changed) }
+                Task { @MainActor in self?.filesChanged(id, paths: changed) }
             }
             if let watcher { watchers[id] = (path, watcher) }
         }
     }
 
-    private func fileChanged(_ cardID: String, path: String) {
+    private func filesChanged(_ cardID: String, paths: [String]) {
         // The flow's own agents change files too. A change during a run, or straight after
-        // one this started, isn't a reason to start another.
+        // one this started, isn't a reason to start another. Nor is the app saving a flow,
+        // or git doing its own housekeeping, which often land in the same batch as a real change.
         guard !isRunning, Date().timeIntervalSince(lastFileFire) > 5, Date().timeIntervalSince(lastRunEnded) > 10,
-              !path.contains("/.queenbee/"), !path.contains("/.git/") else { return }
+              let path = paths.first(where: { !$0.contains("/.queenbee/") && !$0.contains("/.git/") }) else { return }
         lastFileFire = Date()
         // The watcher reports paths with links followed, so the project's folder is compared the same way.
         let root = project.root.resolvingSymlinksInPath().path
@@ -336,6 +337,10 @@ final class FlowController: ToolHost {
 
     private func fire(_ cardID: String, because reason: String, changed: String? = nil) {
         guard let card = flow.card(cardID), card.kind == .start, isArmed(card) else { return }
+        guard !(card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            append("Skipped a run of \(card.name) (\(reason)): it has nothing to start with")
+            return
+        }
         guard services.environment != nil else {
             append("Skipped a run of \(card.name) (\(reason)): Claude Code wasn't ready yet")
             return
@@ -357,11 +362,11 @@ final class FlowController: ToolHost {
     /// The name is a hash of the project's folder and the id, so two projects holding flows
     /// with the same id each keep their own history.
     private var historyURL: URL {
-        let name = SHA256.hash(data: Data(allowScope.utf8)).map { String(format: "%02x", $0) }.joined()
+        let name = Data(allowScope.utf8).sha256Hex
         return services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(name).json")
     }
 
-    /// Where 0.2.0 kept a flow's history: under its id alone. Read once, so that history isn't lost.
+    /// Where 0.2.0 kept a flow's history: under its id alone. Moved to the new name the first time it is read.
     private var oldHistoryURL: URL? {
         let id = flow.id
         let plain = !id.isEmpty && id.count <= 64 && id.unicodeScalars.allSatisfy {
@@ -371,7 +376,14 @@ final class FlowController: ToolHost {
     }
 
     private func loadHistory() {
-        guard let data = (try? Data(contentsOf: historyURL)) ?? oldHistoryURL.flatMap({ try? Data(contentsOf: $0) }), let history = try? JSONDecoder().decode(RunHistory.self, from: data) else { return }
+        var data = try? Data(contentsOf: historyURL)
+        if data == nil, let old = oldHistoryURL, let found = try? Data(contentsOf: old) {
+            // Moved to its new name, so another project's flow with this id never reads it.
+            try? FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if (try? found.write(to: historyURL, options: .atomic)) != nil { try? FileManager.default.removeItem(at: old) }
+            data = found
+        }
+        guard let data, let history = try? JSONDecoder().decode(RunHistory.self, from: data) else { return }
         log = history.log
         results = history.results.filter { flow.card($0.key) != nil }
         marks = history.marks.filter { flow.card($0.key) != nil }
@@ -401,9 +413,13 @@ final class FlowController: ToolHost {
         let history = RunHistory(log: log, results: latest?.results ?? results, marks: latest?.marks ?? marks,
                                  linkPasses: latest?.linkPasses ?? linkPasses, handOffs: latest?.handOffs ?? handOffs,
                                  messages: latest?.messages ?? messages, runs: runs)
-        guard let data = try? JSONEncoder().encode(history) else { return }
-        try? FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: historyURL, options: .atomic)
+        // Encoding and writing can take a while for a long log, so neither holds up the canvas.
+        let url = historyURL
+        Task.detached(priority: .utility) {
+            guard let data = try? JSONEncoder().encode(history) else { return }
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: url, options: .atomic)
+        }
     }
 
     // MARK: Cost
@@ -412,23 +428,11 @@ final class FlowController: ToolHost {
     var totalUsage: Usage { usage.values.reduce(Usage(), +) }
 
     /// The flows this one's Flow cards run, each once, in canvas order.
-    var innerFlows: [FlowController] {
-        var seen: Set<String> = []
-        return flow.cards.compactMap(innerFlow(of:)).filter { seen.insert($0.flow.id).inserted }
-    }
+    var innerFlows: [FlowController] { nesting.innerFlows(of: flow.id).compactMap(project.controller) }
 
-    /// Every flow below this one, with how deep it sits. A flow reached twice is listed once.
+    /// Every flow below this one, outermost first, each once, with how deep it sits.
     func subflows() -> [(controller: FlowController, depth: Int)] {
-        var seen: Set<String> = [flow.id]
-        var found: [(FlowController, Int)] = []
-        func walk(_ controller: FlowController, _ depth: Int) {
-            for inner in controller.innerFlows where seen.insert(inner.flow.id).inserted {
-                found.append((inner, depth))
-                walk(inner, depth + 1)
-            }
-        }
-        walk(self, 0)
-        return found
+        nesting.subflows(of: flow.id).compactMap { entry in project.controller(entry.id).map { ($0, entry.depth) } }
     }
 
     /// What this flow has used together with every sub-flow below it.
@@ -527,6 +531,8 @@ final class FlowController: ToolHost {
                               log: Array(log.dropFirst(runLogStart)), results: results, marks: marks, linkPasses: linkPasses,
                               messages: messages, handOffs: handOffs))
         if runs.count > Self.keptRuns { runs.removeFirst(runs.count - Self.keptRuns) }
+        // The messages a link carried are kept for the newest few runs only; older runs keep their path and answers.
+        for index in runs.indices.dropLast(Self.runsWithMessages) where !runs[index].messages.isEmpty { runs[index].messages = [:] }
         recordUsage(forRun: run.id)
     }
 
@@ -549,7 +555,6 @@ final class FlowController: ToolHost {
         historyTask?.cancel()
         historyTask = nil
         try? FileManager.default.removeItem(at: historyURL)
-        if let old = oldHistoryURL { try? FileManager.default.removeItem(at: old) }
     }
 
     // MARK: Opening and closing
@@ -564,12 +569,13 @@ final class FlowController: ToolHost {
             startMissingSessions()
             await refreshUsage()
         }
+        reschedule()
     }
 
     func shutDown() {
         // The run, if there is one, ends here: nothing is waited on and nothing more is routed.
-        scriptTasks.values.forEach { $0.cancel() }
-        scriptTasks.removeAll()
+        holdTasks.values.forEach { $0.cancel() }
+        holdTasks.removeAll()
         holds.removeAll()
         currentRun = nil
         isRunning = false
@@ -577,6 +583,8 @@ final class FlowController: ToolHost {
         scheduleTask?.cancel()
         watchers.values.forEach { $0.watcher.stop() }
         watchers.removeAll()
+        nextFires = [:]
+        scheduledFor = [:]
         saveNow()
         if historyTask != nil { saveHistory() }
         sessions.values.forEach { $0.terminate() }
@@ -600,6 +608,12 @@ final class FlowController: ToolHost {
         }
         banner = nil
         let old = flow
+        // A pasted or restored Flow card that would make a circle, or go too deep, is kept but no longer runs anything.
+        let nesting = Nesting(flows: project.controllers.map { $0 === self ? copy : $0.flow })
+        for index in copy.cards.indices where copy.cards[index].kind == .flow && copy.cards[index].flowRef != old.card(copy.cards[index].id)?.flowRef {
+            if let inner = Nesting.resolve(copy.cards[index].flowRef, in: project.controllers.map(\.flow), excluding: flow.id),
+               nesting.problem(placing: inner, in: flow.id) != nil { copy.cards[index].flowRef = nil }
+        }
         flow = copy
         if undoable { registerUndo(from: old, name, key: key) }
         reconcile()
@@ -701,8 +715,8 @@ final class FlowController: ToolHost {
         }
         // A message waiting at a card that has been deleted has nowhere to be answered from.
         for hold in holds where flow.card(hold.cardID) == nil {
-            scriptTasks[hold.id]?.cancel()
-            scriptTasks[hold.id] = nil
+            holdTasks[hold.id]?.cancel()
+            holdTasks[hold.id] = nil
             resolve(hold.id, port: hold.kind == .approval ? "rejected" : "fail", text: nil)
         }
         if isOpen, services.environment != nil { startMissingSessions() }
@@ -777,7 +791,14 @@ final class FlowController: ToolHost {
         // the undo, not a new change, so it doesn't get a step of its own.
         let textManager = (NSApp.keyWindow?.firstResponder as? NSTextView)?.undoManager
         let isTextUndo = textManager?.isUndoing == true || textManager?.isRedoing == true
+        // The person changing what a scheduled Start card starts with is still the person's
+        // schedule, so it stays on. The same change from anywhere else switches it off.
+        let keepsArmed = patch.command != nil && flow.card(id).map { $0.kind == .start && isArmed($0) } == true
         perform("Change \(flow.card(id)?.name ?? "Card")", key: "edit:\(id)", undoable: !isTextUndo) { try $0.updateCard(id, patch: patch) }
+        if keepsArmed, let card = flow.card(id), let trigger = card.trigger {
+            ScheduleArming.arm(trigger, command: card.command ?? "", scope: allowScope, cardID: id)
+            reschedule()
+        }
     }
 
     // MARK: Roles
@@ -1246,8 +1267,8 @@ final class FlowController: ToolHost {
             isRunning = false
             liveLinks.removeAll()
             // Whatever was waiting belonged to the run that has ended.
-            scriptTasks.values.forEach { $0.cancel() }
-            scriptTasks.removeAll()
+            holdTasks.values.forEach { $0.cancel() }
+            holdTasks.removeAll()
             holds.removeAll()
             lastRunEnded = Date()
             finishRecord(output)
@@ -1261,7 +1282,7 @@ final class FlowController: ToolHost {
         return forPlugin
     }
 
-    // MARK: Approval and Script cards
+    // MARK: Approval, Script and Flow cards
 
     /// A message has stopped at an Approval or a Script card.
     private func take(_ hold: Hold) {
@@ -1273,7 +1294,7 @@ final class FlowController: ToolHost {
         var pending = PendingHold(id: hold.id, cardID: hold.cardID, kind: hold.kind, text: hold.text, from: hold.fromName)
         if hold.kind == .script {
             pending.command = card.command ?? ""
-            pending.needsAllow = !ScriptRunner.isAllowed(pending.command, flowID: allowScope, cardID: card.id)
+            pending.needsAllow = !ScriptRunner.isAllowed(pending.command, scope: allowScope, cardID: card.id)
         }
         if hold.kind == .flow {
             let inner = innerFlow(of: card)
@@ -1306,32 +1327,29 @@ final class FlowController: ToolHost {
         guard !inner.isRunning else {
             return resolve(hold.id, port: "fail", text: "\(inner.flow.name) was already running.")
         }
-        scriptTasks[hold.id] = Task {
+        holdTasks[hold.id] = Task {
             let answer = await withTaskCancellationHandler {
                 await inner.runToEnd(command: hold.text, levelsLeft: self.runLevelsLeft - 1)
             } onCancel: {
                 Task { @MainActor in await inner.stop() }
             }
             guard !Task.isCancelled else { return }
-            self.scriptTasks[hold.id] = nil
+            self.holdTasks[hold.id] = nil
             self.resolve(hold.id, port: answer.finished ? "done" : "fail", text: answer.text)
         }
     }
 
     // MARK: How deep sub-flows go
 
-    /// How many levels of sub-flow may sit below a flow when nobody has said otherwise.
-    static let usualSubflowLimit = 3
-
     /// The limit set on this flow, for when it is the flow at the top.
-    var ownSubflowLimit: Int { min(max(flow.subflowLimit ?? Self.usualSubflowLimit, 0), 10) }
+    var ownSubflowLimit: Int { Nesting.clamped(flow.subflowLimit) }
 
     /// Sets how many levels of sub-flow may sit below this flow.
     func setSubflowLimit(_ levels: Int) {
-        let wanted = min(max(levels, 0), 10)
+        let wanted = Nesting.clamped(levels)
         guard wanted != ownSubflowLimit else { return }
         let old = flow
-        flow.subflowLimit = wanted == Self.usualSubflowLimit ? nil : wanted
+        flow.subflowLimit = wanted == Nesting.usualLimit ? nil : wanted
         registerUndo(from: old, "Change Sub-flow Limit", key: "limit")
     }
 
@@ -1342,79 +1360,32 @@ final class FlowController: ToolHost {
         registerUndo(from: old, on ? "Tell Orchestrator of Runs" : "Stop Telling Orchestrator of Runs")
     }
 
-    /// The flows that run this one, each once.
-    var outerFlows: [FlowController] {
-        project.controllers.filter { outer in outer !== self && outer.innerFlows.contains { $0 === self } }
-    }
-
-    /// How many flows sit above this one: 0 for a flow nothing runs, 1 for a sub-flow, and so on.
-    var levelsAbove: Int {
-        func above(_ controller: FlowController, _ seen: Set<String>) -> Int {
-            controller.outerFlows.filter { !seen.contains($0.flow.id) }
-                .map { 1 + above($0, seen.union([controller.flow.id])) }.max() ?? 0
-        }
-        return above(self, [])
-    }
+    /// How the project's flows nest, as of now. Built on each call, so work that asks several
+    /// questions at once should take one and keep it.
+    var nesting: Nesting { project.nesting }
 
     /// How many levels of sub-flow sit below this one.
-    var levelsBelow: Int {
-        func below(_ controller: FlowController, _ seen: Set<String>) -> Int {
-            controller.innerFlows.filter { !seen.contains($0.flow.id) }
-                .map { 1 + below($0, seen.union([controller.flow.id])) }.max() ?? 0
-        }
-        return below(self, [])
-    }
+    var levelsBelow: Int { nesting.levelsBelow(flow.id) }
 
-    /// How many more levels of sub-flow may sit below this flow. The limit belongs to the flow
-    /// at the top, and each level down uses one up. A flow that two others run goes by the
-    /// stricter of the two. Below zero means this flow is itself past the limit.
-    var levelsLeft: Int {
-        func left(_ controller: FlowController, _ seen: Set<String>) -> Int {
-            let outer = controller.outerFlows.filter { !seen.contains($0.flow.id) }
-            if outer.isEmpty { return controller.ownSubflowLimit }
-            return outer.map { left($0, seen.union([controller.flow.id])) - 1 }.min() ?? controller.ownSubflowLimit
-        }
-        return left(self, [])
-    }
+    /// How many more levels of sub-flow may sit below this flow. Below zero means this flow
+    /// is itself past the limit of the flow at its top.
+    var levelsLeft: Int { nesting.levelsLeft(flow.id) }
 
     /// The flows at the top of every chain that leads down to this one. A flow nothing runs is its own.
-    var topFlows: [FlowController] {
-        var found: [FlowController] = [], seen: Set<String> = []
-        func climb(_ controller: FlowController) {
-            guard seen.insert(controller.flow.id).inserted else { return }
-            let outer = controller.outerFlows
-            if outer.isEmpty { found.append(controller) } else { outer.forEach(climb) }
-        }
-        climb(self)
-        return found
-    }
+    var topFlows: [FlowController] { nesting.topFlows(of: flow.id).compactMap(project.controller) }
 
-    /// Why a Flow card in this flow can't run `inner`, or nil if it can: a flow can't end up
-    /// running itself, and sub-flows only go as deep as the flow at the top allows.
+    /// Why a Flow card in this flow can't run `inner`, or nil if it can.
     func nestingProblem(placing inner: FlowController) -> String? {
-        if inner === self { return "A flow can't run itself." }
-        if inner.subflows().contains(where: { $0.controller === self }) {
-            return "\(inner.flow.name) already runs \(flow.name), so the two would go round for ever."
-        }
-        if 1 + inner.levelsBelow > levelsLeft { return Self.tooDeep(topFlows.first ?? self) }
-        return nil
+        nesting.problem(placing: inner.flow.id, in: flow.id)
     }
 
     /// Why this flow can't be given another sub-flow of its own, or nil if it can.
-    var newSubflowProblem: String? {
-        levelsLeft < 1 ? Self.tooDeep(topFlows.first ?? self) : nil
-    }
-
-    private static func tooDeep(_ top: FlowController) -> String {
-        let limit = top.ownSubflowLimit
-        return "\(top.flow.name) allows sub-flows \(limit) \(limit == 1 ? "level" : "levels") deep, and this would go deeper. Change the limit in \(top.flow.name)'s flow settings."
-    }
+    var newSubflowProblem: String? { nesting.problemAddingSubflow(to: flow.id) }
 
     /// The flow a Flow card runs: found by id, or by name when the orchestrator set it.
     func innerFlow(of card: Card) -> FlowController? {
-        guard card.kind == .flow, let ref = card.flowRef?.trimmingCharacters(in: .whitespacesAndNewlines), !ref.isEmpty else { return nil }
-        let others = project.controllers.filter { $0 !== self }
-        return others.first { $0.flow.id == ref } ?? others.first { $0.flow.name.caseInsensitiveCompare(ref) == .orderedSame }
+        guard card.kind == .flow else { return nil }
+        return Nesting.resolve(card.flowRef, in: project.controllers.map(\.flow), excluding: flow.id).flatMap(project.controller)
     }
 
     /// Goes into the flow a Flow card runs. A card with no flow yet gets a new sub-flow of its
@@ -1523,10 +1494,10 @@ final class FlowController: ToolHost {
     private func runScript(_ hold: PendingHold) {
         guard let environment = services.environment else { return resolve(hold.id, port: "fail", text: "Queen Bee was still starting up.") }
         let folder = project.root
-        scriptTasks[hold.id] = Task {
+        holdTasks[hold.id] = Task {
             let result = await ScriptRunner.run(hold.command, message: hold.text, from: hold.from, in: folder, environment: environment)
             guard !Task.isCancelled else { return }
-            self.scriptTasks[hold.id] = nil
+            self.holdTasks[hold.id] = nil
             self.resolve(hold.id, port: result.passed ? "pass" : "fail", text: result.output)
         }
     }
@@ -1552,7 +1523,7 @@ final class FlowController: ToolHost {
     /// The person read a script's command and let it run. It is remembered for this card.
     func allowScript(_ id: String) {
         guard let index = holds.firstIndex(where: { $0.id == id }), holds[index].kind == .script, holds[index].needsAllow else { return }
-        ScriptRunner.allow(holds[index].command, flowID: allowScope, cardID: holds[index].cardID)
+        ScriptRunner.allow(holds[index].command, scope: allowScope, cardID: holds[index].cardID)
         holds[index].needsAllow = false
         runScript(holds[index])
     }
@@ -1567,7 +1538,7 @@ final class FlowController: ToolHost {
         var patch = CardPatch()
         patch.command = command
         update(id, patch)
-        if flow.card(id)?.command == command { ScriptRunner.allow(command, flowID: allowScope, cardID: id) }
+        if flow.card(id)?.command == command { ScriptRunner.allow(command, scope: allowScope, cardID: id) }
     }
 
     /// Adds what an event did to the per-card tallies. The links an event travelled stay live
@@ -1651,10 +1622,15 @@ final class FlowController: ToolHost {
             let session = sessions[card.id]
             agents[card.id] = AgentStatus(state: (session?.state ?? .notStarted).rawValue, lastReply: session?.lastReply)
         }
+        var innerNames: [String: String] = [:]
+        for card in flow.cards where card.kind == .flow { innerNames[card.id] = innerFlow(of: card)?.flow.name }
         return FlowSnapshot(flow: flow, agents: agents, isRunning: isRunning,
-                            otherFlows: project.controllers.filter { $0 !== self && self.nestingProblem(placing: $0) == nil }.map(\.flow.name),
+                            otherFlows: flowsOrchestratorMayRun.map(\.flow.name),
                             subflowLevelsLeft: levelsLeft,
-                            subflows: subflows().map { (name: $0.controller.flow.name, depth: $0.depth) })
+                            subflows: subflows().map { (name: $0.controller.flow.name, depth: $0.depth) },
+                            innerFlowNames: innerNames,
+                            armedStartIDs: Set(flow.cards.filter { $0.kind == .start && isArmed($0) }.map(\.id)),
+                            extraWarnings: nestingWarnings)
     }
 
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T {
@@ -1663,6 +1639,7 @@ final class FlowController: ToolHost {
         try checkNesting(of: copy)
         let old = flow
         flow = copy
+        disarmSchedules(changedFrom: old)
         // The orchestrator builds a flow in a burst of calls. They undo together.
         registerUndo(from: old, "Orchestrator's Changes", key: "orchestrator", within: 8)
         reconcile()
@@ -1674,7 +1651,7 @@ final class FlowController: ToolHost {
         let wanted = ref.trimmingCharacters(in: .whitespacesAndNewlines)
         if wanted == flow.id || flow.name.caseInsensitiveCompare(wanted) == .orderedSame { return self }
         let below = subflows().map(\.controller)
-        guard let found = below.first(where: { $0.flow.id == wanted }) ?? below.first(where: { $0.flow.name.caseInsensitiveCompare(wanted) == .orderedSame }) else {
+        guard let found = Nesting.resolve(wanted, in: below.map(\.flow), excluding: flow.id).flatMap(project.controller) else {
             let names = below.map(\.flow.name)
             throw FlowError.notFound("No sub-flow below \(flow.name) is called \"\(wanted)\". "
                 + (names.isEmpty ? "It has none yet." : "Below it are: \(names.joined(separator: ", ")).")
@@ -1715,6 +1692,37 @@ final class FlowController: ToolHost {
         }
     }
 
+    /// An armed schedule runs with nobody watching, so it is tied to what the person agreed to.
+    /// When the orchestrator changes a Start card's command, or an agent's brief, folder or
+    /// permissions, every schedule in the flow goes off until the person turns it on again.
+    private func disarmSchedules(changedFrom old: Flow) {
+        let armed = flow.cards.filter { $0.kind == .start && isArmed($0) }
+        guard !armed.isEmpty else { return }
+        let agentsChanged = flow.cards.contains { card in
+            guard card.kind == .agent, let was = old.card(card.id) else { return card.kind == .agent }
+            return card.instructions != was.instructions || card.cwd != was.cwd || card.permissionMode != was.permissionMode
+        }
+        guard agentsChanged else { return }
+        for card in armed { ScheduleArming.arm(nil, command: "", scope: allowScope, cardID: card.id) }
+        append("The orchestrator changed what the flow does, so its schedule is off until you turn it on again")
+        banner = "The schedule is off: the orchestrator changed what the flow does. Turn it on again in the Start card's settings."
+        reschedule()
+    }
+
+    /// Warnings about Flow cards that are past the limit, or point at a flow that would be.
+    var nestingWarnings: [String: String] {
+        let nesting = nesting
+        var found: [String: String] = [:]
+        for card in flow.cards where card.kind == .flow {
+            if nesting.levelsLeft(flow.id) < 1 {
+                found[card.id] = "Past the sub-flow limit"
+            } else if let inner = innerFlow(of: card), nesting.problem(placing: inner.flow.id, in: flow.id) != nil {
+                found[card.id] = "Its flow goes too deep"
+            }
+        }
+        return found
+    }
+
     /// Refuses an edit that would nest sub-flows deeper than the limit, or make a flow run itself.
     private func checkNesting(of edited: Flow) throws {
         for card in edited.cards where card.kind == .flow {
@@ -1725,11 +1733,25 @@ final class FlowController: ToolHost {
                 if let problem = newSubflowProblem, was == nil { throw FlowError.invalid(problem) }
                 continue
             }
-            let others = project.controllers.filter { $0 !== self }
-            guard let inner = others.first(where: { $0.flow.id == ref }) ?? others.first(where: { $0.flow.name.caseInsensitiveCompare(ref) == .orderedSame }) else {
-                throw FlowError.invalid("No flow in this project is called \"\(ref)\". The others are: \(others.map(\.flow.name).joined(separator: ", "))")
+            guard let inner = Nesting.resolve(ref, in: project.controllers.map(\.flow), excluding: flow.id).flatMap(project.controller) else {
+                throw FlowError.invalid("No flow in this project is called \"\(ref)\". The ones you may use are: \(flowsOrchestratorMayRun.map(\.flow.name).joined(separator: ", "))")
+            }
+            guard flowsOrchestratorMayRun.contains(where: { $0 === inner }) else {
+                throw FlowError.invalid("\"\(inner.flow.name)\" isn't below this flow, so only the person can link it in. Ask them.")
             }
             if let problem = nestingProblem(placing: inner) { throw FlowError.invalid(problem) }
+        }
+    }
+
+    /// The flows a Flow card here may be pointed at by the orchestrator: those already below
+    /// this flow, and sub-flows nothing runs yet. Anything else is the person's to link, or the
+    /// orchestrator could reach into a flow beside its own by pointing a card at it.
+    var flowsOrchestratorMayRun: [FlowController] {
+        let nesting = nesting
+        let below = Set(nesting.subflows(of: flow.id).map(\.id))
+        return project.controllers.filter { other in
+            other !== self && nesting.problem(placing: other.flow.id, in: flow.id) == nil
+                && (below.contains(other.flow.id) || (other.flow.isSubflow == true && nesting.outerFlows(of: other.flow.id).isEmpty))
         }
     }
 

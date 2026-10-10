@@ -506,7 +506,7 @@ private struct TriggerSettings: View {
             } else {
                 // A schedule that came in the flow's file, or from an undo, hasn't been agreed to here.
                 HStack(spacing: Theme.Space.s) {
-                    Text("This schedule came with the flow and is switched off until you agree to it.")
+                    Text("This schedule is switched off. It stays off until you turn it on here.")
                         .font(.dsSans(Theme.Size.caption))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()

@@ -20,11 +20,19 @@ public struct FlowSnapshot: Sendable {
     public var subflowLevelsLeft: Int
     /// The sub-flows below this flow, outermost first, each with how many levels down it sits.
     public var subflows: [(name: String, depth: Int)]
+    /// The name of the flow each Flow card runs, by card id. A card that runs nothing is absent.
+    public var innerFlowNames: [String: String]
+    /// Start cards whose schedule the person has turned on.
+    public var armedStartIDs: Set<String>
+    /// Warnings the app adds to the wiring warnings, by card id.
+    public var extraWarnings: [String: String]
 
     public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool, otherFlows: [String] = [], subflowLevelsLeft: Int = 3,
-                subflows: [(name: String, depth: Int)] = []) {
+                subflows: [(name: String, depth: Int)] = [], innerFlowNames: [String: String] = [:],
+                armedStartIDs: Set<String> = [], extraWarnings: [String: String] = [:]) {
         self.flow = flow; self.agents = agents; self.isRunning = isRunning; self.otherFlows = otherFlows
-        self.subflowLevelsLeft = subflowLevelsLeft; self.subflows = subflows
+        self.subflowLevelsLeft = subflowLevelsLeft; self.subflows = subflows; self.innerFlowNames = innerFlowNames
+        self.armedStartIDs = armedStartIDs; self.extraWarnings = extraWarnings
     }
 }
 
@@ -43,15 +51,7 @@ public protocol ToolHost: Sendable {
     func createSubflow(name: String?, card: String?) async throws -> String
 }
 
-extension ToolHost {
-    public func subflowHost(named name: String) async throws -> any ToolHost {
-        throw FlowError.notFound("This flow has no sub-flow called \"\(name)\"")
-    }
 
-    public func createSubflow(name: String?, card: String?) async throws -> String {
-        throw FlowError.invalid("Sub-flows can't be made here")
-    }
-}
 
 public struct ToolDefinition: Equatable, Sendable {
     public let name: String
@@ -179,7 +179,7 @@ public enum Tools {
     /// Built field by field rather than encoded from `Flow`, so session ids can never leak into it.
     private static func describe(_ snapshot: FlowSnapshot) -> JSONValue {
         let flow = snapshot.flow
-        let found = warnings(for: flow)
+        let found = warnings(for: flow).merging(snapshot.extraWarnings) { own, _ in own }
         func text(_ value: String?) -> JSONValue { value.map(JSONValue.string) ?? .null }
 
         let cards = flow.cards.map { card -> JSONValue in
@@ -200,6 +200,10 @@ public enum Tools {
                 fields["has_last_reply"] = .bool(!(status?.lastReply ?? "").isEmpty)
             case .start, .script:
                 fields["command"] = text(card.command)
+                if card.kind == .start, let trigger = card.trigger {
+                    fields["schedule"] = .string(trigger.summary)
+                    fields["schedule_on"] = .bool(snapshot.armedStartIDs.contains(card.id))
+                }
             case .ifElse, .loop:
                 fields["check"] = text(card.check?.rawValue)
                 fields["value"] = text(card.value)
@@ -213,7 +217,7 @@ public enum Tools {
             case .note, .approval:
                 fields["text"] = text(card.text)
             case .flow:
-                fields["flow"] = text(card.flowRef)
+                fields["flow"] = text(snapshot.innerFlowNames[card.id])
             case .and, .or:
                 break
             }
@@ -252,7 +256,7 @@ public enum Tools {
             name: "add_card",
             description: """
             Add a card to the flow. The kinds, with the names of their outputs:
-            - agent: a live Claude Code session that does work. Output: out (its reply when a turn ends).
+            - agent: a live Claude Code agent that does work. Output: out (its reply when a turn ends).
             - start: holds the command a run begins with. Output: out. Takes no input.
             - if: checks the message. Outputs: yes, no.
             - switch: Claude picks the one branch that fits the message. Outputs: one per branch name, plus other.
@@ -270,10 +274,13 @@ public enum Tools {
             one of the other_flows that get_flow lists. Never write flow files yourself. \
             Sub-flows only nest as deep as the person allows on the flow at the top: get_flow gives \
             sub_flow_levels_left for this flow. At 0 it can't have a Flow card. other_flows only lists flows that \
-            fit, and an edit that would go deeper is refused. Don't try to work round it.
+            fit, and an edit that would go deeper is refused. Don't try to work round it. A flow that isn't below yours \
+            can only be linked in by the person: ask them.
             - script: runs a shell command in the project folder, with the message on its standard input and in \
             $QB_MESSAGE. Outputs: pass (it exited with 0) and fail. What it printed is passed on. The person is \
             asked to allow a command they did not type themselves the first time a run reaches it.
+            A Start card may carry a schedule the person set; you can't set one, and changing a scheduled Start card's \
+            command switches its schedule off until the person turns it back on. \
             Only pass the settings that belong to the kind. Leave out x and y to place the card to the right of the \
             others, which is usually what you want. An agent card is 560 points wide and 380 tall, and the other \
             cards are about 240 by 100, so if you do give positions leave 60 points between cards. A card that \
@@ -364,11 +371,11 @@ public enum Tools {
     private static let cardProperty: JSONValue = ["type": "string", "description": "The card's name or id."]
 
     private static let settingProperties: [String: JSONValue] = [
-        "instructions": ["type": "string", "description": "agent: a standing brief added to the session's system prompt."],
+        "instructions": ["type": "string", "description": "agent: a standing brief the agent always follows."],
         "model": ["type": "string", "description": "agent: a model alias or id, such as opus, sonnet or haiku. An empty string goes back to the person's default."],
         "effort": ["type": "string", "description": "agent: low, medium, high, xhigh or max. An empty string goes back to the model's default."],
         "permission_mode": ["type": "string", "description": "agent: manual, acceptEdits, plan or auto. An empty string goes back to the person's default."],
-        "cwd": ["type": "string", "description": "agent: the folder the session works in. An empty string goes back to the project folder."],
+        "cwd": ["type": "string", "description": "agent: the folder the agent works in. An empty string goes back to the project folder."],
         "command": ["type": "string", "description": "start: the message a run begins with. script: the shell command to run."],
         "check": ["type": "string", "enum": .array(CheckKind.allCases.map { .string($0.rawValue) }),
                   "description": "if, loop: how value is tested. judge: Claude decides whether value, a plain-English statement, is true of the message. contains and not-contains: the message has or lacks the text in value, ignoring case. regex: the message matches the pattern in value."],

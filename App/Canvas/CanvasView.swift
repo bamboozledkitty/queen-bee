@@ -265,7 +265,6 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             cardViews.values.forEach { $0.zoom = scrollView.magnification }
             // A group's name strip grows as the canvas zooms out, which moves its frame.
             if !groupViews.isEmpty { syncGroups(controller.flow, controller) }
-            if controller.viewport != scrollView.documentVisibleRect { controller.viewport = scrollView.documentVisibleRect }
         }
     }
 
@@ -285,7 +284,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private func sync() {
         guard let controller else { return }
         let flow = controller.flow
-        let warnings = controller.warnings
+        // Wiring warnings, plus the ones about Flow cards, which need the whole project and so are worked out once.
+        let warnings = controller.warnings.merging(controller.nestingWarnings) { own, _ in own }
         linkLayer.flow = flow
         linkLayer.passes = controller.linkPasses
         linkLayer.liveLinkIDs = controller.liveLinkIDs
@@ -312,8 +312,6 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.linkedInputs = flow.links.contains { $0.to == card.id }
             context.linkedPorts = Set(flow.links(from: card.id).map(\.port))
             context.warning = warnings[card.id]
-            // A Flow card in a flow with no levels left can't be run, though it is kept.
-            if card.kind == .flow, context.warning == nil, controller.levelsLeft < 1 { context.warning = "Past the sub-flow limit" }
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
             if flow.isSubflow == true, context.result == nil {
@@ -346,6 +344,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                 if let used = controller.runUsage(forCard: card.id), !used.isZero { context.cost = used.price }
                 agentView.attach(terminal: session.view)
             }
+            if card.kind == .start { context.isArmed = controller.isArmed(card) }
             if !view.isCurrent(card: card, context: context) { view.update(card: card, context: context) }
         }
         for (id, view) in cardViews where !seen.contains(id) {
@@ -411,7 +410,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         endHand()
         responderObservation = nil
         guard let window else { return }
-        if LaunchArguments.floats {
+        if TestHarness.isEnabled, LaunchArguments.floats {
             window.level = .floating
             window.orderFrontRegardless()
         }
@@ -436,6 +435,12 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
         responderObservation = window.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
             Task { @MainActor in self?.firstResponderChanged(in: window) }
+        }
+        // Space let go while another window or app had the keyboard would never be seen here.
+        for name in [NSWindow.didResignKeyNotification, NSApplication.didResignActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.endHand() }
+            }
         }
     }
 
@@ -504,7 +509,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             guard isSpaceHeld else { return false }
             endHand()
             return true
-        case .leftMouseDown where isSpaceHeld:
+        case .leftMouseDown where isSpaceHeld && isOverCanvas(event.locationInWindow):
             isHandPanning = true
             NSCursor.closedHand.set()
             return true
@@ -778,6 +783,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
     // MARK: Test support
 
+    #if DEBUG
+
     func testFocus(cardID: String?) {
         if let cardID, let terminal = controller?.sessions[cardID]?.view {
             window?.makeFirstResponder(terminal)
@@ -866,6 +873,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         }
         return "direct"
     }
+
+    #endif
 
     // MARK: Zoom
 

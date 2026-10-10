@@ -114,9 +114,7 @@ struct SidebarView: View {
     /// runs it. A sub-flow nothing uses any more is listed with the rest, so it isn't lost.
     private func nested(_ project: ProjectModel) -> [(controller: FlowController, depth: Int, outer: FlowController?)] {
         let all = project.controllers
-        func inner(of controller: FlowController) -> [FlowController] {
-            controller.flow.cards.filter { $0.kind == .flow }.compactMap(controller.innerFlow(of:))
-        }
+        func inner(of controller: FlowController) -> [FlowController] { controller.innerFlows }
         let used = Set(all.flatMap(inner).map(\.flow.id))
         var listed: Set<String> = []
         var rows: [(FlowController, Int, FlowController?)] = []

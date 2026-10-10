@@ -192,8 +192,8 @@ enum CardKindMenu {
 enum LaunchArguments {
     private static var used = false
 
-    /// `--float` keeps the window above others without taking focus. Terminals stop painting
-    /// in a hidden window, so a check that looks at the window needs it on screen.
+    /// `--float` keeps a test copy's window above others without taking focus. Terminals stop
+    /// painting in a hidden window, so a check that looks at the window needs it on screen.
     static var floats: Bool { CommandLine.arguments.contains("--float") }
 
     /// `--welcome` shows the first-run walk-through in a test copy, which otherwise skips it.
