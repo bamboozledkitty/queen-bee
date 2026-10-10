@@ -63,6 +63,8 @@ Bugs:
   Start, or Start linked to a different agent.
 - **Two project folders holding the same flow id cross-wire**, as a copied project does.
 - **Deleting a sub-flow leaves its Flow card pointing at nothing**, with no warning.
+- **Sessions sometimes stay at "starting"** when many start together. The end-to-end `fanout` scenario times out
+  on this now and then and passes when run again by itself.
 - **Nothing notices a stalled run.** A scheduled run waiting on an Approval card waits for good.
 
 Security hardening:
