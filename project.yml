@@ -71,6 +71,12 @@ targets:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         SWIFT_APPROACHABLE_CONCURRENCY: YES
         ENABLE_APP_SANDBOX: NO
+      configs:
+        # A build from source is its own app, "Queen Bee Dev": it runs beside an installed copy
+        # and keeps its own settings.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.queenbee.app.debug
+          INFOPLIST_KEY_CFBundleDisplayName: Queen Bee Dev
   qb:
     type: tool
     platform: macOS

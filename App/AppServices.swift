@@ -121,7 +121,12 @@ final class AppServices {
             supportDirectory = URL(fileURLWithPath: override, isDirectory: true)
         } else {
             let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            // A build from source keeps its socket, plugin, roles and history apart from an installed copy's.
+            #if DEBUG
+            supportDirectory = base.appendingPathComponent("QueenBee-Dev", isDirectory: true)
+            #else
             supportDirectory = base.appendingPathComponent("QueenBee", isDirectory: true)
+            #endif
         }
         socketPath = supportDirectory.appendingPathComponent("qb.sock").path
         helperPath = Bundle.main.url(forAuxiliaryExecutable: "qb")?.path
@@ -345,7 +350,9 @@ final class AppServices {
             if let reason = verdict.refusal { return ["allowed": false, "reason": .string(reason)] }
             return ["allowed": true, "sessionId": verdict.sessionID.map(JSONValue.string) ?? .null]
         case "mcp":
-            // The tools edit and run the flow, so only the orchestrator's own session gets them.
+            // The tools edit and run the flow, so they answer only to the orchestrator's secret. That keeps an
+            // agent from reaching them through its own helper; it is not a wall against an agent that can run
+            // any command as the person, which could read another of their processes' environment.
             guard who == FlowController.orchestratorKey else { return fallback(for: request) }
             return await MCPServer.handle(request.payload, host: controller) ?? .null
         default:
