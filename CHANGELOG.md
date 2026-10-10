@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-11
+
 ### Added
 
 - Rejecting at an Approval card can carry a note saying why. The note goes out by Rejected ahead of the message, so an agent it loops back to knows what to change.
