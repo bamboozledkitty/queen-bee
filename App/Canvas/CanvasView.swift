@@ -879,7 +879,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         guard let primary = NSScreen.screens.first,
               let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: Int32(dy), wheel2: 0, wheel3: 0) else { return nil }
         cg.location = CGPoint(x: onScreen.x, y: primary.frame.height - onScreen.y)
-        if withCommand { cg.flags = .maskCommand }
+        // Set either way: left alone, the event takes on whatever keys the person at the Mac is holding.
+        cg.flags = withCommand ? .maskCommand : []
         if mode == "system" {
             cg.postToPid(getpid())
             return "system"
