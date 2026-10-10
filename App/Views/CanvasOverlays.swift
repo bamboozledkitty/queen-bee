@@ -507,7 +507,7 @@ struct StatusStrip: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if controller.handOffs > 0 {
-                        Text("\(controller.handOffs) \(controller.handOffs == 1 ? "message" : "messages") passed")
+                        Text("\(controller.handOffs) \(controller.handOffs == 1 ? "hand-off" : "hand-offs")")
                             .foregroundStyle(Theme.inkSecondary.ui)
                             .contentTransition(.numericText())
                     }

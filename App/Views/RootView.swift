@@ -114,7 +114,7 @@ struct WorkspaceView: View {
     private var subtitle: String {
         guard let controller = services.current else { return "" }
         let project = controller.project.name
-        if controller.isRunning { return "\(project) · running, \(controller.handOffs) \(controller.handOffs == 1 ? "message" : "messages") passed" }
+        if controller.isRunning { return "\(project) · running, \(controller.handOffs) \(controller.handOffs == 1 ? "hand-off" : "hand-offs")" }
         return project
     }
 

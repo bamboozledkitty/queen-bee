@@ -25,7 +25,7 @@ All notable changes to Queen Bee are listed here. The format follows
 ### Changed
 
 - A card only shows as live or waiting from run marks while a run is under way.
-- Wording across the app is plainer: settings, tips, warnings and log lines say what happens without the technical terms. An agent's state reads "ready" and "stopped" where it read "idle" and "exited", and counts of "hand-offs" are now "messages passed".
+- Wording across the app is plainer: settings, tips, warnings and log lines say what happens without the technical terms. The app's own labels, such as an agent's state and Claude Code's option names, are unchanged.
 
 ### Added
 

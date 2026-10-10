@@ -11,11 +11,11 @@ enum SessionState: String {
         switch self {
         case .notStarted: "Not started"
         case .starting: "Starting"
-        case .idle: "Ready"
+        case .idle: "Idle"
         case .working: "Working"
         case .needsYou: "Needs you"
         case .failed: "Failed"
-        case .exited: "Stopped"
+        case .exited: "Exited"
         }
     }
 
