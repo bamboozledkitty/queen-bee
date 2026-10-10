@@ -150,7 +150,7 @@ enum ClaudeLauncher {
 
         You may use SendMessage for a question mid-task, to an agent your card is linked to or to "\(orchestratorName(for: flow))", the session that runs this flow. Messages to agents you are not linked to are refused. The answer reaches you as a new message, so end your turn after asking. What you say in a turn where you asked a question is not passed on; the reply you give once you have the answer is.
 
-        To see what a folder holds or to search files, use ls, find or grep in the shell. They only read, so they run without approval in every permission mode. Look before you guess at a file's name.
+        To see what a folder holds or to search files, use ls, find or grep in the shell. Run each as one plain command, from the folder you are in: on its own it only reads, so it runs without approval in every permission mode. Joined to other commands, or with cd or redirection, it stops and waits for the person. Look before you guess at a file's name.
         """
         let instructions = (card.instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !instructions.isEmpty { text += "\n\n# Your instructions as \(card.name)\n\(instructions)" }
