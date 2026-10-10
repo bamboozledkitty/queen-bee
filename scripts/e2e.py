@@ -569,6 +569,10 @@ def scenario_gates(app):
     h = app.wait(fid, lambda s: s["holds"] and s["holds"][0]["card"] == "Check it", 20, "the approval")["holds"]
     check("the script's output reaches the approval", h[0]["text"] == "HELLO FROM THE START CARD", str(h))
     app.op(fid, "hold", answer="approve", text="HELLO, EDITED")
+    answered = time.time()
+    while not any("→ Approved" in line for line in app.state(fid)["log"]) and time.time() - answered < 20:
+        time.sleep(0.1)
+    check("an approval takes effect at once", time.time() - answered < 2, f"{time.time() - answered:.1f}s")
     s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to end")
     check("an approved, edited message goes on to Done", s["results"] == {"Done": "HELLO, EDITED"}, str(s["results"]))
     check("the links recorded what they carried", s["messages"] == 3, str(s["messages"]))

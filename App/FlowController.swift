@@ -1537,7 +1537,13 @@ final class FlowController: ToolHost {
     private func resolve(_ id: String, port: String, text: String?) {
         guard holds.contains(where: { $0.id == id }), let engine else { return }
         holds.removeAll { $0.id == id }
-        Task { self.absorb(await engine.holdResolved(flow: self.flow, holdID: id, port: port, text: text), sender: nil) }
+        let answered = Date()
+        Task {
+            self.absorb(await engine.holdResolved(flow: self.flow, holdID: id, port: port, text: text), sender: nil)
+            // The engine takes one event at a time, so an answer can wait behind another. Say so when it does.
+            let late = Date().timeIntervalSince(answered)
+            if late > 2 { self.append("That answer waited \(Int(late.rounded())) seconds for its turn before it took effect") }
+        }
     }
 
     /// The person approved a held message, perhaps after editing it.
