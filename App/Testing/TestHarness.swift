@@ -77,7 +77,7 @@ enum TestHarness {
             return [:]
         case "scroll":
             let how = controller.canvas?.testScroll(cardID: cardID, dy: payload["dy"]?.doubleValue ?? -120,
-                                                    mode: payload["mode"]?.stringValue ?? "direct")
+                                                    mode: payload["mode"]?.stringValue ?? "direct", withCommand: payload["command"]?.boolValue ?? false)
             return ["posted": how.map(JSONValue.string) ?? .null]
         case "edgeLink":
             // A link dragged from a card to the canvas's edge, and held there until the card
@@ -101,23 +101,85 @@ enum TestHarness {
             guard let kind = payload["kind"]?.stringValue.flatMap(CardKind.init(rawValue:)) else { return ["error": "add needs kind"] }
             controller.addCard(kind)
             return [:]
-        case "selectAll":
-            controller.selectAll()
+        case "hold":
+            // Answers the first held message the way the settings panel's buttons do.
+            guard let hold = controller.holds.first(where: { cardID == nil || $0.cardID == cardID }) else { return ["error": "nothing is held"] }
+            switch payload["answer"]?.stringValue {
+            case "approve": controller.approve(hold.id, text: payload["text"]?.stringValue ?? hold.text)
+            case "reject": controller.reject(hold.id)
+            case "allow": controller.allowScript(hold.id)
+            case "refuse": controller.refuseScript(hold.id)
+            default: return ["error": "hold needs answer"]
+            }
             return [:]
-        case "duplicate":
-            controller.duplicateSelection()
+        case "script":
+            guard let cardID, let command = payload["command"]?.stringValue else { return ["error": "script needs card and command"] }
+            controller.setScriptCommand(cardID, command)
+            return [:]
+        case "runFrom":
+            guard let cardID, let message = payload["message"]?.stringValue else { return ["error": "runFrom needs card and message"] }
+            return ["status": .string(await controller.run(from: cardID, message: message))]
+        case "viewRun":
+            controller.view(run: payload["run"]?.stringValue)
+            return [:]
+        case "trigger":
+            // Sets what starts runs from a Start card, the way the settings panel does.
+            guard let cardID else { return ["error": "trigger needs card"] }
+            var trigger: Trigger?
+            if let minutes = payload["minutes"]?.doubleValue { trigger = Trigger(kind: .interval, minutes: Int(minutes)) }
+            if let path = payload["path"]?.stringValue { trigger = Trigger(kind: .file, path: path) }
+            if let hour = payload["hour"]?.doubleValue, let minute = payload["minute"]?.doubleValue {
+                let days = (payload["weekdays"]?.arrayValue ?? []).compactMap { $0.doubleValue.map(Int.init) }
+                trigger = Trigger(kind: days.isEmpty ? .daily : .weekly, hour: Int(hour), minute: Int(minute), weekdays: days)
+            }
+            controller.setTrigger(trigger, onCard: cardID)
+            return ["next": .array(controller.nextFires.values.map { .number($0.timeIntervalSinceNow) })]
+        case "pickMany":
+            let ids = (payload["cards"]?.arrayValue ?? []).compactMap { $0.stringValue }.compactMap { controller.flow.resolveCard($0)?.id }
+            controller.select(.of(Set(ids)))
+            return [:]
+        case "openSub":
+            guard let cardID else { return ["error": "openSub needs card"] }
+            controller.openSubflow(forCard: cardID)
+            return ["now": .string(AppServices.shared.current?.flow.name ?? ""), "trail": .number(Double(AppServices.shared.flowTrail.count))]
+        case "limit":
+            controller.setSubflowLimit(Int(payload["levels"]?.doubleValue ?? 3))
+            return [:]
+        case "drag":
+            // The calls a drag of a card's title bar makes, in order.
+            guard let cardID else { return ["error": "drag needs card"] }
+            controller.beginGesture()
+            let origins = controller.dragOrigins(for: cardID)
+            controller.moveCards(from: origins, by: CGSize(width: payload["dx"]?.doubleValue ?? 0, height: payload["dy"]?.doubleValue ?? 0))
+            controller.endGesture("Move")
+            return ["moved": .number(Double(origins.count))]
+        case "tool":
+            // Calls one of the orchestrator's tools, as its session would.
+            guard let name = payload["name"]?.stringValue else { return ["error": "tool needs name"] }
+            let result = await Tools.call(name: name, arguments: payload["arguments"] ?? [:], host: controller)
+            return ["text": .string(result.text), "isError": .bool(result.isError)]
+        case "retry":
+            guard let cardID else { return ["error": "retry needs card"] }
+            controller.retry(cardID)
+            return [:]
+        case "back":
+            if let outer = AppServices.shared.flowTrail.dropLast().last { AppServices.shared.goBack(to: outer) }
+            return ["now": .string(AppServices.shared.current?.flow.name ?? "")]
+        case "tidy":
+            controller.tidy()
+            return [:]
+        case "group":
+            controller.groupSelection()
+            return [:]
+        case "fold":
+            guard let group = controller.selectedGroup else { return ["error": "no group is selected"] }
+            controller.setFolded(payload["folded"]?.boolValue ?? true, group: group.id)
             return [:]
         case "delete":
             controller.deleteSelection()
             return [:]
-        case "nudge":
-            controller.nudgeSelection(dx: payload["dx"]?.doubleValue ?? 0, dy: payload["dy"]?.doubleValue ?? 0)
-            return [:]
         case "undo":
             controller.undo()
-            return [:]
-        case "redo":
-            controller.redo()
             return [:]
         default:
             return ["error": "unknown op"]
@@ -149,6 +211,21 @@ enum TestHarness {
             "name": .string(controller.flow.name),
             "cards": .array(controller.flow.cards.map { ["name": .string($0.name), "x": .number($0.x), "y": .number($0.y)] }),
             "links": .number(Double(controller.flow.links.count)),
+            "groups": .array((controller.flow.groups ?? []).map { ["name": .string($0.name), "cards": .number(Double($0.cardIDs.count)), "folded": .bool($0.isFolded)] }),
+            "armed": .array(controller.flow.cards.filter { controller.isArmed($0) }.map { .string($0.name) }),
+            "scheduled": .number(Double(controller.nextFires.count)),
+            "flows": .array(controller.project.controllers.map { .string($0.flow.name) }),
+            "trail": .number(Double(AppServices.shared.flowTrail.count)),
+            "canRun": .bool(controller.canRun),
+            "levelsLeft": .number(Double(controller.levelsLeft)),
+            "blank": .bool(controller.isBlank),
+            "warnings": .object(Dictionary(uniqueKeysWithValues: controller.warnings.map { (controller.flow.card($0.key)?.name ?? $0.key, JSONValue.string($0.value)) })),
+            "viewport": .number(Double(controller.viewport.width)),
+            "cost": .number(controller.totalUsage.cost),
+            "runs": .array(controller.runs.map { ["id": .string($0.id), "outcome": .string($0.outcome.rawValue), "command": .string($0.command)] }),
+            "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
+            "messages": .number(Double(controller.messages.values.reduce(0) { $0 + $1.count })),
+            "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "text": .string($0.text), "needsAllow": .bool($0.needsAllow)] }),
             "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
             "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),
             "isRunning": .bool(controller.isRunning),

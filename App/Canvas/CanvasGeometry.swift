@@ -36,8 +36,21 @@ enum CanvasGeometry {
         guard let from = flow.card(link.from), let to = flow.card(link.to) else { return nil }
         let siblings = flow.links(from: link.from)
         let lane = siblings.firstIndex { $0.id == link.id } ?? 0
-        return LinkRouter.route(from: outputPoint(of: from, port: link.port), to: inputPoint(of: to),
-                                source: frame(of: from), target: frame(of: to), lane: lane)
+        // A card inside a folded group is drawn as the group's one card: a link to or from it
+        // meets that card's edge, and a link between two cards of the same folded group isn't drawn.
+        let fromFold = foldedFrame(holding: from.id, in: flow), toFold = foldedFrame(holding: to.id, in: flow)
+        if let fromFold, let toFold, fromFold.id == toFold.id { return nil }
+        let start = fromFold.map { CGPoint(x: $0.frame.maxX, y: $0.frame.midY) } ?? outputPoint(of: from, port: link.port)
+        let end = toFold.map { CGPoint(x: $0.frame.minX, y: $0.frame.midY) } ?? inputPoint(of: to)
+        return LinkRouter.route(from: start, to: end, source: fromFold?.frame ?? frame(of: from),
+                                target: toFold?.frame ?? frame(of: to), lane: lane)
+    }
+
+    /// The folded group a card is in, and where that group's one card sits.
+    static func foldedFrame(holding cardID: String, in flow: Flow) -> (id: String, frame: CGRect)? {
+        guard let group = flow.group(containing: cardID), group.isFolded,
+              let frame = GroupFrameView.frame(of: group, in: flow) else { return nil }
+        return (group.id, frame)
     }
 
     static func icon(for kind: CardKind) -> String {
@@ -52,6 +65,9 @@ enum CanvasGeometry {
         case .loop: "repeat"
         case .end: "flag"
         case .note: "note.text"
+        case .approval: "checkmark.seal"
+        case .script: "chevron.left.forwardslash.chevron.right"
+        case .flow: "point.3.connected.trianglepath.dotted"
         }
     }
 }

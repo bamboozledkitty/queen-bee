@@ -18,7 +18,7 @@ final class PortDotView: NSView {
         wantsLayer = true
         dot.lineWidth = Theme.Stroke.card
         layer?.addSublayer(dot)
-        toolTip = isOutput ? "\(portLabel(port)): drag to another card to link" : "Input"
+        toolTip = isOutput ? "\(portLabel(port)): drag from here to another card to link them" : "Messages arrive here"
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -130,7 +130,7 @@ enum LinkDrop {
 /// A card on the canvas: a title bar to drag it by, dots for its links, a corner to resize it.
 /// Its frame is the card's rectangle widened by `gutter` on each side, so the dots that
 /// straddle the card's edges stay inside the view and can be clicked.
-class CardView: NSView {
+class CardView: NSView, NSGestureRecognizerDelegate {
     static let gutter: CGFloat = CanvasGeometry.portRadius + 3
     /// As far left or up as a card may be dragged: just inside the canvas's edge.
     static let farLeft: CGFloat = -CanvasView.margin + 100
@@ -213,6 +213,7 @@ class CardView: NSView {
         for handle in [titleBar, overview] {
             handle.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(handleMove(_:))))
             handle.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:))))
+            handle.addGestureRecognizer(GrabGesture.make(target: self, action: #selector(handleGrab(_:)), delegate: self))
             let double = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
             double.numberOfClicksRequired = 2
             handle.addGestureRecognizer(double)
@@ -453,8 +454,25 @@ class CardView: NSView {
             menu.addItem(menuItem("Zoom to Card") { [weak canvas] in canvas?.zoom(toCard: id) })
             if card.kind == .agent {
                 let isLive = controller.session(forCard: id).isLive
-                menu.addItem(menuItem(isLive ? "Restart Session" : "Start Session") { [weak controller] in controller?.startSession(forCard: id) })
+                menu.addItem(menuItem(isLive ? "Restart Agent" : "Start Agent") { [weak controller] in controller?.startSession(forCard: id) })
             }
+            menu.addItem(.separator())
+        }
+        if !several, card.kind == .flow {
+            menu.addItem(menuItem("Open Its Flow") { [weak controller] in controller?.openSubflow(forCard: id) })
+        }
+        if !several, card.kind == .start {
+            menu.addItem(menuItem("Run from This Start") { [weak controller] in
+                guard let controller else { return }
+                Task { await controller.run(startCardID: id) }
+            })
+            menu.addItem(.separator())
+        }
+        if !several, acceptsInput(card) {
+            menu.addItem(menuItem("Run from Here…") { [weak controller] in
+                controller?.select(.card(id))
+                controller?.runFromCardID = id
+            })
             menu.addItem(.separator())
         }
         menu.addItem(menuItem("Duplicate") { [weak controller] in controller?.duplicateSelection() })
@@ -465,7 +483,22 @@ class CardView: NSView {
     }
 
     @objc private func handleDoubleClick(_ g: NSClickGestureRecognizer) {
-        canvas?.zoom(toCard: card.id)
+        // A Flow card is a way into another flow. Every other card zooms to fill the window.
+        if card.kind == .flow {
+            canvas?.controller?.openSubflow(forCard: card.id)
+        } else {
+            canvas?.zoom(toCard: card.id)
+        }
+    }
+
+    /// The hand closes the moment the button goes down on the handle, before any movement,
+    /// so it is plain the card has been taken hold of.
+    @objc private func handleGrab(_ g: NSPressGestureRecognizer) {
+        GrabGesture.follow(g, in: window, handle: g.view)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer, shouldRecognizeSimultaneouslyWith other: NSGestureRecognizer) -> Bool {
+        gestureRecognizer is NSPressGestureRecognizer || other is NSPressGestureRecognizer
     }
 
     @objc private func handleMove(_ g: NSPanGestureRecognizer) {
@@ -475,10 +508,6 @@ class CardView: NSView {
             dragOrigins = canvas.controller?.dragOrigins(for: card.id) ?? [:]
             beginDrag(g, in: canvas) { [weak self] in self?.moveToPointer() }
             canvas.controller?.beginGesture()
-            // The card moves under the pointer, which would keep re-asking the title bar for
-            // its open hand. Cursor regions are switched off until the drag ends.
-            window?.disableCursorRects()
-            NSCursor.closedHand.set()
         case .changed:
             moveToPointer()
         case .ended, .cancelled, .failed:
@@ -486,8 +515,6 @@ class CardView: NSView {
             canvas.endEdgePan()
             canvas.clearGuides()
             canvas.controller?.endGesture("Move")
-            window?.enableCursorRects()
-            window?.invalidateCursorRects(for: titleBar)
         default: break
         }
     }
@@ -529,7 +556,6 @@ class CardView: NSView {
         case .began:
             dragSize = CGSize(width: card.width, height: card.height)
             beginDrag(g, in: canvas) { [weak self] in self?.resizeToPointer() }
-            canvas.controller?.select(.card(card.id))
             canvas.controller?.beginGesture()
         case .changed, .ended:
             resizeToPointer()
@@ -580,12 +606,48 @@ struct CardContext: Equatable {
     var warning: String?
     var inputCount = 0
     var result: String?
+    /// What the card's session cost in the run on show, like "$0.02". Nil when nothing was used.
+    var cost: String?
+    /// What a card holding a message is waiting on, in a few words.
+    var waiting: String?
     var sessionState: SessionState = .notStarted
     /// The card's settings have changed since its session started.
     var needsRestart = false
     /// A run is under way. Marks left by a run that has ended say where it went, not what is live.
     var isRunning = false
+    /// A Start card's schedule is one the person has turned on.
+    var isArmed = false
     var mark = RunMark()
+}
+
+/// A press that begins the instant the button goes down, used to close the hand over something
+/// that can be dragged. It runs alongside the click and drag gestures and never replaces them,
+/// and it owns the pointer for as long as the button is down: cursor regions are switched off,
+/// or the handle moving under the pointer would keep asking for the open hand back.
+enum GrabGesture {
+    static func make(target: AnyObject, action: Selector, delegate: NSGestureRecognizerDelegate) -> NSPressGestureRecognizer {
+        let press = NSPressGestureRecognizer(target: target, action: action)
+        press.minimumPressDuration = 0
+        // However far the pointer then moves, it is still the same grab.
+        press.allowableMovement = .greatestFiniteMagnitude
+        press.delegate = delegate
+        return press
+    }
+
+    static func follow(_ press: NSPressGestureRecognizer, in window: NSWindow?, handle: NSView?) {
+        switch press.state {
+        case .began:
+            window?.disableCursorRects()
+            NSCursor.closedHand.set()
+        case .ended, .cancelled, .failed:
+            window?.enableCursorRects()
+            if let handle { window?.invalidateCursorRects(for: handle) }
+            // Still over the handle, so the open hand comes straight back.
+            NSCursor.openHand.set()
+        default:
+            break
+        }
+    }
 }
 
 /// Runs a closure when its menu item is picked, for menus built on the spot.

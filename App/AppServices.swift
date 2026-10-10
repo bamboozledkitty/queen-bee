@@ -23,10 +23,70 @@ final class AppServices {
     private(set) var projects: [ProjectModel] = []
     /// The flow on the canvas.
     var selectedFlowID: String? {
-        didSet { if selectedFlowID != oldValue { current?.open() } }
+        didSet {
+            guard selectedFlowID != oldValue else { return }
+            // Going into a sub-flow sets the trail first. Any other change of flow starts a new one.
+            if flowTrail.last != selectedFlowID { flowTrail = selectedFlowID.map { [$0] } ?? [] }
+            current?.open()
+        }
     }
     /// How much of the canvas the floating panels cover, published by the window for the canvas.
     @ObservationIgnored var canvasObstruction = CanvasObstruction(left: 400, right: 450)
+    /// Saved agent roles, shared by every flow.
+    private(set) var roles: [AgentRole] = []
+    private var rolesURL: URL { supportDirectory.appendingPathComponent("roles.json") }
+
+    private func loadRoles() {
+        guard let data = try? Data(contentsOf: rolesURL), let saved = try? JSONDecoder().decode([AgentRole].self, from: data) else { return }
+        roles = saved
+    }
+
+    private func saveRoles() {
+        guard let data = try? JSONEncoder().encode(roles) else { return }
+        try? data.write(to: rolesURL, options: .atomic)
+    }
+
+    /// Saves a role, replacing the one with the same id, or with the same name when it is new.
+    @discardableResult
+    func save(_ role: AgentRole) -> AgentRole {
+        var role = role
+        if let index = roles.firstIndex(where: { $0.id == role.id }) {
+            roles[index] = role
+        } else if let index = roles.firstIndex(where: { $0.name.caseInsensitiveCompare(role.name) == .orderedSame }) {
+            role.id = roles[index].id
+            roles[index] = role
+        } else {
+            roles.append(role)
+        }
+        saveRoles()
+        return role
+    }
+
+    func deleteRole(_ id: String) {
+        roles.removeAll { $0.id == id }
+        saveRoles()
+    }
+
+    /// The way into the flow on screen: the flow it was opened from, and that one's, back to
+    /// the first. One entry when the flow was picked directly.
+    private(set) var flowTrail: [String] = []
+
+    /// Opens a sub-flow from the flow whose Flow card runs it, remembering the way back.
+    func enter(_ inner: FlowController, from outer: FlowController) {
+        let upTo = flowTrail.firstIndex(of: outer.flow.id).map { Array(flowTrail[...$0]) } ?? [outer.flow.id]
+        flowTrail = upTo + [inner.flow.id]
+        selectedFlowID = inner.flow.id
+    }
+
+    /// Goes back up the trail to one of the flows on it.
+    func goBack(to flowID: String) {
+        guard let index = flowTrail.firstIndex(of: flowID) else { return }
+        flowTrail = Array(flowTrail[...index])
+        selectedFlowID = flowID
+    }
+
+    /// The find panel is open.
+    var showsFind = false
     /// The first-run walk-through is on screen.
     var showsWelcome = false
     /// Blank flows whose pointer to the orchestrator has been closed.
@@ -79,6 +139,11 @@ final class AppServices {
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: supportDirectory.path)
         installPlugin()
         startServer()
+        loadRoles()
+        // Also a backstop for flow files the watcher missed while the app was in the background.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in AppServices.shared.projects.forEach { $0.rescan() } }
+        }
         restoreProjects()
         // A test run isn't a first run, unless it asks to see the walk-through.
         showsWelcome = remembersProjects ? !UserDefaults.standard.bool(forKey: OnboardingView.seenKey) : LaunchArguments.welcome
@@ -87,7 +152,7 @@ final class AppServices {
             let resolved = await ResolvedEnvironment.resolve()
             self.environment = resolved
             if resolved.claude == nil {
-                self.problem = "Claude Code isn't installed, or `claude` isn't on your PATH. Install it from claude.com/claude-code, then reopen Queen Bee."
+                self.problem = "Queen Bee can't find Claude Code. Install it from claude.com/claude-code, then reopen Queen Bee."
             }
         }
     }
@@ -102,7 +167,7 @@ final class AppServices {
         do {
             try fm.copyItem(at: bundled, to: pluginDirectory)
         } catch {
-            problem = "Couldn't install the session plugin: \(error.localizedDescription)"
+            problem = "Queen Bee couldn't set up the link between its agents: \(error.localizedDescription)"
         }
     }
 
@@ -124,7 +189,7 @@ final class AppServices {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "Trust the flows in “\(root.lastPathComponent)”?"
-            alert.informativeText = "This folder already has Queen Bee flows in it. Opening them starts Claude Code sessions with the instructions, working folders and permission settings saved in those files. Only continue if you trust where this folder came from."
+            alert.informativeText = "This folder already has Queen Bee flows in it. Opening them starts Claude Code agents that follow the instructions saved in those files, with the permissions those files give them. Only continue if you trust where this folder came from."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Trust and Open")
             guard alert.runModal() == .alertSecondButtonReturn else { return false }
@@ -243,7 +308,7 @@ final class AppServices {
                     try await connection.send(Wire.frame(reply.data()))
                 }
             } catch {
-                await MainActor.run { AppServices.shared.problem = "Couldn't open the app's socket: \(error.localizedDescription)" }
+                await MainActor.run { AppServices.shared.problem = "Queen Bee couldn't start listening for its agents: \(error.localizedDescription)" }
             }
         }
     }

@@ -14,9 +14,25 @@ public struct FlowSnapshot: Sendable {
     public var flow: Flow
     public var agents: [String: AgentStatus]
     public var isRunning: Bool
+    /// The names of the project's other flows that a Flow card here may run.
+    public var otherFlows: [String]
+    /// How many more levels of sub-flow may sit below this flow, by the limit the person set on the flow at the top.
+    public var subflowLevelsLeft: Int
+    /// The sub-flows below this flow, outermost first, each with how many levels down it sits.
+    public var subflows: [(name: String, depth: Int)]
+    /// The name of the flow each Flow card runs, by card id. A card that runs nothing is absent.
+    public var innerFlowNames: [String: String]
+    /// Start cards whose schedule the person has turned on.
+    public var armedStartIDs: Set<String>
+    /// Warnings the app adds to the wiring warnings, by card id.
+    public var extraWarnings: [String: String]
 
-    public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool) {
-        self.flow = flow; self.agents = agents; self.isRunning = isRunning
+    public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool, otherFlows: [String] = [], subflowLevelsLeft: Int = 3,
+                subflows: [(name: String, depth: Int)] = [], innerFlowNames: [String: String] = [:],
+                armedStartIDs: Set<String> = [], extraWarnings: [String: String] = [:]) {
+        self.flow = flow; self.agents = agents; self.isRunning = isRunning; self.otherFlows = otherFlows
+        self.subflowLevelsLeft = subflowLevelsLeft; self.subflows = subflows; self.innerFlowNames = innerFlowNames
+        self.armedStartIDs = armedStartIDs; self.extraWarnings = extraWarnings
     }
 }
 
@@ -29,7 +45,13 @@ public protocol ToolHost: Sendable {
     func runFlow(command: String?) async throws -> String
     func stopFlow() async
     func runLog() async -> [String]
+    /// The same tools for one of the sub-flows below this flow, by its name. A flow above or beside this one is refused.
+    func subflowHost(named name: String) async throws -> any ToolHost
+    /// Makes a new sub-flow below this flow and a Flow card that runs it, or fills the Flow card named. Returns what was made.
+    func createSubflow(name: String?, card: String?) async throws -> String
 }
+
+
 
 public struct ToolDefinition: Equatable, Sendable {
     public let name: String
@@ -51,9 +73,14 @@ public struct ToolResult: Equatable, Sendable {
 /// The tools the orchestrator session builds and runs a flow with.
 public enum Tools {
     public static func call(name: String, arguments: JSONValue, host: any ToolHost) async -> ToolResult {
-        let arguments = Arguments(values: arguments.objectValue ?? [:])
+        var values = arguments.objectValue ?? [:]
         do {
-            return ToolResult(text: try await run(name, arguments, host), isError: false)
+            // A call can be aimed at a sub-flow below this one. It then runs there, by that flow's rules.
+            var host = host
+            if let inner = values.removeValue(forKey: "in_flow")?.stringValue, !inner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                host = try await host.subflowHost(named: inner)
+            }
+            return ToolResult(text: try await run(name, Arguments(values: values), host), isError: false)
         } catch let error as FlowError {
             return ToolResult(text: error.description, isError: true)
         } catch {
@@ -135,6 +162,9 @@ public enum Tools {
             guard let reply = status?.lastReply, !reply.isEmpty else { return "\(state) It has not replied yet." }
             return "\(state) Its last reply:\n\n\(reply)"
 
+        case "create_subflow":
+            return try await host.createSubflow(name: try arguments.string("name"), card: try arguments.string("card"))
+
         case "get_run_log":
             let lines = await host.runLog()
             return lines.isEmpty ? "No run has been logged yet." : lines.joined(separator: "\n")
@@ -149,7 +179,7 @@ public enum Tools {
     /// Built field by field rather than encoded from `Flow`, so session ids can never leak into it.
     private static func describe(_ snapshot: FlowSnapshot) -> JSONValue {
         let flow = snapshot.flow
-        let found = warnings(for: flow)
+        let found = warnings(for: flow).merging(snapshot.extraWarnings) { own, _ in own }
         func text(_ value: String?) -> JSONValue { value.map(JSONValue.string) ?? .null }
 
         let cards = flow.cards.map { card -> JSONValue in
@@ -168,8 +198,12 @@ public enum Tools {
                 let status = snapshot.agents[card.id]
                 fields["state"] = .string(status?.state ?? "not started")
                 fields["has_last_reply"] = .bool(!(status?.lastReply ?? "").isEmpty)
-            case .start:
+            case .start, .script:
                 fields["command"] = text(card.command)
+                if card.kind == .start, let trigger = card.trigger {
+                    fields["schedule"] = .string(trigger.summary)
+                    fields["schedule_on"] = .bool(snapshot.armedStartIDs.contains(card.id))
+                }
             case .ifElse, .loop:
                 fields["check"] = text(card.check?.rawValue)
                 fields["value"] = text(card.value)
@@ -180,8 +214,10 @@ public enum Tools {
                 fields["template"] = text(card.template)
             case .end:
                 fields["save_to"] = text(card.saveTo)
-            case .note:
+            case .note, .approval:
                 fields["text"] = text(card.text)
+            case .flow:
+                fields["flow"] = text(snapshot.innerFlowNames[card.id])
             case .and, .or:
                 break
             }
@@ -199,7 +235,10 @@ public enum Tools {
             ]
         }
 
-        return ["name": .string(flow.name), "is_running": .bool(snapshot.isRunning), "cards": .array(cards), "links": .array(links)]
+        return ["name": .string(flow.name), "is_running": .bool(snapshot.isRunning), "cards": .array(cards), "links": .array(links),
+                "other_flows": .array(snapshot.otherFlows.map(JSONValue.string)),
+                "sub_flow_levels_left": .number(Double(max(0, snapshot.subflowLevelsLeft))),
+                "sub_flows": .array(snapshot.subflows.map { ["name": .string($0.name), "levels_down": .number(Double($0.depth + 1))] })]
     }
 
     // MARK: Definitions
@@ -217,7 +256,7 @@ public enum Tools {
             name: "add_card",
             description: """
             Add a card to the flow. The kinds, with the names of their outputs:
-            - agent: a live Claude Code session that does work. Output: out (its reply when a turn ends).
+            - agent: a live Claude Code agent that does work. Output: out (its reply when a turn ends).
             - start: holds the command a run begins with. Output: out. Takes no input.
             - if: checks the message. Outputs: yes, no.
             - switch: Claude picks the one branch that fits the message. Outputs: one per branch name, plus other.
@@ -227,6 +266,21 @@ public enum Tools {
             - loop: checks the message. Outputs: done (the check holds, or max_tries is used up) and again.
             - end: records the final answer and saves it to a file if save_to is set. No outputs.
             - note: text for people. Carries no messages and cannot be linked.
+            - approval: holds the message until the person approves or rejects it. They can edit it first. \
+            Outputs: approved, rejected. Put one before anything that can't be taken back, such as sending an email.
+            - flow: runs another flow in this project as one step, giving it the message as its command. \
+            Outputs: done (with that flow's final answer) and fail. To make a new sub-flow, use \
+            create_subflow, which also adds this card for you. To reuse a flow that exists, set "flow" to the name of \
+            one of the other_flows that get_flow lists. Never write flow files yourself. \
+            Sub-flows only nest as deep as the person allows on the flow at the top: get_flow gives \
+            sub_flow_levels_left for this flow. At 0 it can't have a Flow card. other_flows only lists flows that \
+            fit, and an edit that would go deeper is refused. Don't try to work round it. A flow that isn't below yours \
+            can only be linked in by the person: ask them.
+            - script: runs a shell command in the project folder, with the message on its standard input and in \
+            $QB_MESSAGE. Outputs: pass (it exited with 0) and fail. What it printed is passed on. The person is \
+            asked to allow a command they did not type themselves the first time a run reaches it.
+            A Start card may carry a schedule the person set; you can't set one, and changing a scheduled Start card's \
+            command switches its schedule off until the person turns it back on. \
             Only pass the settings that belong to the kind. Leave out x and y to place the card to the right of the \
             others, which is usually what you want. An agent card is 560 points wide and 380 tall, and the other \
             cards are about 240 by 100, so if you do give positions leave 60 points between cards. A card that \
@@ -294,6 +348,21 @@ public enum Tools {
             description: "Read an agent card's state (starting, idle, working, needs you, failed or exited) and the full text of its last reply.",
             inputSchema: schema(["card": cardProperty], required: ["card"])),
         ToolDefinition(
+            name: "create_subflow",
+            description: """
+            Make a new sub-flow below this flow, with an Input card and an Output card ready, and a Flow card here \
+            that runs it. Then build inside it by passing in_flow with its name to add_card, add_link and the other \
+            tools. The message the Flow card receives arrives at the sub-flow's Input, and what reaches its Output \
+            comes back out the Flow card's done output. Pass card to fill a Flow card that is already on the canvas \
+            and has no flow yet. You can make sub-flows below this flow and below its sub-flows, never above or \
+            beside it. If this is refused because the sub-flow limit is reached, do not try another way: tell the \
+            person no more sub-flows can be added at this level and that the limit is in the top flow's settings.
+            """,
+            inputSchema: schema([
+                "name": ["type": "string", "description": "What to call the sub-flow, and the Flow card that runs it."],
+                "card": ["type": "string", "description": "A Flow card already here to fill, by name or id. Leave out to add one."],
+            ])),
+        ToolDefinition(
             name: "get_run_log",
             description: "Read the log of the latest run: each hand-off between cards, each If, Switch and Loop decision, and why the run stopped.",
             inputSchema: schema([:])),
@@ -302,12 +371,12 @@ public enum Tools {
     private static let cardProperty: JSONValue = ["type": "string", "description": "The card's name or id."]
 
     private static let settingProperties: [String: JSONValue] = [
-        "instructions": ["type": "string", "description": "agent: a standing brief added to the session's system prompt."],
+        "instructions": ["type": "string", "description": "agent: a standing brief the agent always follows."],
         "model": ["type": "string", "description": "agent: a model alias or id, such as opus, sonnet or haiku. An empty string goes back to the person's default."],
         "effort": ["type": "string", "description": "agent: low, medium, high, xhigh or max. An empty string goes back to the model's default."],
         "permission_mode": ["type": "string", "description": "agent: manual, acceptEdits, plan or auto. An empty string goes back to the person's default."],
-        "cwd": ["type": "string", "description": "agent: the folder the session works in. An empty string goes back to the project folder."],
-        "command": ["type": "string", "description": "start: the message a run begins with."],
+        "cwd": ["type": "string", "description": "agent: the folder the agent works in. An empty string goes back to the project folder."],
+        "command": ["type": "string", "description": "start: the message a run begins with. script: the shell command to run."],
         "check": ["type": "string", "enum": .array(CheckKind.allCases.map { .string($0.rawValue) }),
                   "description": "if, loop: how value is tested. judge: Claude decides whether value, a plain-English statement, is true of the message. contains and not-contains: the message has or lacks the text in value, ignoring case. regex: the message matches the pattern in value."],
         "value": ["type": "string", "description": "if, loop: the statement, text or pattern the check tests."],
@@ -315,11 +384,14 @@ public enum Tools {
         "branches": ["type": "array", "items": ["type": "string"], "description": "switch: the branch names. Each one becomes an output."],
         "template": ["type": "string", "description": "prompt: the rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from."],
         "save_to": ["type": "string", "description": "end: a file to save the final answer to, relative to the project folder."],
-        "text": ["type": "string", "description": "note: the note's text."],
+        "text": ["type": "string", "description": "note: the note's text. approval: what the person should check before approving."],
+        "flow": ["type": "string", "description": "flow: the name of the flow to run, one of other_flows from get_flow."],
     ]
 
     private static func schema(_ properties: [String: JSONValue], required: [String] = [], withSettings: Bool = false) -> JSONValue {
-        let all = withSettings ? properties.merging(settingProperties) { own, _ in own } : properties
+        var all = withSettings ? properties.merging(settingProperties) { own, _ in own } : properties
+        // Every tool can be aimed at a sub-flow below the orchestrator's own flow.
+        all["in_flow"] = ["type": "string", "description": "Leave out to act on your own flow. To act on a sub-flow below it, give that sub-flow's name, one of sub_flows from get_flow."]
         return ["type": "object", "properties": .object(all), "required": .array(required.map(JSONValue.string))]
     }
 }
@@ -332,8 +404,8 @@ private struct Arguments: Sendable {
     /// so the orchestrator finds out instead of believing the change was made.
     private static let settings: [(key: String, kinds: Set<CardKind>)] = [
         ("instructions", [.agent]), ("model", [.agent]), ("effort", [.agent]), ("permission_mode", [.agent]), ("cwd", [.agent]),
-        ("command", [.start]), ("check", [.ifElse, .loop]), ("value", [.ifElse, .loop]), ("max_tries", [.loop]),
-        ("branches", [.switchCard]), ("template", [.prompt]), ("save_to", [.end]), ("text", [.note]),
+        ("command", [.start, .script]), ("check", [.ifElse, .loop]), ("value", [.ifElse, .loop]), ("max_tries", [.loop]),
+        ("branches", [.switchCard]), ("template", [.prompt]), ("save_to", [.end]), ("text", [.note, .approval]), ("flow", [.flow]),
     ]
 
     private func value(_ key: String) -> JSONValue? {
@@ -393,6 +465,7 @@ private struct Arguments: Sendable {
         patch.permissionMode = try string("permission_mode")
         patch.cwd = try string("cwd")
         patch.command = try string("command")
+        patch.flowRef = try string("flow")
         if let raw = try string("check") {
             guard let check = CheckKind(rawValue: raw.lowercased()) else {
                 throw FlowError.invalid("Unknown check \"\(raw)\". Use one of: \(CheckKind.allCases.map(\.rawValue).joined(separator: ", "))")

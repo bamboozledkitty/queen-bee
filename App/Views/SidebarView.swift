@@ -44,14 +44,17 @@ struct SidebarView: View {
                             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([project.root]) }
                             Button("Remove from This List") { services.removeProject(project) }
                         }
-                        ForEach(project.controllers.filter(matches), id: \.flow.id) { row(for: $0) }
+                        ForEach(nested(project), id: \.controller.flow.id) { entry in
+                            row(for: entry.controller, outer: entry.outer)
+                                .padding(.leading, CGFloat(entry.depth) * 14)
+                        }
                         ForEach(project.unreadable, id: \.self) { url in
                             Label(url.lastPathComponent, systemImage: "exclamationmark.triangle")
                                 .font(.dsMono(Theme.Size.caption))
                                 .foregroundStyle(Theme.failInk.ui)
                                 .padding(.horizontal, Theme.Space.s)
                                 .padding(.vertical, 4)
-                                .help("This file isn't a flow Queen Bee can read. It is left untouched.")
+                                .help("Queen Bee can't read this file as a flow, so it has left it alone.")
                         }
                     }
                 }
@@ -76,7 +79,7 @@ struct SidebarView: View {
                 deleting = nil
             }
         } message: {
-            Text("Its sessions are stopped and its file is removed. The agents' chats stay in Claude Code's history.")
+            Text("Its agents are stopped and the flow is removed. What the agents said stays in Claude Code's history.")
         }
     }
 
@@ -107,8 +110,26 @@ struct SidebarView: View {
             || controller.flow.cards.contains { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
+    /// A project's flows in order, with each sub-flow listed under the flow whose Flow card
+    /// runs it. A sub-flow nothing uses any more is listed with the rest, so it isn't lost.
+    private func nested(_ project: ProjectModel) -> [(controller: FlowController, depth: Int, outer: FlowController?)] {
+        let all = project.controllers
+        func inner(of controller: FlowController) -> [FlowController] { controller.innerFlows }
+        let used = Set(all.flatMap(inner).map(\.flow.id))
+        var listed: Set<String> = []
+        var rows: [(FlowController, Int, FlowController?)] = []
+        func add(_ controller: FlowController, _ depth: Int, _ outer: FlowController?) {
+            guard listed.insert(controller.flow.id).inserted else { return }
+            if matches(controller) { rows.append((controller, depth, outer)) }
+            for child in inner(of: controller) where child.flow.isSubflow == true { add(child, depth + 1, controller) }
+        }
+        for controller in all where !(controller.flow.isSubflow == true && used.contains(controller.flow.id)) { add(controller, 0, nil) }
+        for controller in all { add(controller, 0, nil) }
+        return rows
+    }
+
     @ViewBuilder
-    private func row(for controller: FlowController) -> some View {
+    private func row(for controller: FlowController, outer: FlowController? = nil) -> some View {
         let id = controller.flow.id
         let selected = services.selectedFlowID == id
         FlowRow(isSelected: selected) {
@@ -120,16 +141,27 @@ struct SidebarView: View {
                         renaming = nil
                     }
             } else {
+                if controller.flow.isSubflow == true {
+                    Image(systemName: "arrow.turn.down.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui)
+                }
                 Text(controller.flow.name).lineLimit(1)
                 Spacer(minLength: 4)
                 activity(of: controller)
             }
         }
-        .onTapGesture { services.selectedFlowID = id }
+        .onTapGesture {
+            // A sub-flow picked here is entered from the flow it sits under, so the way back shows.
+            if let outer {
+                services.enter(controller, from: outer)
+                controller.showWholeFlowSoon()
+            } else {
+                services.selectedFlowID = id
+            }
+        }
         .contextMenu {
             Button("Rename") { draftName = controller.flow.name; renaming = id }
             Button(services.pinnedFlowIDs.contains(id) ? "Unpin" : "Pin") { services.togglePin(id) }
-            Button("Stop Its Sessions") { controller.shutDown() }
+            Button("Stop Its Agents") { controller.shutDown() }
             Divider()
             Button("Delete…", role: .destructive) { deleting = controller }
         }

@@ -92,17 +92,23 @@ final class CanvasDocumentView: NSView {
         }
         menu.addItem(.separator())
         menu.addItem(menuItem("Select All") { [weak controller] in controller?.selectAll() })
+        menu.addItem(menuItem("Tidy Up") { [weak controller] in controller?.tidy() })
         menu.addItem(menuItem("Zoom to Fit") { [weak canvas] in canvas?.zoomToFit() })
         return menu
     }
 
     // MARK: Cards dropped from the palette
 
-    private func kind(in info: NSDraggingInfo) -> CardKind? {
+    /// The kind of card being dragged from the palette, and the saved role when it is one:
+    /// a role travels as "agent@" and its id.
+    private func kind(in info: NSDraggingInfo) -> (kind: CardKind, role: AgentRole?)? {
         let board = info.draggingPasteboard
-        let raw = board.string(forType: Self.cardKindType)
-            ?? board.data(forType: Self.cardKindType).flatMap { String(data: $0, encoding: .utf8) }
-        return raw.flatMap(CardKind.init(rawValue:))
+        guard let raw = board.string(forType: Self.cardKindType)
+            ?? board.data(forType: Self.cardKindType).flatMap({ String(data: $0, encoding: .utf8) }) else { return nil }
+        let parts = raw.split(separator: "@", maxSplits: 1).map(String.init)
+        guard let kind = parts.first.flatMap(CardKind.init(rawValue:)) else { return nil }
+        let role = parts.count > 1 ? AppServices.shared.roles.first { $0.id == parts[1] } : nil
+        return (kind, role)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -125,8 +131,8 @@ final class CanvasDocumentView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         canvas?.endEdgePan()
-        guard let kind = kind(in: sender) else { return false }
-        canvas?.controller?.addCard(kind, at: convert(sender.draggingLocation, from: nil))
+        guard let dropped = kind(in: sender) else { return false }
+        canvas?.controller?.addCard(dropped.kind, at: convert(sender.draggingLocation, from: nil), role: dropped.role)
         return true
     }
 }
@@ -184,8 +190,15 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private var marqueeStart: CGPoint?
     private var marqueeBase: Set<String> = []
     private var cardViews: [String: CardView] = [:]
+    private var groupViews: [String: GroupFrameView] = [:]
     private(set) weak var controller: FlowController?
     private var scrollMonitor: Any?
+    /// Watches for Space and for the mouse buttons that pan the canvas by dragging.
+    private var panMonitor: Any?
+    /// Space is down and the canvas has taken it: a drag with the main button pans.
+    private var isSpaceHeld = false
+    /// A pan by dragging is under way, with Space or with the middle button.
+    private var isHandPanning = false
     private var responderObservation: NSKeyValueObservation?
     private var didInitialScroll = false
     /// False until the flow's saved cards are on screen, so only cards added later draw in.
@@ -243,11 +256,15 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     private func publishZoom() {
+        // The minimap draws where the window is looking, so panning is published as well as zooming.
+        if let controller, !controller.viewport.equalTo(scrollView.documentVisibleRect) { controller.viewport = scrollView.documentVisibleRect }
         let zoom = Double(scrollView.magnification)
         if let controller, abs(controller.zoom - zoom) > 0.004 {
             controller.zoom = zoom
             document.needsDisplay = true
             cardViews.values.forEach { $0.zoom = scrollView.magnification }
+            // A group's name strip grows as the canvas zooms out, which moves its frame.
+            if !groupViews.isEmpty { syncGroups(controller.flow, controller) }
         }
     }
 
@@ -267,7 +284,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private func sync() {
         guard let controller else { return }
         let flow = controller.flow
-        let warnings = controller.warnings
+        // Wiring warnings, plus the ones about Flow cards, which need the whole project and so are worked out once.
+        let warnings = controller.warnings.merging(controller.nestingWarnings) { own, _ in own }
         linkLayer.flow = flow
         linkLayer.passes = controller.linkPasses
         linkLayer.liveLinkIDs = controller.liveLinkIDs
@@ -296,6 +314,25 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.warning = warnings[card.id]
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
+            if flow.isSubflow == true, context.result == nil {
+                // In a sub-flow the Start and End are its way in and its way out.
+                if card.kind == .start, (card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    context.result = "Gets the Flow card's message"
+                } else if card.kind == .end, (card.saveTo ?? "").isEmpty {
+                    context.result = "Goes back to the Flow card"
+                }
+            }
+            if card.kind == .flow, context.result == nil {
+                // What the card runs is another flow's name, which the card itself doesn't hold.
+                let spent = controller.isRunning ? nil : controller.runUsage(forCard: card.id).flatMap { $0.isZero ? nil : $0.price }
+                context.result = controller.innerFlow(of: card).map { "Runs \($0.flow.name)\n\(spent.map { "\($0) in this run" } ?? "Double-click to open it")" }
+            }
+            if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
+                context.isLive = true
+                context.waiting = hold.kind == .approval ? "Waiting for you to approve"
+                    : hold.kind == .flow ? "Running \(hold.command)…"
+                    : hold.needsAllow ? "Waiting for you to let its command run" : "Running its command…"
+            }
             context.mark = controller.marks[card.id] ?? RunMark()
             context.isRunning = controller.isRunning
             if card.kind == .agent, let agentView = view as? AgentCardView {
@@ -304,15 +341,57 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                 context.needsRestart = !controller.settingsAwaitingRestart(forCard: card.id).isEmpty
                 context.isLive = session.state == .working || session.state == .needsYou
                     || (controller.isRunning && context.mark.arrivals > context.mark.passes)
+                if let used = controller.runUsage(forCard: card.id), !used.isZero { context.cost = used.price }
                 agentView.attach(terminal: session.view)
             }
+            if card.kind == .start { context.isArmed = controller.isArmed(card) }
             if !view.isCurrent(card: card, context: context) { view.update(card: card, context: context) }
         }
         for (id, view) in cardViews where !seen.contains(id) {
             view.removeFromSuperview()
             cardViews[id] = nil
         }
+        syncGroups(flow, controller)
         didFirstSync = true
+    }
+
+    /// Frames for the flow's groups, and the folding away of cards that are inside a folded one.
+    private func syncGroups(_ flow: Flow, _ controller: FlowController) {
+        let groups = flow.groups ?? []
+        var folded: Set<String> = []
+        for group in groups {
+            guard let frame = GroupFrameView.frame(of: group, in: flow, zoom: scrollView.magnification) else { continue }
+            let view: GroupFrameView
+            if let existing = groupViews[group.id] {
+                view = existing
+            } else {
+                view = GroupFrameView(group: group)
+                view.canvas = self
+                groupViews[group.id] = view
+            }
+            // A frame sits behind its cards. Folded, the one card sits where cards do.
+            if view.superview == nil || view.group.isFolded != group.isFolded {
+                document.addSubview(view, positioned: group.isFolded ? .below : .above, relativeTo: group.isFolded ? overlay : linkLayer)
+            }
+            if group.isFolded { folded.formUnion(group.cardIDs) }
+            let members = flow.cards.filter { group.cardIDs.contains($0.id) }
+            let waiting = Set(controller.cardsNeedingYou.map(\.id))
+            let failed = members.contains { controller.marks[$0.id]?.failed == true }
+            let live = members.contains { card in
+                waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
+                    || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
+            }
+            let needs = members.filter { waiting.contains($0.id) }.count
+            let detail = needs > 0 ? "\(needs) need\(needs == 1 ? "s" : "") you" : live ? "working" : "\(members.count) cards"
+            view.zoom = scrollView.magnification
+            view.update(group: group, frame: frame, tone: failed ? .fail : live ? .live : .plain,
+                        isSelected: Set(group.cardIDs) == controller.selection.cardIDs, detail: detail)
+        }
+        for (id, view) in groupViews where !groups.contains(where: { $0.id == id }) {
+            view.removeFromSuperview()
+            groupViews[id] = nil
+        }
+        for (id, view) in cardViews where view.isHidden != folded.contains(id) { view.isHidden = folded.contains(id) }
     }
 
     private func viewClass(for card: Card) -> CardView.Type {
@@ -326,9 +405,12 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         endEdgePan()
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         scrollMonitor = nil
+        if let panMonitor { NSEvent.removeMonitor(panMonitor) }
+        panMonitor = nil
+        endHand()
         responderObservation = nil
         guard let window else { return }
-        if LaunchArguments.floats {
+        if TestHarness.isEnabled, LaunchArguments.floats {
             window.level = .floating
             window.orderFrontRegardless()
         }
@@ -337,11 +419,28 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         // terminal scrolls its own history.
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, event.window === self.window else { return event }
+            // Command or Control with the wheel zooms about the pointer, as drawing tools do.
+            if self.zoomWithWheel(event) { return nil }
             return self.panInsteadOfScrolling(event, atWindowPoint: event.locationInWindow) ? nil : event
+        }
+
+        // Holding Space turns the pointer into a hand that drags the canvas, and so does the
+        // middle mouse button. Both are for a mouse, which has no two-finger scroll.
+        let panEvents: NSEvent.EventTypeMask = [.keyDown, .keyUp, .leftMouseDown, .leftMouseDragged, .leftMouseUp,
+                                                .otherMouseDown, .otherMouseDragged, .otherMouseUp]
+        panMonitor = NSEvent.addLocalMonitorForEvents(matching: panEvents) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            return self.handPan(event) ? nil : event
         }
 
         responderObservation = window.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
             Task { @MainActor in self?.firstResponderChanged(in: window) }
+        }
+        // Space let go while another window or app had the keyboard would never be seen here.
+        for name in [NSWindow.didResignKeyNotification, NSApplication.didResignActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.endHand() }
+            }
         }
     }
 
@@ -352,6 +451,103 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             // Start with the canvas's origin just clear of the panels floating over its left edge.
             document.scroll(CGPoint(x: -(AppServices.shared.canvasObstruction.left + 20), y: -(CanvasView.titleBarHeight + 16)))
         }
+        // A canvas that has just appeared, or whose window changed size, hasn't scrolled, so
+        // nothing else would tell the zoom control and the map where it is looking.
+        publishZoom()
+    }
+
+    // MARK: Mouse and keyboard navigation
+
+    private func isOverCanvas(_ point: NSPoint) -> Bool {
+        guard let content = window?.contentView,
+              let hit = content.hitTest(content.superview?.convert(point, from: nil) ?? point) else { return false }
+        return hit === self || hit.isDescendant(of: self)
+    }
+
+    /// Whether the keyboard is in something that is typed into: a terminal, or a text box.
+    private var isTyping: Bool {
+        guard let responder = window?.firstResponder else { return false }
+        if responder is NSText { return true }
+        var view = responder as? NSView
+        while let v = view {
+            if v is TerminalView { return true }
+            view = v.superview
+        }
+        return false
+    }
+
+    /// Command or Control with the scroll wheel zooms in and out about the pointer.
+    private func zoomWithWheel(_ event: NSEvent, atWindowPoint given: NSPoint? = nil) -> Bool {
+        let spot = given ?? event.locationInWindow
+        let wants = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control)
+        guard wants, isOverCanvas(spot) else { return false }
+        // A trackpad reports fine movement, a wheel reports clicks. Each is scaled to feel alike.
+        let amount = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * 0.005 : event.scrollingDeltaY * 0.08
+        guard amount != 0 else { return true }
+        let target = min(scrollView.maxMagnification, max(scrollView.minMagnification, scrollView.magnification * exp(amount)))
+        let point = scrollView.contentView.convert(spot, from: nil)
+        zoomTarget = nil
+        scrollView.setMagnification(target, centeredAt: point)
+        publishZoom()
+        document.needsDisplay = true
+        return true
+    }
+
+    /// Space-and-drag and middle-button drag. Returns whether the event was the canvas's to keep.
+    private func handPan(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .keyDown where event.keyCode == 49:
+            // Space typed into a terminal or a text box is a space.
+            if isSpaceHeld { return true }
+            guard !isTyping, event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                  isOverCanvas(window?.mouseLocationOutsideOfEventStream ?? .zero) else { return false }
+            isSpaceHeld = true
+            window?.disableCursorRects()
+            NSCursor.openHand.set()
+            return true
+        case .keyUp where event.keyCode == 49:
+            guard isSpaceHeld else { return false }
+            endHand()
+            return true
+        case .leftMouseDown where isSpaceHeld && isOverCanvas(event.locationInWindow):
+            isHandPanning = true
+            NSCursor.closedHand.set()
+            return true
+        case .otherMouseDown where event.buttonNumber == 2 && isOverCanvas(event.locationInWindow):
+            isHandPanning = true
+            window?.disableCursorRects()
+            NSCursor.closedHand.set()
+            return true
+        case .leftMouseDragged where isSpaceHeld && isHandPanning, .otherMouseDragged where isHandPanning:
+            let zoom = max(scrollView.magnification, 0.01)
+            let origin = scrollView.documentVisibleRect.origin
+            document.scroll(CGPoint(x: origin.x - event.deltaX / zoom, y: origin.y - event.deltaY / zoom))
+            return true
+        case .leftMouseUp where isSpaceHeld && isHandPanning:
+            isHandPanning = false
+            NSCursor.openHand.set()
+            return true
+        case .otherMouseUp where isHandPanning:
+            if isSpaceHeld {
+                isHandPanning = false
+                NSCursor.openHand.set()
+            } else {
+                endHand()
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Puts the pointer back to normal after a hand pan.
+    private func endHand() {
+        guard isSpaceHeld || isHandPanning else { return }
+        isSpaceHeld = false
+        isHandPanning = false
+        window?.enableCursorRects()
+        window?.invalidateCursorRects(for: self)
+        NSCursor.arrow.set()
     }
 
     /// A scroll over a terminal that doesn't have the keyboard pans the canvas. Returns
@@ -445,7 +641,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         guard let controller, let start = marqueeStart else { return }
         let box = CGRect(x: min(start.x, now.x), y: min(start.y, now.y), width: abs(now.x - start.x), height: abs(now.y - start.y))
         overlay.marquee = box
-        let inside = controller.flow.cards.filter { CanvasGeometry.frame(of: $0).intersects(box) }.map(\.id)
+        // Cards folded away in a group can't be seen, so a box drawn over where they were doesn't take them.
+        let inside = controller.flow.cards.filter { cardViews[$0.id]?.isHidden != true && CanvasGeometry.frame(of: $0).intersects(box) }.map(\.id)
         controller.select(.of(marqueeBase.union(inside)))
     }
 
@@ -537,7 +734,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             overlay.guides = []
         } else {
             let moving = CGRect(x: start.x + translation.x, y: start.y + translation.y, width: card.width, height: card.height)
-            let others = controller.flow.cards.filter { origins[$0.id] == nil }.map(CanvasGeometry.frame(of:))
+            let others = controller.flow.cards.filter { origins[$0.id] == nil && cardViews[$0.id]?.isHidden != true }.map(CanvasGeometry.frame(of:))
             // Six points on screen, whatever the zoom.
             let reach = 6 / max(scrollView.magnification, 0.01)
             let settled = Snapping.snap(moving, to: others, grid: CanvasGeometry.gridStep, tolerance: reach)
@@ -575,7 +772,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     private func card(at point: CGPoint) -> Card? {
-        controller?.flow.cards.last { CanvasGeometry.frame(of: $0).insetBy(dx: -CardView.gutter, dy: 0).contains(point) }
+        // A card folded away in a group can't be dropped on.
+        controller?.flow.cards.last { cardViews[$0.id]?.isHidden != true && CanvasGeometry.frame(of: $0).insetBy(dx: -CardView.gutter, dy: 0).contains(point) }
     }
 
     func finishLink(from cardID: String, port: String, at point: CGPoint) {
@@ -584,6 +782,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     // MARK: Test support
+
+    #if DEBUG
 
     func testFocus(cardID: String?) {
         if let cardID, let terminal = controller?.sessions[cardID]?.view {
@@ -637,7 +837,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     /// the view under the pointer. "direct" skips the queue and gives the event to the same
     /// decision the monitor makes, for when the system won't deliver to a window that is
     /// behind others.
-    func testScroll(cardID: String?, dy: Double, mode: String) -> String? {
+    func testScroll(cardID: String?, dy: Double, mode: String, withCommand: Bool = false) -> String? {
         guard let window, let controller else { return nil }
         let target: CGPoint
         if let cardID, let card = controller.flow.card(cardID) {
@@ -660,17 +860,21 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         guard let primary = NSScreen.screens.first,
               let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: Int32(dy), wheel2: 0, wheel3: 0) else { return nil }
         cg.location = CGPoint(x: onScreen.x, y: primary.frame.height - onScreen.y)
+        if withCommand { cg.flags = .maskCommand }
         if mode == "system" {
             cg.postToPid(getpid())
             return "system"
         }
         guard let event = NSEvent(cgEvent: cg) else { return nil }
+        if zoomWithWheel(event, atWindowPoint: inWindow) { return "zoom" }
         if !panInsteadOfScrolling(event, atWindowPoint: inWindow) {
             let under = window.contentView.flatMap { $0.hitTest($0.superview?.convert(inWindow, from: nil) ?? inWindow) }
             (under ?? scrollView).scrollWheel(with: event)
         }
         return "direct"
     }
+
+    #endif
 
     // MARK: Zoom
 
@@ -686,6 +890,13 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         let covered = AppServices.shared.canvasObstruction
         let zoom = max(scrollView.magnification, 0.01)
         return CGPoint(x: r.midX + (covered.left - covered.right) / 2 / zoom, y: r.midY)
+    }
+
+    /// Pans so `point` is in the middle of what the floating panels leave uncovered.
+    func center(on point: CGPoint) {
+        let visible = scrollView.documentVisibleRect
+        let middle = visibleCenter
+        document.scroll(CGPoint(x: visible.minX + point.x - middle.x, y: visible.minY + point.y - middle.y))
     }
 
     func zoom(by factor: CGFloat) {
@@ -717,27 +928,31 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         document.needsDisplay = true
     }
 
-    func zoomToFit() {
+    /// Shows the whole flow. `atMost` stops a flow of a few small cards being blown up to fill the window.
+    func zoomToFit(atMost: CGFloat? = nil) {
         guard let cards = controller?.flow.cards, !cards.isEmpty else { return }
         let box = cards.map(CanvasGeometry.frame(of:)).reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -40, dy: -40)
-        fit(box)
+        fit(box, atMost: atMost)
     }
 
     /// Zooms so `box` fills the part of the canvas the floating panels leave uncovered.
     /// The panels are a fixed size on screen, so the zoom is worked out from the room they
     /// leave, and the rectangle shown is `box` plus what they cover at that zoom.
-    private func fit(_ box: CGRect) {
+    private func fit(_ box: CGRect, atMost: CGFloat? = nil) {
         let covered = AppServices.shared.canvasObstruction
         // The see-through title bar and its buttons sit over the canvas's top; the status
         // line and zoom control over its foot.
         let top = CanvasView.titleBarHeight, foot: CGFloat = 50
         let screen = scrollView.contentView.frame.size
         let room = CGSize(width: max(80, screen.width - covered.left - covered.right), height: max(80, screen.height - top - foot))
-        let zoom = min(scrollView.maxMagnification, max(scrollView.minMagnification,
-                                                         min(room.width / box.width, room.height / box.height)))
-        let wanted = CGRect(x: box.minX - covered.left / zoom, y: box.minY - top / zoom,
-                            width: box.width + (covered.left + covered.right) / zoom,
-                            height: box.height + (top + foot) / zoom)
+        let zoom = min(atMost ?? scrollView.maxMagnification, scrollView.maxMagnification,
+                       max(scrollView.minMagnification, min(room.width / box.width, room.height / box.height)))
+        // Held below a full fit, the box is shown in the middle of the room with space round it.
+        let shown = CGSize(width: max(box.width, room.width / zoom), height: max(box.height, room.height / zoom))
+        let centred = CGRect(x: box.midX - shown.width / 2, y: box.midY - shown.height / 2, width: shown.width, height: shown.height)
+        let wanted = CGRect(x: centred.minX - covered.left / zoom, y: centred.minY - top / zoom,
+                            width: centred.width + (covered.left + covered.right) / zoom,
+                            height: centred.height + (top + foot) / zoom)
         zoomTarget = nil
         Theme.Motion.travel {
             scrollView.animator().magnify(toFit: inClip(wanted))

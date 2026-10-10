@@ -66,9 +66,12 @@ final class LogicCardView: CardView {
 
     override func update(card new: Card, context: CardContext) {
         super.update(card: new, context: context)
-        let progress = runProgress(of: new, context: context)
-        summaryLabel.stringValue = context.result ?? progress ?? CardSummary.text(for: new, inputs: context.inputCount)
-        summaryLabel.textColor = context.result != nil ? Theme.ink : progress != nil ? Theme.liveInk : Theme.inkSecondary
+        let progress = context.waiting ?? runProgress(of: new, context: context)
+        var summary = CardSummary.text(for: new, inputs: context.inputCount)
+        // A schedule that came in the file, or came back with an undo, is off until the person turns it on.
+        if new.kind == .start, new.trigger != nil, !context.isArmed { summary += " · off" }
+        summaryLabel.stringValue = progress ?? context.result ?? summary
+        summaryLabel.textColor = progress != nil ? Theme.liveInk : context.result != nil ? Theme.ink : Theme.inkSecondary
         warningLabel.stringValue = context.warning ?? ""
         warningLabel.isHidden = context.warning == nil
 
@@ -92,9 +95,9 @@ final class LogicCardView: CardView {
         let mark = context.mark
         switch card.kind {
         case .and where mark.holding > 0:
-            return "Waiting: \(mark.holding) of \(context.inputCount) in"
+            return "Waiting: \(mark.holding) of \(context.inputCount) have answered"
         case .or where mark.passes > 0 && mark.holding > 0:
-            return "Passed 1 on, dropped \(mark.holding)"
+            return "Passed the first on, ignored \(mark.holding)"
         default:
             return nil
         }
@@ -121,11 +124,12 @@ enum CardSummary {
         case .agent: return ""
         case .start:
             let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
-            return first.isEmpty ? "Write the command" : first
+            let command = first.isEmpty ? "Write the command" : first
+            return card.trigger.map { "\(command)\n\($0.summary)" } ?? command
         case .ifElse: return check(card)
         case .switchCard: return "Claude picks one of \((card.branches ?? []).count) branches"
-        case .and: return "Waits for all \(inputs) inputs"
-        case .or: return "Passes on the first of \(inputs)"
+        case .and: return "Waits for all \(inputs) linked cards"
+        case .or: return "Passes on the first of \(inputs) to answer"
         case .prompt:
             let first = (card.template ?? "").split(separator: "\n").first.map(String.init) ?? ""
             return first.isEmpty ? "Passes the message on" : first
@@ -134,12 +138,20 @@ enum CardSummary {
             let file = card.saveTo ?? ""
             return file.isEmpty ? "The final answer shows here" : "Saves to \(file)"
         case .note: return card.text ?? ""
+        case .approval:
+            let ask = (card.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return ask.isEmpty ? "Waits for you to approve" : ask
+        case .flow:
+            return "Double-click to build what it does"
+        case .script:
+            let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
+            return first.isEmpty ? "Write the command" : first
         }
     }
 
     private static func check(_ card: Card) -> String {
         let value = (card.value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return "Set its condition" }
+        guard !value.isEmpty else { return "Say what to check" }
         switch card.check ?? .judge {
         case .judge: return "\(value)?"
         case .contains: return "Has \"\(value)\""

@@ -6,6 +6,12 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
     case ifElse = "if"
     case switchCard = "switch"
     case and, or, prompt, loop, end, note
+    /// Holds a message until the person approves or rejects it.
+    case approval
+    /// Runs a shell command and routes on whether it succeeded.
+    case script
+    /// Runs another flow in the same project as one step of this one.
+    case flow
 
     public var label: String {
         switch self {
@@ -19,6 +25,9 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
         case .loop: "Loop until"
         case .end: "End"
         case .note: "Note"
+        case .approval: "Approval"
+        case .script: "Script"
+        case .flow: "Flow"
         }
     }
 }
@@ -57,10 +66,18 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     public var cwd: String?
     /// The Claude Code session behind the card, set the first time it starts.
     public var sessionID: String?
+    /// The saved role the agent was made from, if any: an id from the app's own list of roles.
+    public var role: String?
 
     // Start
     /// The command a run begins with.
     public var command: String?
+    /// What starts a run from this card besides the Run button. Nil for only the button.
+    public var trigger: Trigger?
+
+    // Flow
+    /// The id of the flow this card runs, in the same project.
+    public var flowRef: String?
 
     // If, Loop
     public var check: CheckKind?
@@ -100,7 +117,9 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
         case .prompt: c.template = ""
         case .end: c.saveTo = ""
         case .note: c.text = ""; c.height = 120
-        case .and, .or: break
+        case .approval: c.text = ""
+        case .script: c.command = ""
+        case .and, .or, .flow: break
         }
         c.height = max(c.height, Card.minimumHeight(for: c))
         return c
@@ -141,6 +160,13 @@ public struct Flow: Codable, Identifiable, Equatable, Sendable {
     public var orchestratorSessionID: String?
     /// Post a notice to the orchestrator when a run finishes, stalls or hits a limit.
     public var notifyOrchestrator: Bool
+    /// How many levels of sub-flow may sit below this flow when it is the one at the top. Nil for the usual three.
+    public var subflowLimit: Int?
+    /// True for a flow made to live inside a Flow card: it is listed under the flows that use it.
+    public var isSubflow: Bool?
+    /// Named sets of cards that are framed together and can be folded into one card. Nil in
+    /// a file from before groups.
+    public var groups: [CardGroup]?
 
     public init(id: String = Flow.newID(), name: String, cards: [Card] = [], links: [Link] = []) {
         self.version = Flow.currentVersion
@@ -161,12 +187,27 @@ public struct Flow: Codable, Identifiable, Equatable, Sendable {
     public func links(into id: String) -> [Link] { links.filter { $0.to == id } }
 }
 
+/// Several cards framed together under a name. Folded, they show as one card.
+public struct CardGroup: Codable, Identifiable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var cardIDs: [String]
+    public var isFolded: Bool
+
+    public init(id: String = Flow.newID(), name: String, cardIDs: [String], isFolded: Bool = false) {
+        self.id = id; self.name = name; self.cardIDs = cardIDs; self.isFolded = isFolded
+    }
+}
+
 /// A card's outputs, top to bottom.
 public func ports(of card: Card) -> [String] {
     switch card.kind {
     case .ifElse: ["yes", "no"]
     case .switchCard: (card.branches ?? []) + ["other"]
     case .loop: ["done", "again"]
+    case .approval: ["approved", "rejected"]
+    case .script: ["pass", "fail"]
+    case .flow: ["done", "fail"]
     case .end, .note: []
     case .agent, .start, .and, .or, .prompt: ["out"]
     }
@@ -185,6 +226,10 @@ public func portLabel(_ port: String) -> String {
     case "other": "Other"
     case "done": "Done"
     case "again": "Again"
+    case "approved": "Approved"
+    case "rejected": "Rejected"
+    case "pass": "Pass"
+    case "fail": "Fail"
     default: port
     }
 }
@@ -209,6 +254,7 @@ public struct CardPatch: Equatable, Sendable {
     public var template: String?
     public var saveTo: String?
     public var text: String?
+    public var flowRef: String?
 
     public init() {}
 }

@@ -8,6 +8,39 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Added
 
+- **Approval** cards, which hold a message until you approve, edit or reject it.
+- **Script** cards, which run a shell command and route on whether it succeeded. A command you didn't type yourself waits for you to allow it.
+- **Flow** cards, which run another of the project's flows as one step. Double-click one to open its flow, or to make a new sub-flow with an Input and an Output; the title bar shows the way back, and sub-flows are listed under the flow that uses them.
+- A sub-flow's canvas opens with all of it in view, shows the map and the note pointing at the orchestrator, and its Input no longer warns that it has no command. Its orchestrator is told it is building a sub-flow.
+- Sub-flows only nest as deep as the flow at the top allows: three levels unless you change it in that flow's settings. Edits, the orchestrator's tools and runs are all held to it, and a flow can't be made to run itself.
+- Flow settings, from the sliders button in the toolbar: the flow's name, its sub-flow limit, and whether its orchestrator is told when a run ends.
+- A schedule is tied to the command it was set with: if the orchestrator changes that command, or an agent's instructions, folder or permissions, the flow's schedules switch off until turned on again. A Start card whose schedule is off says so.
+- Copying or duplicating grouped cards keeps the group.
+- The orchestrator can make sub-flows below its own flow and build inside them, however far down the limit allows. It can't reach the flows above or beside it, and when the limit is reached it is told to say so.
+- Dragging a card or a group no longer selects it, so its settings only open on a click.
+- The hand closes as soon as you press on a card's title bar or a group's name, before you move.
+- Mouse navigation: Command or Control with the scroll wheel zooms about the pointer, and holding Space or the middle button drags the canvas.
+- With several Start cards, Run starts from the selected one, the Run button offers a choice, and each Start card has its own Run.
+- A flow file that appears in a project while it is open is picked up without reopening it.
+- Resting the pointer on a card type in the palette explains it in a sentence, with an example.
+- A link's settings list the messages it carried in the run on show.
+- Every run is kept, with its path, answers and messages. The Log tab can put an earlier run back on the canvas.
+- **Run from here** starts a run at any card with a message you give it, and a card a run stopped at can be retried.
+- Cost: each agent's card shows what it used in the run, a figure beside the zoom control shows the flow's total, and clicking it breaks the total down by session and by run.
+- Agent roles: an agent's instructions, model, effort and permissions saved under a name and reused from the palette in any flow.
+- A Start card can run on a schedule (every so often, daily, or on chosen days) or when a file or folder in the project changes.
+- Groups: cards framed together under a name, which fold into one card.
+- **Tidy Up** (⇧⌘L) lays a flow out left to right in the order its links run.
+- **Find** (⌘F) goes to a card or flow by name, and a map in the corner shows the whole flow and where the window is looking.
+
+### Changed
+
+- Run and Stop are filled, named buttons, and a button that can't be pressed is drawn as a faint outline.
+- A card only shows as live or waiting from run marks while a run is under way.
+- Wording across the app is plainer: settings, tips, warnings and log lines say what happens without the technical terms. The app's own labels, such as an agent's state and Claude Code's option names, are unchanged.
+
+### Added
+
 - Dragging to the edge of the canvas pans it, so a link, a card, a selection box, a resize or a new card from the palette can reach what is out of view.
 
 ## [0.2.0] - 2026-10-09

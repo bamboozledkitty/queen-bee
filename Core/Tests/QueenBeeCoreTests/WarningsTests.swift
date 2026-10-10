@@ -73,11 +73,11 @@ import Testing
         try flow.addCard(kind: .agent, name: "B")
         try flow.addCard(kind: .ifElse, name: "Check")
         let join = try flow.addCard(kind: .and, name: "Join")
-        #expect(warnings(for: flow)[join.id] == "Needs 2+ inputs")
+        #expect(warnings(for: flow)[join.id] == "Link in 2 or more cards")
         // Two links from the same card are still one source.
         try flow.addLink(from: "Check", port: "yes", to: "Join")
         try flow.addLink(from: "Check", port: "no", to: "Join")
-        #expect(warnings(for: flow)[join.id] == "Needs 2+ inputs")
+        #expect(warnings(for: flow)[join.id] == "Link in 2 or more cards")
         try flow.addLink(from: "A", to: "Join")
         #expect(warnings(for: flow)[join.id] == nil)
     }
@@ -89,8 +89,8 @@ import Testing
         let agent = try flow.addCard(kind: .agent, name: "Writer")
         let note = try flow.addCard(kind: .note, name: "Memo")
         let found = warnings(for: flow)
-        #expect(found[end.id] == "Nothing links in")
-        #expect(found[or.id] == "Nothing links in")
+        #expect(found[end.id] == "Nothing is linked to it")
+        #expect(found[or.id] == "Nothing is linked to it")
         #expect(found[agent.id] == nil)
         #expect(found[note.id] == nil)
     }
@@ -108,8 +108,8 @@ import Testing
         try flow.addLink(from: "First", to: "Rewrite")
         try flow.addLink(from: "First", to: "Done")
         let found = warnings(for: flow)
-        #expect(found[rewrite.id] == "Circles with no agent")
-        #expect(found[first.id] == "Circles with no agent")
+        #expect(found[rewrite.id] == "Goes round with no agent")
+        #expect(found[first.id] == "Goes round with no agent")
         #expect(found[end.id] == nil)
         #expect(found[agent.id] == nil)
     }

@@ -7,7 +7,9 @@ final class AgentCardView: CardView {
     private let stateBadge = BadgeLabel()
     /// Shown when the card's settings have changed and the running session doesn't have them yet.
     private let restartBadge = BadgeLabel()
-    private let startButton = NSButton(title: "Start session", target: nil, action: nil)
+    /// What the session cost in the run on show.
+    private let costBadge = BadgeLabel()
+    private let startButton = NSButton(title: "Start agent", target: nil, action: nil)
     private let terminalHolder = FlippedView()
     private weak var terminal: NSView?
     private var stateText = ""
@@ -18,7 +20,9 @@ final class AgentCardView: CardView {
         super.init(card: card)
         titleBar.addSubview(stateBadge)
         titleBar.addSubview(restartBadge)
-        restartBadge.toolTip = "This card's settings changed after its session started. Restart the session from its settings to apply them."
+        titleBar.addSubview(costBadge)
+        costBadge.toolTip = "An estimate of what this agent's work cost in the run on show"
+        restartBadge.toolTip = "You changed this agent's settings while it was running. Restart it from its settings to use them."
 
         terminalHolder.wantsLayer = true
         content.addSubview(terminalHolder)
@@ -30,7 +34,7 @@ final class AgentCardView: CardView {
         content.addSubview(startButton)
     }
 
-    override var titleAccessories: [NSView] { [stateBadge, restartBadge] }
+    override var titleAccessories: [NSView] { [stateBadge, costBadge, restartBadge] }
 
     func attach(terminal view: NSView) {
         guard terminal !== view else { return }
@@ -53,9 +57,10 @@ final class AgentCardView: CardView {
         stateText = isWaiting ? "waiting" : state.label.lowercased()
         stateBadge.set(stateText, tone: tone)
         restartBadge.set(context.needsRestart ? "restart to apply" : "", tone: .live)
+        costBadge.set(context.cost ?? "", tone: .plain)
         let live = state != .notStarted && state != .exited
         startButton.isHidden = live
-        startButton.title = state == .exited ? "Restart session" : "Start session"
+        startButton.title = state == .exited ? "Restart agent" : "Start agent"
         super.update(card: new, context: context)
     }
 

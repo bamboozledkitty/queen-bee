@@ -89,6 +89,59 @@ extension Flow {
         guard let card = resolveCard(ref) else { throw FlowError.notFound("No card called \"\(ref)\"") }
         cards.removeAll { $0.id == card.id }
         links.removeAll { $0.from == card.id || $0.to == card.id }
+        pruneGroups()
+    }
+
+    // MARK: Groups
+
+    public func group(containing cardID: String) -> CardGroup? {
+        (groups ?? []).first { $0.cardIDs.contains(cardID) }
+    }
+
+    /// Frames these cards together under a name. A card is in one group at most, so any of
+    /// them that were in another leave it.
+    @discardableResult
+    public mutating func addGroup(name: String? = nil, cardIDs: [String]) throws -> CardGroup {
+        let members = cards.map(\.id).filter(cardIDs.contains)
+        guard members.count >= 2 else { throw FlowError.invalid("A group needs at least two cards") }
+        var all = groups ?? []
+        for index in all.indices { all[index].cardIDs.removeAll(where: members.contains) }
+        let taken = Set(all.map { $0.name.lowercased() })
+        var chosen = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if chosen.isEmpty {
+            var n = 1
+            while taken.contains("group \(n)") { n += 1 }
+            chosen = "Group \(n)"
+        }
+        let group = CardGroup(name: chosen, cardIDs: members)
+        all.append(group)
+        groups = all
+        pruneGroups()
+        return group
+    }
+
+    public mutating func updateGroup(_ id: String, name: String? = nil, isFolded: Bool? = nil) throws {
+        guard let index = (groups ?? []).firstIndex(where: { $0.id == id }) else { throw FlowError.notFound("No group with id \"\(id)\"") }
+        if let name {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { throw FlowError.invalid("A group needs a name") }
+            groups?[index].name = trimmed
+        }
+        if let isFolded { groups?[index].isFolded = isFolded }
+    }
+
+    public mutating func removeGroup(_ id: String) {
+        groups?.removeAll { $0.id == id }
+        if groups?.isEmpty == true { groups = nil }
+    }
+
+    /// Drops cards that are gone from their groups, and groups left with fewer than two cards.
+    mutating func pruneGroups() {
+        guard var all = groups else { return }
+        let present = Set(cards.map(\.id))
+        for index in all.indices { all[index].cardIDs.removeAll { !present.contains($0) } }
+        all.removeAll { $0.cardIDs.count < 2 }
+        groups = all.isEmpty ? nil : all
     }
 
     /// A plain-English reason the link can't be made, or nil if it can. `from` and `to` are card ids.
@@ -179,7 +232,7 @@ extension Flow {
                 card.permissionMode = Self.setOrCleared(mode)
             }
             if let cwd = patch.cwd { card.cwd = Self.setOrCleared(cwd) }
-        case .start:
+        case .start, .script:
             if let command = patch.command { card.command = command }
         case .ifElse, .loop:
             if let check = patch.check { card.check = check }
@@ -191,8 +244,10 @@ extension Flow {
             if let template = patch.template { card.template = template }
         case .end:
             if let saveTo = patch.saveTo { card.saveTo = saveTo }
-        case .note:
+        case .note, .approval:
             if let text = patch.text { card.text = text }
+        case .flow:
+            if let flowRef = patch.flowRef { card.flowRef = Self.setOrCleared(flowRef) }
         case .and, .or:
             break
         }

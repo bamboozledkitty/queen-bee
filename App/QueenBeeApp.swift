@@ -37,6 +37,16 @@ struct QueenBeeApp: App {
                     .keyboardShortcut(".")
                     .disabled(services.current?.isRunning != true)
                 Divider()
+                Button("Tidy Up") { services.current?.tidy() }
+                    .keyboardShortcut("l", modifiers: [.command, .shift])
+                    .disabled(services.current == nil)
+                Button("Group") { services.current?.groupSelection() }
+                    .keyboardShortcut("g")
+                    .disabled((services.current?.selection.cardIDs.count ?? 0) < 2)
+                Button("Ungroup") { services.current?.ungroupSelection() }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .disabled(services.current?.selectedGroup == nil)
+                Divider()
                 Button("Duplicate") { services.current?.duplicateSelection() }
                     .keyboardShortcut("d")
                     .disabled(services.current?.selection.cardIDs.isEmpty != false)
@@ -56,6 +66,11 @@ struct QueenBeeApp: App {
                 Button(services.current?.redoTitle ?? "Redo") { services.current?.redo() }
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(services.current == nil)
+            }
+            CommandGroup(after: .textEditing) {
+                Button("Find a Card or Flow…") { services.showsFind.toggle() }
+                    .keyboardShortcut("f")
+                    .disabled(services.projects.isEmpty)
             }
             CommandGroup(replacing: .help) {
                 Button("Welcome to Queen Bee") { services.showsWelcome = true }
@@ -171,14 +186,14 @@ final class UpdateChecker {
 }
 
 enum CardKindMenu {
-    static let kinds: [CardKind] = [.agent, .start, .ifElse, .switchCard, .and, .or, .prompt, .loop, .end, .note]
+    static let kinds: [CardKind] = [.agent, .start, .ifElse, .switchCard, .and, .or, .prompt, .loop, .approval, .script, .flow, .end, .note]
 }
 
 enum LaunchArguments {
     private static var used = false
 
-    /// `--float` keeps the window above others without taking focus. Terminals stop painting
-    /// in a hidden window, so a check that looks at the window needs it on screen.
+    /// `--float` keeps a test copy's window above others without taking focus. Terminals stop
+    /// painting in a hidden window, so a check that looks at the window needs it on screen.
     static var floats: Bool { CommandLine.arguments.contains("--float") }
 
     /// `--welcome` shows the first-run walk-through in a test copy, which otherwise skips it.

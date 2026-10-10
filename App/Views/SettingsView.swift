@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage(Theme.modeKey) private var mode = Theme.Mode.system.rawValue
     @AppStorage("defaultModel") private var defaultModel = ""
     @AppStorage(Notifier.settingKey) private var notifies = true
+
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
@@ -21,13 +22,14 @@ struct SettingsView: View {
 
             Toggle("Notify me when a card needs me or a run ends", isOn: $notifies)
 
+
             LabeledContent("Claude Code") {
                 if let claude = services.environment?.claude {
                     Text(claude).font(.dsMono(Theme.Size.caption)).textSelection(.enabled)
                 } else if services.environment == nil {
                     Text("Looking…").foregroundStyle(.secondary)
                 } else {
-                    Text("Not found on your PATH").foregroundStyle(Theme.failInk.ui)
+                    Text("Not found. Install Claude Code, then reopen Queen Bee.").foregroundStyle(Theme.failInk.ui)
                 }
             }
         }

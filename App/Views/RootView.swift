@@ -72,12 +72,26 @@ struct WorkspaceView: View {
             }
             .padding(Self.gap)
 
+            if services.showsFind {
+                // Over everything, near the top, like a search field that came to you.
+                VStack {
+                    FindPanel { services.showsFind = false }
+                        .padding(.top, 90)
+                    Spacer()
+                }
+                .background {
+                    Color.clear.contentShape(Rectangle()).onTapGesture { services.showsFind = false }
+                }
+                .transition(.opacity.combined(with: .offset(y: -8)))
+            }
+
             if services.showsWelcome {
                 OnboardingView { services.closeWelcome() }
                     .transition(.opacity)
             }
         }
         .animation(Theme.Motion.standard, value: services.showsWelcome)
+        .animation(Theme.Motion.standard, value: services.showsFind)
         .animation(Theme.Motion.standard, value: showsSidebar)
         .animation(Theme.Motion.standard, value: showsPanel)
         .onChange(of: obstruction, initial: true) { services.canvasObstruction = obstruction }
@@ -100,7 +114,7 @@ struct WorkspaceView: View {
     private var subtitle: String {
         guard let controller = services.current else { return "" }
         let project = controller.project.name
-        if controller.isRunning { return "\(project) · running, \(controller.handOffs) hand-offs" }
+        if controller.isRunning { return "\(project) · running, \(controller.handOffs) \(controller.handOffs == 1 ? "hand-off" : "hand-offs")" }
         return project
     }
 
@@ -131,15 +145,44 @@ struct WorkspaceView: View {
                     .tint(Theme.live.ui)
                     .help("Go to the card that is waiting on you")
                 }
+                // Run and Stop are filled and named, so it is plain which one is on offer and
+                // whether it can be pressed. Greyed out means there is nothing to run yet.
                 if controller.isRunning {
-                    Button { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                    Button { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.live.ui)
                         .help("Stop the run")
+                } else if controller.startCards.count > 1 {
+                    // Several Start cards: say which one. The selected one runs on a plain click.
+                    Menu {
+                        ForEach(controller.startCards) { start in
+                            Button("Run from \(start.name)") { Task { await controller.run(startCardID: start.id) } }
+                        }
+                    } label: {
+                        Label("Run", systemImage: "play.fill").labelStyle(.titleAndIcon)
+                    } primaryAction: {
+                        Task { await controller.run() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.select.ui)
+                    .disabled(!controller.canRun)
+                    .help("This flow has \(controller.startCards.count) Start cards. Click to run from the selected one, or the first. Hold or use the arrow to choose.")
                 } else {
-                    Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill") }
-                        .help("Run the flow from its Start card")
+                    Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill").labelStyle(.titleAndIcon) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.select.ui)
+                        .disabled(!controller.canRun)
+                        .help(controller.canRun ? "Run the flow from its Start card" : controller.flow.isSubflow == true
+                              ? "To try this sub-flow by itself, give its Input something to start with and link it to a card"
+                              : "Nothing to run yet: give the Start card something to start with and link it to a card")
                 }
+                Button {
+                    controller.select(.none)
+                    controller.showsFlowSettings.toggle()
+                } label: { Label("Flow Settings", systemImage: "slider.horizontal.3") }
+                    .help("Settings for this flow: its name, how deep sub-flows may go, and whether its orchestrator hears when a run ends")
                 Button { showsPanel.toggle() } label: { Label("Panel", systemImage: "sidebar.trailing") }
-                    .help("Show or hide the orchestrator, log and output")
+                    .help("Show or hide the orchestrator, the log and the run's output")
             }
         }
     }
@@ -150,7 +193,7 @@ struct WorkspaceView: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Add"
-        panel.message = "Flows are kept in a .queenbee folder inside the project, and agents work in the project folder."
+        panel.message = "Choose the folder your agents should work in. Your flows are saved inside it."
         if panel.runModal() == .OK, let url = panel.url, AppServices.shared.confirmTrust(url) {
             let project = AppServices.shared.addProject(url)
             if project.controllers.isEmpty { project.newFlow() }
@@ -181,9 +224,27 @@ private struct TitlePlate: View {
                     .onExitCommand { isRenaming = false }
                     .onChange(of: isFocused) { if !isFocused { isRenaming = false } }
             } else {
-                Text(controller?.flow.name ?? "Queen Bee")
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    // Inside a sub-flow, the flows it was opened from lead the way back.
+                    ForEach(trail, id: \.flow.id) { outer in
+                        Button { AppServices.shared.goBack(to: outer.flow.id) } label: {
+                            Text(outer.flow.name).font(.system(size: 13)).lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Back to \(outer.flow.name)")
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                    }
+                    Text(controller?.flow.name ?? "Queen Bee")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .onTapGesture {
+                            guard let controller, !isRenaming else { return }
+                            draft = controller.flow.name
+                            isRenaming = true
+                            isFocused = true
+                        }
+                }
             }
             if !subtitle.isEmpty {
                 Text(subtitle)
@@ -194,14 +255,13 @@ private struct TitlePlate: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 3)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard let controller, !isRenaming else { return }
-            draft = controller.flow.name
-            isRenaming = true
-            isFocused = true
-        }
-        .help(controller == nil ? "" : "Click to rename this flow")
+        .help(controller == nil ? "" : "Click the flow's name to rename it")
+    }
+
+    /// The flows this one was opened from, outermost first.
+    private var trail: [FlowController] {
+        let services = AppServices.shared
+        return services.flowTrail.dropLast().compactMap { id in services.allFlows.first { $0.flow.id == id } }
     }
 }
 
@@ -214,6 +274,7 @@ struct CanvasControls: View {
     let showLog: () -> Void
     let showOrchestrator: () -> Void
     @Environment(\.orchestratorIsShowing) private var orchestratorIsShowing
+    @AppStorage("showsMinimap") private var showsMinimap = true
     private var services: AppServices { AppServices.shared }
 
     /// An empty flow points at the orchestrator until it is built in, or the note is closed.
@@ -230,6 +291,9 @@ struct CanvasControls: View {
                 if controller.selection != .none {
                     InspectorView(controller: controller)
                         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
+                } else if controller.showsFlowSettings {
+                    FlowSettingsView(controller: controller)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
                 }
             }
             .overlay(alignment: .top) {
@@ -240,15 +304,34 @@ struct CanvasControls: View {
                 }
             }
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }
-            .overlay(alignment: .bottomTrailing) { ZoomPill(controller: controller) }
+            .overlay(alignment: .bottomTrailing) {
+                VStack(alignment: .trailing, spacing: Theme.Space.s) {
+                    if showsMinimap, !controller.flow.cards.isEmpty, !controller.showsCost {
+                        Minimap(controller: controller)
+                            .transition(.opacity)
+                    }
+                    if controller.showsCost {
+                        CostBreakdown(controller: controller) { controller.showsCost = false }
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
+                    HStack(spacing: Theme.Space.s) {
+                        CostPill(controller: controller, showsBreakdown: Binding(get: { controller.showsCost }, set: { controller.showsCost = $0 }))
+                        ZoomPill(controller: controller)
+                    }
+                }
+                .animation(Theme.Motion.standard, value: controller.showsCost)
+            }
             .overlay(alignment: .trailing) {
                 if showsCallout {
-                    // Halfway down the panel's edge, clear of a new flow's Start card and the zoom control.
+                    // Below the middle of the panel's edge: clear of a new flow's cards, which sit at
+                    // the top or, in a sub-flow shown whole, across the middle, and of the map at the foot.
                     OrchestratorCallout(controller: controller, orchestratorIsShowing: orchestratorIsShowing, showOrchestrator: showOrchestrator)
+                        .padding(.top, 230)
                         .transition(.opacity.combined(with: .offset(x: -8)))
                 }
             }
             .animation(Theme.Motion.standard, value: controller.selection)
+            .animation(Theme.Motion.standard, value: controller.showsFlowSettings)
             .animation(Theme.Motion.standard, value: showsCallout)
     }
 }
@@ -267,7 +350,7 @@ struct WelcomeView: View {
             Text("Queen Bee")
                 .font(.dsMono(22, .medium))
                 .foregroundStyle(Theme.ink.ui)
-            Text("Add a project folder to start. Its flows are kept in a .queenbee folder inside it, and agents work in that folder.")
+            Text("To start, choose the folder your agents should work in. Queen Bee saves your flows inside it.")
                 .font(.dsSans(Theme.Size.title))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.inkSecondary.ui)

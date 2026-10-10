@@ -469,7 +469,7 @@ actor ScriptedJudge: Judge {
             if last.finished { break }
         }
         #expect(handOffs == 4)
-        #expect(last.log == ["Link Writer → Reviewer stopped: max passes (2) reached"])
+        #expect(last.log == ["Link Writer → Reviewer stopped: it reached its limit of 2 for this run"])
         #expect(last.finished)
         #expect(await !engine.isRunning)
     }
