@@ -187,7 +187,11 @@ public actor Engine {
         // No link brought this message, so it has none to count against.
         let entry = Link(id: "", from: "", to: card.id)
         let message = Message(text: text, fromName: fromName, fromStart: false)
-        let next = await arrive(message, at: card, by: entry, in: flow, state: &state, output: &output)
+        // An And waits for every card linked into it, which a message given by hand can never
+        // satisfy. Started here, it passes the message straight on.
+        let next: (port: String, message: Message)? = card.kind == .and
+            ? ("out", Message(text: text, fromName: card.name, fromStart: false))
+            : await arrive(message, at: card, by: entry, in: flow, state: &state, output: &output)
         output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: next?.port))
         if let next, !state.hitLimit {
             await send(next.message, from: card, port: next.port, in: flow, state: &state, output: &output)

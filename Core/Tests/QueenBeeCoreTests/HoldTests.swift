@@ -118,3 +118,41 @@ import Testing
         #expect(replied.travels == [Travel(linkID: second.id, text: "A draft", fromName: "Writer")])
     }
 }
+
+@Suite struct RunFromHereTests {
+    @Test func startingAtAnAgentDeliversTheMessageToIt() async throws {
+        var flow = Flow(name: "Test")
+        let writer = try flow.addCard(kind: .agent, name: "Writer")
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "Writer", to: "Done")
+        let engine = Engine(judge: ScriptedJudge())
+        let out = await engine.start(flow: flow, at: writer.id, message: "Try again", fromName: "You")
+        #expect(out.deliveries.map(\.toCardID) == [writer.id])
+        #expect(out.deliveries.first?.text.hasSuffix("from You]\nTry again") == true)
+        #expect(!out.finished && out.runID != nil)
+    }
+
+    @Test func startingAtAnAndPassesTheMessageOn() async throws {
+        var flow = Flow(name: "Test")
+        try flow.addCard(kind: .agent, name: "A")
+        try flow.addCard(kind: .agent, name: "B")
+        let both = try flow.addCard(kind: .and, name: "Both")
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "A", to: "Both")
+        try flow.addLink(from: "B", to: "Both")
+        try flow.addLink(from: "Both", to: "Done")
+        let engine = Engine(judge: ScriptedJudge())
+        let out = await engine.start(flow: flow, at: both.id, message: "Both answers", fromName: "You")
+        #expect(out.results.map(\.text) == ["Both answers"] && out.finished)
+    }
+
+    @Test func aCardThatTakesNoInputOrABlankMessageStartsNothing() async throws {
+        var flow = Flow(name: "Test")
+        let start = try flow.addCard(kind: .start, name: "Start")
+        let writer = try flow.addCard(kind: .agent, name: "Writer")
+        let engine = Engine(judge: ScriptedJudge())
+        #expect(await engine.start(flow: flow, at: start.id, message: "Hi", fromName: "You").runID == nil)
+        #expect(await engine.start(flow: flow, at: writer.id, message: "  ", fromName: "You").runID == nil)
+        #expect(await !engine.isRunning)
+    }
+}

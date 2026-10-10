@@ -508,7 +508,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         guard let controller, let start = marqueeStart else { return }
         let box = CGRect(x: min(start.x, now.x), y: min(start.y, now.y), width: abs(now.x - start.x), height: abs(now.y - start.y))
         overlay.marquee = box
-        let inside = controller.flow.cards.filter { CanvasGeometry.frame(of: $0).intersects(box) }.map(\.id)
+        // Cards folded away in a group can't be seen, so a box drawn over where they were doesn't take them.
+        let inside = controller.flow.cards.filter { cardViews[$0.id]?.isHidden != true && CanvasGeometry.frame(of: $0).intersects(box) }.map(\.id)
         controller.select(.of(marqueeBase.union(inside)))
     }
 
@@ -600,7 +601,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             overlay.guides = []
         } else {
             let moving = CGRect(x: start.x + translation.x, y: start.y + translation.y, width: card.width, height: card.height)
-            let others = controller.flow.cards.filter { origins[$0.id] == nil }.map(CanvasGeometry.frame(of:))
+            let others = controller.flow.cards.filter { origins[$0.id] == nil && cardViews[$0.id]?.isHidden != true }.map(CanvasGeometry.frame(of:))
             // Six points on screen, whatever the zoom.
             let reach = 6 / max(scrollView.magnification, 0.01)
             let settled = Snapping.snap(moving, to: others, grid: CanvasGeometry.gridStep, tolerance: reach)

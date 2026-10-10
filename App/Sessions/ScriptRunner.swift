@@ -53,14 +53,19 @@ enum ScriptRunner {
         SHA256.hash(data: Data(command.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// One entry per card. Hashed, so no id can be written to look like another flow's card.
+    private static func entry(_ scope: String, _ cardID: String) -> String {
+        fingerprint(scope + "\u{0}" + cardID)
+    }
+
     static func isAllowed(_ command: String, flowID: String, cardID: String) -> Bool {
         let allowed = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
-        return allowed["\(flowID)/\(cardID)"] == fingerprint(command)
+        return allowed[entry(flowID, cardID)] == fingerprint(command)
     }
 
     static func allow(_ command: String, flowID: String, cardID: String) {
         var allowed = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
-        allowed["\(flowID)/\(cardID)"] = fingerprint(command)
+        allowed[entry(flowID, cardID)] = fingerprint(command)
         UserDefaults.standard.set(allowed, forKey: key)
     }
 }

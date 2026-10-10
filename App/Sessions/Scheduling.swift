@@ -17,14 +17,19 @@ enum ScheduleArming {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// One entry per card. Hashed, so no id can be written to look like another flow's card.
+    private static func entry(_ scope: String, _ cardID: String) -> String {
+        SHA256.hash(data: Data((scope + "\u{0}" + cardID).utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     static func isArmed(_ trigger: Trigger, flowID: String, cardID: String) -> Bool {
         let armed = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
-        return armed["\(flowID)/\(cardID)"] == fingerprint(trigger)
+        return armed[entry(flowID, cardID)] == fingerprint(trigger)
     }
 
     static func arm(_ trigger: Trigger?, flowID: String, cardID: String) {
         var armed = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
-        armed["\(flowID)/\(cardID)"] = trigger.map(fingerprint)
+        armed[entry(flowID, cardID)] = trigger.map(fingerprint)
         UserDefaults.standard.set(armed, forKey: key)
     }
 }

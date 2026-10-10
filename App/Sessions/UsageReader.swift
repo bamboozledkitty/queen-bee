@@ -41,26 +41,68 @@ nonisolated struct Usage: Codable, Equatable, Sendable {
 /// Reads a session's usage from the transcript Claude Code keeps. Claude Code works the cost
 /// out itself and writes a running total there, so no prices are kept in this app.
 enum UsageReader {
+    /// How far into a transcript has been read, and what it added up to. A transcript only
+    /// grows, so each read takes in what was written since the last one.
+    private struct Progress {
+        var path: String
+        var offset: UInt64 = 0
+        var banked = Usage()
+        var latest = Usage()
+    }
+
+    private nonisolated(unsafe) static var progress: [String: Progress] = [:]
+    private nonisolated static let lock = NSLock()
+
     /// The session's usage so far, or nil when it has no transcript yet.
     nonisolated static func usage(sessionID: String) -> Usage? {
-        guard let url = transcript(for: sessionID), let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        var state: Progress
+        if let known = progress[sessionID], FileManager.default.fileExists(atPath: known.path) {
+            state = known
+        } else if let url = transcript(for: sessionID) {
+            state = Progress(path: url.path)
+        } else {
+            return nil
+        }
+        guard let handle = FileHandle(forReadingAtPath: state.path) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        // A file shorter than what was read has been replaced: start again.
+        if size < state.offset { state = Progress(path: state.path) }
+        try? handle.seek(toOffset: state.offset)
+
+        var carry = Data()
+        while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+            carry.append(chunk)
+            // Whole lines only. A line still being written is left for the next read.
+            while let newline = carry.firstIndex(of: 0x0A) {
+                let line = carry[carry.startIndex..<newline]
+                state.offset += UInt64(line.count + 1)
+                carry = carry[carry.index(after: newline)...]
+                take(Data(line), into: &state)
+            }
+        }
+        progress[sessionID] = state
+        return state.banked + state.latest
+    }
+
+    /// Adds one line of a transcript to the running figures, if it is one of Claude Code's cost entries.
+    private nonisolated static func take(_ line: Data, into state: inout Progress) {
+        guard line.range(of: Data("\"cost-state\"".utf8)) != nil,
+              let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              entry["type"] as? String == "cost-state" else { return }
+        var now = Usage(cost: entry["totalCostUSD"] as? Double ?? 0)
+        for (_, model) in entry["modelUsage"] as? [String: [String: Any]] ?? [:] {
+            now.input += model["inputTokens"] as? Int ?? 0
+            now.output += model["outputTokens"] as? Int ?? 0
+            now.cacheRead += model["cacheReadInputTokens"] as? Int ?? 0
+            now.cacheWrite += model["cacheCreationInputTokens"] as? Int ?? 0
+        }
         // Each process the session has run in keeps its own running total. A total that falls
         // means a new process began from nothing, so what the last one reached is banked.
-        var banked = Usage(), latest = Usage()
-        for line in text.split(separator: "\n") where line.contains("\"cost-state\"") {
-            guard let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-                  entry["type"] as? String == "cost-state" else { continue }
-            var now = Usage(cost: entry["totalCostUSD"] as? Double ?? 0)
-            for (_, model) in entry["modelUsage"] as? [String: [String: Any]] ?? [:] {
-                now.input += model["inputTokens"] as? Int ?? 0
-                now.output += model["outputTokens"] as? Int ?? 0
-                now.cacheRead += model["cacheReadInputTokens"] as? Int ?? 0
-                now.cacheWrite += model["cacheCreationInputTokens"] as? Int ?? 0
-            }
-            if now.cost < latest.cost || now.tokens < latest.tokens { banked = banked + latest }
-            latest = now
-        }
-        return banked + latest
+        if now.cost < state.latest.cost || now.tokens < state.latest.tokens { state.banked = state.banked + state.latest }
+        state.latest = now
     }
 
     private nonisolated static func transcript(for sessionID: String) -> URL? {

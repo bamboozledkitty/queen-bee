@@ -176,6 +176,11 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var historyTask: Task<Void, Never>?
     @ObservationIgnored private var isOpen = false
+    /// Set when the flow's sessions are shut down. Work still in flight then, such as a script
+    /// finishing or a session's last hook, must not start writing again.
+    @ObservationIgnored private var isClosed = false
+    /// When the last run ended, so a file its agents changed on the way out doesn't start another.
+    @ObservationIgnored private var lastRunEnded = Date.distantPast
     /// Agents whose plugin has reported a finished turn since their session started. Once a
     /// plugin has spoken it is loaded, and the app never routes that agent's replies itself.
     @ObservationIgnored private var pluginSpoke: Set<String> = []
@@ -232,6 +237,8 @@ final class FlowController: ToolHost {
     /// When the clock next starts a run from each Start card whose schedule is on, by card id.
     private(set) var nextFires: [String: Date] = [:]
     @ObservationIgnored private var scheduleTask: Task<Void, Never>?
+    /// The schedule each due time in `nextFires` was worked out from.
+    @ObservationIgnored private var scheduledFor: [String: Trigger] = [:]
     @ObservationIgnored private var watchers: [String: (path: String, watcher: FileWatcher)] = [:]
     @ObservationIgnored private var lastFileFire = Date.distantPast
 
@@ -242,6 +249,7 @@ final class FlowController: ToolHost {
 
     /// Sets what starts runs from a Start card, and turns it on: the person chose it.
     func setTrigger(_ trigger: Trigger?, onCard id: String) {
+        guard flow.card(id)?.kind == .start else { return }
         ScheduleArming.arm(trigger, flowID: allowScope, cardID: id)
         let changed = perform("Change Schedule", key: "trigger:\(id)") {
             guard let index = $0.cards.firstIndex(where: { $0.id == id && $0.kind == .start }) else { return }
@@ -256,16 +264,31 @@ final class FlowController: ToolHost {
         scheduleTask?.cancel()
         let armed = flow.cards.filter { $0.kind == .start && isArmed($0) }
         var fires: [String: Date] = [:]
+        var kept: [String: Trigger] = [:]
         for card in armed {
-            if let next = card.trigger?.nextFire(after: Date()) { fires[card.id] = next }
+            guard let trigger = card.trigger else { continue }
+            // A card whose schedule hasn't changed keeps the time it was due. Working it out
+            // afresh on every edit to the flow would keep pushing an interval back.
+            if scheduledFor[card.id] == trigger, let due = nextFires[card.id] {
+                fires[card.id] = due
+            } else if let next = trigger.nextFire(after: Date()) {
+                fires[card.id] = next
+            }
+            kept[card.id] = trigger
         }
+        scheduledFor = kept
         if nextFires != fires { nextFires = fires }
         watchFiles(for: armed.filter { $0.trigger?.kind == .file })
-        guard let (cardID, when) = fires.min(by: { $0.value < $1.value }) else { return }
+        guard let when = fires.values.min() else { return }
         scheduleTask = Task {
             try? await Task.sleep(for: .seconds(max(0, when.timeIntervalSinceNow)))
             guard !Task.isCancelled else { return }
-            self.fire(cardID, because: "on schedule")
+            // Everything that has fallen due goes now, then each is given its next time.
+            let due = self.nextFires.filter { $0.value <= Date().addingTimeInterval(0.5) }.keys.sorted()
+            for cardID in due {
+                self.fire(cardID, because: "on schedule")
+                self.scheduledFor[cardID] = nil
+            }
             self.reschedule()
         }
     }
@@ -295,7 +318,8 @@ final class FlowController: ToolHost {
     private func fileChanged(_ cardID: String, path: String) {
         // The flow's own agents change files too. A change during a run, or straight after
         // one this started, isn't a reason to start another.
-        guard !isRunning, Date().timeIntervalSince(lastFileFire) > 5, !path.contains("/.queenbee/") else { return }
+        guard !isRunning, Date().timeIntervalSince(lastFileFire) > 5, Date().timeIntervalSince(lastRunEnded) > 10,
+              !path.contains("/.queenbee/"), !path.contains("/.git/") else { return }
         lastFileFire = Date()
         // The watcher reports paths with links followed, so the project's folder is compared the same way.
         let root = project.root.resolvingSymlinksInPath().path
@@ -305,6 +329,10 @@ final class FlowController: ToolHost {
 
     private func fire(_ cardID: String, because reason: String, changed: String? = nil) {
         guard let card = flow.card(cardID), card.kind == .start, isArmed(card) else { return }
+        guard services.environment != nil else {
+            append("Skipped a run of \(card.name) (\(reason)): Claude Code wasn't ready yet")
+            return
+        }
         if isRunning {
             append("Skipped a run of \(card.name) (\(reason)): a run was already going")
             return
@@ -319,17 +347,24 @@ final class FlowController: ToolHost {
     /// Kept in the app's own folder, not the project's, so a run leaves nothing to commit.
     /// A flow's id comes from its file, which may have been written by someone else, so it is
     /// never used as a file name as it stands: anything but a plain id is replaced by its hash.
+    /// The name is a hash of the project's folder and the id, so two projects holding flows
+    /// with the same id each keep their own history.
     private var historyURL: URL {
+        let name = SHA256.hash(data: Data(allowScope.utf8)).map { String(format: "%02x", $0) }.joined()
+        return services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(name).json")
+    }
+
+    /// Where 0.2.0 kept a flow's history: under its id alone. Read once, so that history isn't lost.
+    private var oldHistoryURL: URL? {
         let id = flow.id
         let plain = !id.isEmpty && id.count <= 64 && id.unicodeScalars.allSatisfy {
             ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "-"
         }
-        let name = plain ? id : SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
-        return services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(name).json")
+        return plain ? services.supportDirectory.appendingPathComponent("history", isDirectory: true).appendingPathComponent("\(id).json") : nil
     }
 
     private func loadHistory() {
-        guard let data = try? Data(contentsOf: historyURL), let history = try? JSONDecoder().decode(RunHistory.self, from: data) else { return }
+        guard let data = (try? Data(contentsOf: historyURL)) ?? oldHistoryURL.flatMap({ try? Data(contentsOf: $0) }), let history = try? JSONDecoder().decode(RunHistory.self, from: data) else { return }
         log = history.log
         results = history.results.filter { flow.card($0.key) != nil }
         marks = history.marks.filter { flow.card($0.key) != nil }
@@ -353,6 +388,7 @@ final class FlowController: ToolHost {
     private func saveHistory() {
         historyTask?.cancel()
         historyTask = nil
+        guard !isClosed else { return }
         // What is saved as "now" is always the latest run, even while an earlier one is on show.
         let latest = viewedRunID == nil ? nil : runs.last
         let history = RunHistory(log: log, results: latest?.results ?? results, marks: latest?.marks ?? marks,
@@ -391,7 +427,7 @@ final class FlowController: ToolHost {
         Task {
             try? await Task.sleep(for: .seconds(2))
             await self.refreshUsage()
-            guard let index = self.runs.firstIndex(where: { $0.id == id }) else { return }
+            guard !self.isClosed, let index = self.runs.firstIndex(where: { $0.id == id }) else { return }
             var shares: [String: Usage] = [:]
             for (key, now) in self.usage where key != Self.orchestratorKey {
                 let share = now.since(before[key] ?? Usage())
@@ -439,7 +475,7 @@ final class FlowController: ToolHost {
         guard let run = currentRun else { return }
         currentRun = nil
         let outcome: RunRecord.Outcome = marks.values.contains(where: \.failed) ? .failed
-            : output.log.contains("Run stopped") ? .stopped : .finished
+            : output.log.contains { $0.hasPrefix("Run stopped") } ? .stopped : .finished
         runs.append(RunRecord(id: run.id, started: run.started, ended: Date(), outcome: outcome, command: run.command,
                               log: Array(log.dropFirst(runLogStart)), results: results, marks: marks, linkPasses: linkPasses,
                               messages: messages, handOffs: handOffs))
@@ -466,6 +502,7 @@ final class FlowController: ToolHost {
         historyTask?.cancel()
         historyTask = nil
         try? FileManager.default.removeItem(at: historyURL)
+        if let old = oldHistoryURL { try? FileManager.default.removeItem(at: old) }
     }
 
     // MARK: Opening and closing
@@ -474,6 +511,7 @@ final class FlowController: ToolHost {
     func open() {
         guard !isOpen else { return }
         isOpen = true
+        isClosed = false
         Task {
             while services.environment == nil { try? await Task.sleep(for: .milliseconds(100)) }
             startMissingSessions()
@@ -482,6 +520,13 @@ final class FlowController: ToolHost {
     }
 
     func shutDown() {
+        // The run, if there is one, ends here: nothing is waited on and nothing more is routed.
+        scriptTasks.values.forEach { $0.cancel() }
+        scriptTasks.removeAll()
+        holds.removeAll()
+        currentRun = nil
+        isRunning = false
+        if let engine { Task { _ = await engine.stop() } }
         scheduleTask?.cancel()
         watchers.values.forEach { $0.watcher.stop() }
         watchers.removeAll()
@@ -490,6 +535,7 @@ final class FlowController: ToolHost {
         sessions.values.forEach { $0.terminate() }
         sessions.removeAll()
         isOpen = false
+        isClosed = true
     }
 
     // MARK: Editing
@@ -598,6 +644,12 @@ final class FlowController: ToolHost {
             let left = ids.filter { flow.card($0) != nil }
             if left != ids { selection = .of(left) }
         default: break
+        }
+        // A message waiting at a card that has been deleted has nowhere to be answered from.
+        for hold in holds where flow.card(hold.cardID) == nil {
+            scriptTasks[hold.id]?.cancel()
+            scriptTasks[hold.id] = nil
+            resolve(hold.id, port: hold.kind == .approval ? "rejected" : "fail", text: nil)
         }
         if isOpen, services.environment != nil { startMissingSessions() }
     }
@@ -1047,9 +1099,11 @@ final class FlowController: ToolHost {
     @discardableResult
     func run(command: String? = nil, startCardID: String? = nil) async -> String {
         guard let engine = readyEngine() else { return services.problem ?? "Claude Code isn't ready yet." }
-        if !isRunning { clearForRun() }
+        isClosed = false
         let output = await engine.start(flow: flow, startCardID: startCardID, command: command)
+        // Only a run that actually began clears the last one off the canvas.
         if let id = output.runID, !isRunning {
+            clearForRun()
             let first = command ?? (startCardID.flatMap { flow.card($0) } ?? flow.cards.first { $0.kind == .start })?.command ?? ""
             currentRun = (id, Date(), String(first.prefix(200)))
         }
@@ -1065,9 +1119,10 @@ final class FlowController: ToolHost {
             banner = "A run is already going. Stop it before starting another."
             return banner ?? ""
         }
-        clearForRun()
+        isClosed = false
         let output = await engine.start(flow: flow, at: cardID, message: message, fromName: sender)
         if let id = output.runID {
+            clearForRun()
             currentRun = (id, Date(), "From \(flow.card(cardID)?.name ?? "a card"): \(message.prefix(160))")
         }
         absorb(output, sender: nil)
@@ -1093,6 +1148,7 @@ final class FlowController: ToolHost {
     /// are returned for it; hand-offs it can't send that way are typed into the target's terminal.
     @discardableResult
     private func absorb(_ output: RunOutput, sender: String?) -> [(to: String, text: String)] {
+        guard !isClosed else { return [] }
         output.log.forEach(append)
         record(output.visits, sender: sender)
         handOffs += output.deliveries.count
@@ -1129,6 +1185,7 @@ final class FlowController: ToolHost {
             scriptTasks.values.forEach { $0.cancel() }
             scriptTasks.removeAll()
             holds.removeAll()
+            lastRunEnded = Date()
             finishRecord(output)
             notifyOrchestrator(of: output)
             let stopped = marks.values.contains(where: \.failed)
@@ -1144,7 +1201,11 @@ final class FlowController: ToolHost {
 
     /// A message has stopped at an Approval or a Script card.
     private func take(_ hold: Hold) {
-        guard let card = flow.card(hold.cardID) else { return }
+        guard let card = flow.card(hold.cardID) else {
+            // The card went while the message was on its way. Tell the engine, or the run never ends.
+            if let engine { Task { self.absorb(await engine.holdResolved(flow: self.flow, holdID: hold.id, port: "fail", text: nil), sender: nil) } }
+            return
+        }
         var pending = PendingHold(id: hold.id, cardID: hold.cardID, kind: hold.kind, text: hold.text, from: hold.fromName)
         if hold.kind == .script {
             pending.command = card.command ?? ""
@@ -1193,7 +1254,8 @@ final class FlowController: ToolHost {
     func runToEnd(command: String) async -> (finished: Bool, text: String) {
         let before = runs.last?.id
         let status = await run(command: command)
-        while isRunning { try? await Task.sleep(for: .milliseconds(300)) }
+        while isRunning, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(300)) }
+        if Task.isCancelled { return (false, "The run was stopped.") }
         guard let record = runs.last, record.id != before else { return (false, status) }
         let answers = flow.cards.filter { $0.kind == .end }.compactMap { record.results[$0.id] }
         let text = answers.isEmpty ? record.log.last?.text ?? "" : answers.joined(separator: "\n\n")
@@ -1267,19 +1329,28 @@ final class FlowController: ToolHost {
     }
 
     /// The person approved a held message, perhaps after editing it.
-    func approve(_ id: String, text: String) { resolve(id, port: "approved", text: text) }
+    func approve(_ id: String, text: String) {
+        guard holds.first(where: { $0.id == id })?.kind == .approval else { return }
+        resolve(id, port: "approved", text: text)
+    }
 
-    func reject(_ id: String) { resolve(id, port: "rejected", text: nil) }
+    func reject(_ id: String) {
+        guard holds.first(where: { $0.id == id })?.kind == .approval else { return }
+        resolve(id, port: "rejected", text: nil)
+    }
 
     /// The person read a script's command and let it run. It is remembered for this card.
     func allowScript(_ id: String) {
-        guard let index = holds.firstIndex(where: { $0.id == id }) else { return }
+        guard let index = holds.firstIndex(where: { $0.id == id }), holds[index].kind == .script, holds[index].needsAllow else { return }
         ScriptRunner.allow(holds[index].command, flowID: allowScope, cardID: holds[index].cardID)
         holds[index].needsAllow = false
         runScript(holds[index])
     }
 
-    func refuseScript(_ id: String) { resolve(id, port: "fail", text: "The command was not allowed to run.") }
+    func refuseScript(_ id: String) {
+        guard holds.first(where: { $0.id == id })?.kind == .script else { return }
+        resolve(id, port: "fail", text: "The command was not allowed to run.")
+    }
 
     /// The person typed a Script card's command, which also allows it: they wrote it.
     func setScriptCommand(_ id: String, _ command: String) {

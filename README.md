@@ -89,7 +89,7 @@ open build/Build/Products/Debug/QueenBee.app
 ## Tests
 
 ```sh
-cd Core && swift test        # 162 unit tests on the model, store, engine, link router, snapping, layout, triggers and tools
+cd Core && swift test        # 165 unit tests on the model, store, engine, link router, snapping, layout, triggers and tools
 ./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about five minutes
 ```
 
