@@ -455,7 +455,7 @@ def scenario_noclaude(project):
                 break
             time.sleep(0.5)
         check("the app finished looking for claude", s.get("environmentReady") is True, str(s))
-        check("it reports that Claude Code isn't installed", "isn't installed" in (s.get("problem") or ""), str(s))
+        check("it reports that Claude Code isn't installed", "can't find Claude Code" in (s.get("problem") or ""), str(s))
     finally:
         app.quit()
         shutil.rmtree(support, ignore_errors=True)
