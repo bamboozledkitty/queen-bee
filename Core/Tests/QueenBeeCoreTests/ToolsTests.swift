@@ -310,4 +310,11 @@ actor FakeHost: ToolHost {
         let result = await Tools.call(name: "get_run_log", arguments: .null, host: FakeHost())
         #expect(!result.isError)
     }
+
+    @Test func saveToInsideAProtectedFolderIsRefused() async throws {
+        let host = FakeHost()
+        let refused = await Tools.call(name: "add_card", arguments: ["kind": "end", "name": "Out", "save_to": ".git/config"], host: host)
+        #expect(refused.isError && refused.text.contains(".git"))
+        #expect(await host.flow.resolveCard("Out") == nil)
+    }
 }

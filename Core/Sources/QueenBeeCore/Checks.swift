@@ -22,6 +22,17 @@ public enum Checks {
         }
     }
 
+    /// Folders inside a project that an End card never saves into: writing there could change what git,
+    /// Claude Code or Queen Bee itself does next.
+    public static let protectedSaveFolders = [".git", ".claude", ".queenbee"]
+
+    /// Whether a save path, relative to the project folder, passes through one of those folders.
+    /// Names are compared without regard to case, as the disk does.
+    public static func isProtectedSavePath(_ relative: String) -> Bool {
+        relative.split(whereSeparator: { $0 == "/" || $0 == "\\" })
+            .contains { protectedSaveFolders.contains($0.trimmingCharacters(in: .whitespaces).lowercased()) }
+    }
+
     /// A Prompt card's template with `{{message}}` and `{{from}}` filled in. An empty template passes the
     /// message through, and one that never mentions the message gets it added at the end so it isn't lost.
     public static func fillTemplate(_ template: String, message: String, from: String) -> String {

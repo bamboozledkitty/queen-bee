@@ -71,4 +71,14 @@ import Testing
         #expect(Checks.parseBranch("", branches: branches) == nil)
         #expect(Checks.parseBranch("question", branches: branches) == nil)
     }
+
+    @Test func savePathsIntoGitClaudeAndQueenBeeFoldersAreProtected() {
+        for path in [".git/config", ".claude/settings.json", ".queenbee/flows/a.json", "sub/.git/hooks/pre-commit",
+                     ".GIT/config", "output/../.git/config", "/.git/config", ".claude"] {
+            #expect(Checks.isProtectedSavePath(path), "\(path)")
+        }
+        for path in ["output/answer.md", "answer.md", "", ".github/notes.md", "git/config", "docs/.gitignore", ".gitignore"] {
+            #expect(!Checks.isProtectedSavePath(path), "\(path)")
+        }
+    }
 }

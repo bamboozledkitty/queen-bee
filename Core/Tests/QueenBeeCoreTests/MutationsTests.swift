@@ -223,4 +223,16 @@ import Testing
         }
         #expect(flow.card(agent.id)?.permissionMode == nil)
     }
+
+    @Test func anEndCardCannotSaveIntoAProtectedFolder() throws {
+        var flow = Flow(name: "Demo")
+        let end = try flow.addCard(kind: .end, name: "Done")
+        var patch = CardPatch()
+        patch.saveTo = ".git/config"
+        #expect(throws: FlowError.self) { try flow.updateCard(end.id, patch: patch) }
+        #expect(throws: FlowError.self) { try flow.addCard(kind: .end, name: "Other", patch: patch) }
+        patch.saveTo = "output/answer.md"
+        try flow.updateCard(end.id, patch: patch)
+        #expect(flow.card(end.id)?.saveTo == "output/answer.md")
+    }
 }

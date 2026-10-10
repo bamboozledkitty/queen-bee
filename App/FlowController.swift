@@ -1581,6 +1581,11 @@ final class FlowController: ToolHost {
             append("\(card) didn't save: \(file) is outside the project folder")
             return
         }
+        // Checked on the path the save would really land on, so a link into one of these folders is caught too.
+        guard !Checks.isProtectedSavePath(String(url.path.dropFirst(root.path.count))) else {
+            append("\(card) didn't save: \(file) is in a folder Queen Bee doesn't write to")
+            return
+        }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             // Creating the folders may have gone through a link that didn't resolve while they were missing.

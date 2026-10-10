@@ -243,7 +243,12 @@ extension Flow {
         case .prompt:
             if let template = patch.template { card.template = template }
         case .end:
-            if let saveTo = patch.saveTo { card.saveTo = saveTo }
+            if let saveTo = patch.saveTo {
+                guard !Checks.isProtectedSavePath(saveTo) else {
+                    throw FlowError.invalid("An End card can't save inside \(Checks.protectedSaveFolders.joined(separator: ", ")). Choose another file.")
+                }
+                card.saveTo = saveTo
+            }
         case .note, .approval:
             if let text = patch.text { card.text = text }
         case .flow:
