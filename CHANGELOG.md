@@ -12,11 +12,11 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Fixed
 
-- An agent that stops to ask the orchestrator or a linked agent a question no longer has its parting words passed on as its reply. The card stays owed until the turn after the answer, and shows "awaiting answer". If nothing else is under way the log says the run is waiting on it, and after 90 seconds you and the orchestrator are told.
+- An agent that stops to ask the orchestrator or a linked agent a question no longer has its parting words passed on as its reply. The card stays owed until the turn after the answer, and shows "awaiting answer". If nothing else is under way the log says the run is waiting on it, and after 90 seconds you are told, and the orchestrator too unless it is busy.
 - Agents are told to find files with `ls`, `find` and `grep` in the shell, which Claude Code runs without asking, and the orchestrator is told to name files in a card's instructions and not to forbid the shell.
 - Zoom to fit shows a wide flow whole. It may go below 20%; pinch, the wheel and the zoom buttons still stop there.
 - Two runs of `scripts/e2e.py` at once no longer delete each other's support folder.
-- The log says when an answered Approval or Script waited more than two seconds to take effect.
+- The log says when acting on your answer at an Approval or Script card took more than two seconds.
 
 ## [0.3.2] - 2026-10-10
 

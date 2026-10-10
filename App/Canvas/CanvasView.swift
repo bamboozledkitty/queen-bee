@@ -259,14 +259,16 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private static let minZoom: CGFloat = 0.2
     /// As far out as fitting a flow goes, so a wide one still fits whole.
     private static let fitFloor: CGFloat = 0.05
-    /// True while a fit is animating, when the zoom may be on its way below `minZoom`.
-    private var isFitting = false
-    /// Counts fits, so one that ends while a later one is still moving doesn't end that one too.
+    /// Counts fits. A fit's animation may be on its way below `minZoom`, and one that ends
+    /// while a later one is still moving must not end that one too.
     private var fitCount = 0
+    private var fitInFlight: Int?
+    /// As far out as the wheel and the zoom buttons go: 20%, or where a fit has left the canvas if that is further out.
+    private var handFloor: CGFloat { min(Self.minZoom, scrollView.magnification) }
 
     private func publishZoom() {
         // A fit may have gone below the usual floor. Once the zoom is back above it, the floor returns.
-        if !isFitting, scrollView.minMagnification < Self.minZoom, scrollView.magnification >= Self.minZoom {
+        if fitInFlight == nil, scrollView.minMagnification < Self.minZoom, scrollView.magnification >= Self.minZoom {
             scrollView.minMagnification = Self.minZoom
         }
         // The minimap draws where the window is looking, so panning is published as well as zooming.
@@ -498,7 +500,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         // A trackpad reports fine movement, a wheel reports clicks. Each is scaled to feel alike.
         let amount = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * 0.005 : event.scrollingDeltaY * 0.08
         guard amount != 0 else { return true }
-        let target = min(scrollView.maxMagnification, max(scrollView.minMagnification, scrollView.magnification * exp(amount)))
+        let target = min(scrollView.maxMagnification, max(handFloor, scrollView.magnification * exp(amount)))
         let point = scrollView.contentView.convert(spot, from: nil)
         zoomTarget = nil
         scrollView.setMagnification(target, centeredAt: point)
@@ -919,7 +921,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     func zoom(by factor: CGFloat) {
         // From where the zoom is headed, so quick presses add up instead of restarting.
         let from = zoomTarget ?? scrollView.magnification
-        travel(to: min(scrollView.maxMagnification, max(scrollView.minMagnification, from * factor)))
+        travel(to: min(scrollView.maxMagnification, max(handFloor, from * factor)))
     }
 
     func zoomToActualSize() {
@@ -966,10 +968,11 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         // Fitting is the one zoom allowed below the usual floor: all of a wide flow matters more
         // here than its cards staying readable, and below 40% they show only a name and a state anyway.
         let floor = min(Self.minZoom, max(Self.fitFloor, needed))
-        scrollView.minMagnification = floor
-        isFitting = true
+        // Only ever lowered here. Raised before the animation, it would snap a canvas that is below it.
+        scrollView.minMagnification = min(scrollView.minMagnification, floor)
         fitCount += 1
         let thisFit = fitCount
+        fitInFlight = thisFit
         let zoom = min(atMost ?? scrollView.maxMagnification, scrollView.maxMagnification, max(floor, needed))
         // Held below a full fit, the box is shown in the middle of the room with space round it.
         let shown = CGSize(width: max(box.width, room.width / zoom), height: max(box.height, room.height / zoom))
@@ -982,8 +985,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             scrollView.animator().magnify(toFit: inClip(wanted))
         } then: { [weak self] in
             Task { @MainActor in
-                guard let self, self.fitCount == thisFit else { return }
-                self.isFitting = false
+                guard let self, self.fitInFlight == thisFit else { return }
+                self.fitInFlight = nil
                 self.publishZoom()
                 self.document.needsDisplay = true
             }

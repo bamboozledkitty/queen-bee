@@ -145,10 +145,14 @@ def alive(pid):
 
 
 def sweep():
-    """Removes the folders of runs that died without tidying up. A run that is still going keeps its own."""
+    """Clears up after runs that died without tidying: quits the copy of the app each left
+    running and removes its folder. A run that is still going keeps its own."""
     for folder in glob.glob(SUPPORT_PREFIX + "*"):
         owner = os.path.basename(folder)[len("QBTest-"):].split("-")[0]
         if owner.isdigit() and not alive(int(owner)):
+            for pid in pids():
+                if uses(pid, folder):
+                    subprocess.run(["kill", "-TERM", str(pid)])
             shutil.rmtree(folder, ignore_errors=True)
 
 
@@ -376,6 +380,10 @@ def scenario_pan(app):
     time.sleep(1.5)
     c = app.state(fid)["canvas"]
     check("zoom to fit shows a wide flow whole, clear of the panels", c["clearFrom"] <= 300 and c["clearTo"] >= 4240, str(c))
+    wide = c["magnification"]
+    for dy in (-40, 40):
+        app.op(fid, "scroll", dy=dy, mode="direct", command=True)
+    check("the wheel doesn't zoom further out than the fit", app.state(fid)["canvas"]["magnification"] >= wide - 0.001, str(app.state(fid)["canvas"]))
     app.op(fid, "zoom", to=1.0)
     time.sleep(0.3)
     app.op(fid, "zoom", to=0.05)

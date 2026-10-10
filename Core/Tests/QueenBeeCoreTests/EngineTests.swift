@@ -188,7 +188,7 @@ actor ScriptedJudge: Judge {
         // The answer came, and the turn after it is the reply. The link's one pass is still unspent.
         let out = await engine.agentReplied(flow: flow, cardID: writer, text: "Old pond")
         #expect(out.deliveries.count == 1 && out.deliveries.first?.text.hasSuffix("Old pond") == true)
-        #expect(out.stalledOn.isEmpty && out.asking.isEmpty)
+        #expect(out.stalledOn.isEmpty && out.asking == [])
     }
 
     @Test func aQuestionFromAnAgentTheRunIsNotWaitingOnChangesNothing() async throws {
@@ -196,7 +196,17 @@ actor ScriptedJudge: Judge {
         let engine = Engine(judge: ScriptedJudge())
         _ = await engine.start(flow: flow, startCardID: nil, command: nil)
         let out = await engine.agentReplied(flow: flow, cardID: try id("Reviewer", in: flow), text: "Asked", waitingOnAnswer: true)
-        #expect(out.log.isEmpty && out.asking.isEmpty && out.stalledOn.isEmpty && !out.finished)
+        #expect(out.log.isEmpty && out.asking == [] && out.stalledOn.isEmpty && !out.finished)
+    }
+
+    @Test func aCallThatDoesNotSettleTheRunSaysNothingAboutWhoIsAsking() async throws {
+        let flow = try chain()
+        let engine = Engine(judge: ScriptedJudge())
+        _ = await engine.start(flow: flow, startCardID: nil, command: nil)
+        _ = await engine.agentReplied(flow: flow, cardID: try id("Writer", in: flow), text: "Asked", waitingOnAnswer: true)
+        // A second Run pressed while the first hangs is refused, and must not look like news that nobody is asking.
+        let again = await engine.start(flow: flow, startCardID: nil, command: nil)
+        #expect(again.asking == nil)
     }
 
     @Test func aRunWithOthersStillWorkingIsNotStalledByAQuestion() async throws {

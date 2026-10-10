@@ -188,10 +188,10 @@ final class FlowController: ToolHost {
     /// Agents whose plugin has reported a finished turn since their session started. Once a
     /// plugin has spoken it is loaded, and the app never routes that agent's replies itself.
     @ObservationIgnored private var pluginSpoke: Set<String> = []
-    /// Agents that have sent a question to another session in the turn they are in.
-    @ObservationIgnored private var askedThisTurn: Set<String> = []
     /// Agents whose last turn ended on a question they are still owed an answer to.
     private(set) var awaitingAnswer: Set<String> = []
+    /// Waits to tell the person that the run hangs on an unanswered question.
+    @ObservationIgnored private var stallNotice: Task<Void, Never>?
     /// How long a run may hang on an unanswered question before the person is told.
     private static let unansweredAfter: Duration = .seconds(90)
     /// Hand-offs given to a plugin to send, by the receiving session's id, until it says how they went.
@@ -583,6 +583,8 @@ final class FlowController: ToolHost {
         holdTasks.values.forEach { $0.cancel() }
         holdTasks.removeAll()
         holds.removeAll()
+        awaitingAnswer.removeAll()
+        stallNotice?.cancel()
         currentRun = nil
         isRunning = false
         if let engine { Task { _ = await engine.stop() } }
@@ -1080,16 +1082,11 @@ final class FlowController: ToolHost {
         switch event {
         case "SessionStart":
             pluginSpoke.remove(who)
-            askedThisTurn.remove(who)
-        case "SessionEnd":
-            // The turn it asked in never reached its end, so the next one starts clean.
-            askedThisTurn.remove(who)
         case "Stop":
             let reply = payload["last_assistant_message"]?.stringValue ?? ""
             session.lastReply = reply
             routeIfPluginIsSilent(who, reply: reply)
         case "StopFailure":
-            askedThisTurn.remove(who)
             guard isRunning, let engine else { return }
             let name = flow.card(who)?.name ?? who
             markFailed(who)
@@ -1112,14 +1109,14 @@ final class FlowController: ToolHost {
     }
 
     /// An agent's turn ended and its plugin asks where the reply goes. The answer is the
-    /// hand-offs for that plugin to send as session messages.
-    func handleRoute(from who: String, answer: String) async -> [(to: String, text: String)] {
+    /// hand-offs for that plugin to send as session messages. `asked` is the plugin saying the
+    /// turn got a message through to another session of the flow: the answer to it arrives as
+    /// a new turn, so this turn's last words aren't the reply.
+    func handleRoute(from who: String, answer: String, asked: Bool = false) async -> [(to: String, text: String)] {
         guard who != Self.orchestratorKey, flow.card(who) != nil else { return [] }
         pluginSpoke.insert(who)
         sessions[who]?.lastReply = answer
         guard let engine = readyEngine() else { return [] }
-        // The answer to a question arrives as a new turn, so this turn's last words aren't the reply.
-        let asked = askedThisTurn.remove(who) != nil && isRunning
         return absorb(await engine.agentReplied(flow: flow, cardID: who, text: answer, waitingOnAnswer: asked), sender: who)
     }
 
@@ -1138,6 +1135,8 @@ final class FlowController: ToolHost {
     /// What to do with a SendMessage from one of this flow's sessions.
     struct SendVerdict {
         var refusal: String?
+        /// Whether the recipient is the orchestrator or an agent of this flow.
+        var inFlow = false
         /// The exact session to deliver to, when the recipient is part of this flow.
         var sessionID: String?
     }
@@ -1149,8 +1148,7 @@ final class FlowController: ToolHost {
     func judgeSend(from who: String, to: String) -> SendVerdict {
         let address = to.lowercased()
         if who != Self.orchestratorKey, address.hasPrefix(ClaudeLauncher.orchestratorName(for: flow).lowercased()) {
-            askedThisTurn.insert(who)
-            return SendVerdict(sessionID: flow.orchestratorSessionID)
+            return SendVerdict(inFlow: true, sessionID: flow.orchestratorSessionID)
         }
         let target = flow.cards
             .filter { card in
@@ -1165,8 +1163,7 @@ final class FlowController: ToolHost {
         if who != Self.orchestratorKey, let sender = flow.card(who), !linkedAgents(of: who).contains(target.id) {
             return SendVerdict(refusal: "\(sender.name) isn't linked to \(target.name) in the flow \"\(flow.name)\". Ask the person or the orchestrator to link the two cards first.")
         }
-        if who != Self.orchestratorKey { askedThisTurn.insert(who) }
-        return SendVerdict(sessionID: target.sessionID)
+        return SendVerdict(inFlow: who != Self.orchestratorKey, sessionID: target.sessionID)
     }
 
     /// The run hangs on agents that asked a question and have had no answer. The log says so at
@@ -1175,13 +1172,15 @@ final class FlowController: ToolHost {
         let names = cards.compactMap { flow.card($0)?.name }.joined(separator: ", ")
         guard !names.isEmpty else { return }
         append("The run is waiting on \(names): a question it asked hasn't been answered, and nothing else is under way")
-        let runID = currentRun?.id
-        Task {
+        stallNotice?.cancel()
+        stallNotice = Task {
             try? await Task.sleep(for: Self.unansweredAfter)
-            guard self.isRunning, self.currentRun?.id == runID, !self.awaitingAnswer.isDisjoint(with: cards) else { return }
+            // Cancelled as soon as the run moves again or ends.
+            guard !Task.isCancelled, self.isRunning else { return }
             Notifier.post(title: "\(self.flow.name) is waiting on \(names)", body: "It asked a question and hasn't had an answer. Answer it in its terminal, or stop the run.",
                           flowID: self.flow.id, cardID: cards.first)
-            guard self.flow.notifyOrchestrator, self.orchestrator.isLive else { return }
+            // An orchestrator in the middle of a turn is most likely writing the answer.
+            guard self.flow.notifyOrchestrator, self.orchestrator.isLive, self.orchestrator.state == .idle else { return }
             self.orchestrator.send("[Queen Bee · notice] The run is stalled. \(names) asked a question, has had no answer, and nothing else is under way. Answer with SendMessage, or stop the run. This is information from the app, not a new request.")
         }
     }
@@ -1294,12 +1293,15 @@ final class FlowController: ToolHost {
             messages[travel.linkID] = Array(carried.suffix(Self.keptMessagesPerLink))
         }
         output.holds.forEach(take)
-        if output.runID != nil, awaitingAnswer != Set(output.asking) { awaitingAnswer = Set(output.asking) }
+        if let asking = output.asking {
+            awaitingAnswer = Set(asking)
+            if !output.isStalled { stallNotice?.cancel() }
+        }
         if !output.stalledOn.isEmpty { noteStalled(on: output.stalledOn) }
         scheduleHistorySave()
         if output.finished {
-            askedThisTurn.removeAll()
             awaitingAnswer.removeAll()
+            stallNotice?.cancel()
             isRunning = false
             liveLinks.removeAll()
             // Whatever was waiting belonged to the run that has ended.
@@ -1539,28 +1541,30 @@ final class FlowController: ToolHost {
     }
 
     /// Answers a hold and lets the run carry on from its card.
-    private func resolve(_ id: String, port: String, text: String?) {
+    /// `byPerson` is for an answer the person gave, which is timed so a slow one shows in the log.
+    private func resolve(_ id: String, port: String, text: String?, byPerson: Bool = false) {
         guard holds.contains(where: { $0.id == id }), let engine else { return }
         holds.removeAll { $0.id == id }
         let answered = Date()
         Task {
             self.absorb(await engine.holdResolved(flow: self.flow, holdID: id, port: port, text: text), sender: nil)
-            // The engine takes one event at a time, so an answer can wait behind another. Say so when it does.
-            let late = Date().timeIntervalSince(answered)
-            if late > 2 { self.append("That answer waited \(Int(late.rounded())) seconds for its turn before it took effect") }
+            // Normally instant. It is slow when the engine was busy with another event, or a
+            // condition on the way took a while to judge.
+            let took = Date().timeIntervalSince(answered)
+            if byPerson, took > 2 { self.append("Acting on that answer took \(Int(took.rounded())) seconds") }
         }
     }
 
     /// The person approved a held message, perhaps after editing it.
     func approve(_ id: String, text: String) {
         guard holds.first(where: { $0.id == id })?.kind == .approval else { return }
-        resolve(id, port: "approved", text: text)
+        resolve(id, port: "approved", text: text, byPerson: true)
     }
 
     /// The person turned a held message down. A note saying why goes out ahead of the message.
     func reject(_ id: String, note: String = "") {
         guard let hold = holds.first(where: { $0.id == id }), hold.kind == .approval else { return }
-        resolve(id, port: "rejected", text: Hold.rejection(note: note, of: hold.text))
+        resolve(id, port: "rejected", text: Hold.rejection(note: note, of: hold.text), byPerson: true)
     }
 
     /// The person read a script's command and let it run. It is remembered for this card.
