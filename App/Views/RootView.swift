@@ -172,7 +172,9 @@ struct WorkspaceView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(Theme.select.ui)
                         .disabled(!controller.canRun)
-                        .help(controller.canRun ? "Run the flow from its Start card" : "Nothing to run yet: give the Start card something to start with and link it to a card")
+                        .help(controller.canRun ? "Run the flow from its Start card" : controller.flow.isSubflow == true
+                              ? "To try this sub-flow by itself, give its Input something to start with and link it to a card"
+                              : "Nothing to run yet: give the Start card something to start with and link it to a card")
                 }
                 Button { showsPanel.toggle() } label: { Label("Panel", systemImage: "sidebar.trailing") }
                     .help("Show or hide the orchestrator, the log and the run's output")
@@ -296,8 +298,7 @@ struct CanvasControls: View {
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }
             .overlay(alignment: .bottomTrailing) {
                 VStack(alignment: .trailing, spacing: Theme.Space.s) {
-                    // A map earns its place once a flow is too big to take in at a glance.
-                    if showsMinimap, controller.flow.cards.count >= 5, !controller.showsCost {
+                    if showsMinimap, !controller.flow.cards.isEmpty, !controller.showsCost {
                         Minimap(controller: controller)
                             .transition(.opacity)
                     }
@@ -314,8 +315,10 @@ struct CanvasControls: View {
             }
             .overlay(alignment: .trailing) {
                 if showsCallout {
-                    // Halfway down the panel's edge, clear of a new flow's Start card and the zoom control.
+                    // Below the middle of the panel's edge: clear of a new flow's cards, which sit at
+                    // the top or, in a sub-flow shown whole, across the middle, and of the map at the foot.
                     OrchestratorCallout(controller: controller, orchestratorIsShowing: orchestratorIsShowing, showOrchestrator: showOrchestrator)
+                        .padding(.top, 230)
                         .transition(.opacity.combined(with: .offset(x: -8)))
                 }
             }

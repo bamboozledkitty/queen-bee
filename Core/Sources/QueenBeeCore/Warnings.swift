@@ -23,8 +23,9 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
     case .agent, .note:
         return nil
     case .start:
-        if outgoing.isEmpty { return "Link it to an agent" }
-        if blank(card.command) { return "Write the command" }
+        if outgoing.isEmpty { return flow.isSubflow == true ? "Link it to a card" : "Link it to an agent" }
+        // A sub-flow's Start is given its message by the Flow card that runs it.
+        if blank(card.command), flow.isSubflow != true { return "Write the command" }
         return nil
     case .ifElse:
         if nothing(on: "yes") { return "Nothing on Yes" }

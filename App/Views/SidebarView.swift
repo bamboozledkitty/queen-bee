@@ -45,7 +45,7 @@ struct SidebarView: View {
                             Button("Remove from This List") { services.removeProject(project) }
                         }
                         ForEach(nested(project), id: \.controller.flow.id) { entry in
-                            row(for: entry.controller)
+                            row(for: entry.controller, outer: entry.outer)
                                 .padding(.leading, CGFloat(entry.depth) * 14)
                         }
                         ForEach(project.unreadable, id: \.self) { url in
@@ -112,26 +112,26 @@ struct SidebarView: View {
 
     /// A project's flows in order, with each sub-flow listed under the flow whose Flow card
     /// runs it. A sub-flow nothing uses any more is listed with the rest, so it isn't lost.
-    private func nested(_ project: ProjectModel) -> [(controller: FlowController, depth: Int)] {
+    private func nested(_ project: ProjectModel) -> [(controller: FlowController, depth: Int, outer: FlowController?)] {
         let all = project.controllers
         func inner(of controller: FlowController) -> [FlowController] {
             controller.flow.cards.filter { $0.kind == .flow }.compactMap(controller.innerFlow(of:))
         }
         let used = Set(all.flatMap(inner).map(\.flow.id))
         var listed: Set<String> = []
-        var rows: [(FlowController, Int)] = []
-        func add(_ controller: FlowController, _ depth: Int) {
+        var rows: [(FlowController, Int, FlowController?)] = []
+        func add(_ controller: FlowController, _ depth: Int, _ outer: FlowController?) {
             guard listed.insert(controller.flow.id).inserted else { return }
-            if matches(controller) { rows.append((controller, depth)) }
-            for child in inner(of: controller) where child.flow.isSubflow == true { add(child, depth + 1) }
+            if matches(controller) { rows.append((controller, depth, outer)) }
+            for child in inner(of: controller) where child.flow.isSubflow == true { add(child, depth + 1, controller) }
         }
-        for controller in all where !(controller.flow.isSubflow == true && used.contains(controller.flow.id)) { add(controller, 0) }
-        for controller in all { add(controller, 0) }
+        for controller in all where !(controller.flow.isSubflow == true && used.contains(controller.flow.id)) { add(controller, 0, nil) }
+        for controller in all { add(controller, 0, nil) }
         return rows
     }
 
     @ViewBuilder
-    private func row(for controller: FlowController) -> some View {
+    private func row(for controller: FlowController, outer: FlowController? = nil) -> some View {
         let id = controller.flow.id
         let selected = services.selectedFlowID == id
         FlowRow(isSelected: selected) {
@@ -151,7 +151,15 @@ struct SidebarView: View {
                 activity(of: controller)
             }
         }
-        .onTapGesture { services.selectedFlowID = id }
+        .onTapGesture {
+            // A sub-flow picked here is entered from the flow it sits under, so the way back shows.
+            if let outer {
+                services.enter(controller, from: outer)
+                controller.showWholeFlowSoon()
+            } else {
+                services.selectedFlowID = id
+            }
+        }
         .contextMenu {
             Button("Rename") { draftName = controller.flow.name; renaming = id }
             Button(services.pinnedFlowIDs.contains(id) ? "Unpin" : "Pin") { services.togglePin(id) }

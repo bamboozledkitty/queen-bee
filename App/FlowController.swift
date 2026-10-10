@@ -215,7 +215,10 @@ final class FlowController: ToolHost {
 
     /// True for a flow nobody has built anything in yet: just its Start card, with no command.
     var isBlank: Bool {
-        flow.links.isEmpty && flow.cards.allSatisfy { $0.kind == .start && ($0.command ?? "").isEmpty }
+        // A new sub-flow has its Input and its Output and nothing between them yet.
+        flow.links.isEmpty && flow.cards.allSatisfy {
+            ($0.kind == .start && ($0.command ?? "").isEmpty) || ($0.kind == .end && flow.isSubflow == true)
+        }
     }
 
     init(flow: Flow, fileURL: URL, project: ProjectModel) {
@@ -1311,7 +1314,10 @@ final class FlowController: ToolHost {
     /// own, with an Input and an Output ready to build between.
     func openSubflow(forCard id: String) {
         guard let card = flow.card(id), card.kind == .flow else { return }
-        if let inner = innerFlow(of: card) { return services.enter(inner, from: self) }
+        if let inner = innerFlow(of: card) {
+            services.enter(inner, from: self)
+            return inner.showWholeFlowSoon()
+        }
         guard let made = project.newSubflow(named: card.name) else {
             banner = "Couldn't make a sub-flow for \(card.name)."
             return
@@ -1320,6 +1326,15 @@ final class FlowController: ToolHost {
         patch.flowRef = made.flow.id
         update(id, patch)
         services.enter(made, from: self)
+        made.showWholeFlowSoon()
+    }
+
+    /// Once the flow's canvas is on screen, brings all of it into view at no more than full size.
+    func showWholeFlowSoon() {
+        Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            self.canvas?.zoomToFit(atMost: 1)
+        }
     }
 
     /// Whether Run has anything to start: a Start card with a command and something linked from it.

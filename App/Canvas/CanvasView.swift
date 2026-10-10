@@ -308,6 +308,14 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.warning = warnings[card.id]
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
+            if flow.isSubflow == true, context.result == nil {
+                // In a sub-flow the Start and End are its way in and its way out.
+                if card.kind == .start, (card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    context.result = "Gets the Flow card's message"
+                } else if card.kind == .end, (card.saveTo ?? "").isEmpty {
+                    context.result = "Goes back to the Flow card"
+                }
+            }
             if card.kind == .flow, context.result == nil {
                 // What the card runs is another flow's name, which the card itself doesn't hold.
                 let spent = controller.isRunning ? nil : controller.runUsage(forCard: card.id).flatMap { $0.isZero ? nil : $0.price }
@@ -416,6 +424,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             // Start with the canvas's origin just clear of the panels floating over its left edge.
             document.scroll(CGPoint(x: -(AppServices.shared.canvasObstruction.left + 20), y: -(CanvasView.titleBarHeight + 16)))
         }
+        // A canvas that has just appeared, or whose window changed size, hasn't scrolled, so
+        // nothing else would tell the zoom control and the map where it is looking.
+        publishZoom()
     }
 
     /// A scroll over a terminal that doesn't have the keyboard pans the canvas. Returns
@@ -790,27 +801,31 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         document.needsDisplay = true
     }
 
-    func zoomToFit() {
+    /// Shows the whole flow. `atMost` stops a flow of a few small cards being blown up to fill the window.
+    func zoomToFit(atMost: CGFloat? = nil) {
         guard let cards = controller?.flow.cards, !cards.isEmpty else { return }
         let box = cards.map(CanvasGeometry.frame(of:)).reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -40, dy: -40)
-        fit(box)
+        fit(box, atMost: atMost)
     }
 
     /// Zooms so `box` fills the part of the canvas the floating panels leave uncovered.
     /// The panels are a fixed size on screen, so the zoom is worked out from the room they
     /// leave, and the rectangle shown is `box` plus what they cover at that zoom.
-    private func fit(_ box: CGRect) {
+    private func fit(_ box: CGRect, atMost: CGFloat? = nil) {
         let covered = AppServices.shared.canvasObstruction
         // The see-through title bar and its buttons sit over the canvas's top; the status
         // line and zoom control over its foot.
         let top = CanvasView.titleBarHeight, foot: CGFloat = 50
         let screen = scrollView.contentView.frame.size
         let room = CGSize(width: max(80, screen.width - covered.left - covered.right), height: max(80, screen.height - top - foot))
-        let zoom = min(scrollView.maxMagnification, max(scrollView.minMagnification,
-                                                         min(room.width / box.width, room.height / box.height)))
-        let wanted = CGRect(x: box.minX - covered.left / zoom, y: box.minY - top / zoom,
-                            width: box.width + (covered.left + covered.right) / zoom,
-                            height: box.height + (top + foot) / zoom)
+        let zoom = min(atMost ?? scrollView.maxMagnification, scrollView.maxMagnification,
+                       max(scrollView.minMagnification, min(room.width / box.width, room.height / box.height)))
+        // Held below a full fit, the box is shown in the middle of the room with space round it.
+        let shown = CGSize(width: max(box.width, room.width / zoom), height: max(box.height, room.height / zoom))
+        let centred = CGRect(x: box.midX - shown.width / 2, y: box.midY - shown.height / 2, width: shown.width, height: shown.height)
+        let wanted = CGRect(x: centred.minX - covered.left / zoom, y: centred.minY - top / zoom,
+                            width: centred.width + (covered.left + covered.right) / zoom,
+                            height: centred.height + (top + foot) / zoom)
         zoomTarget = nil
         Theme.Motion.travel {
             scrollView.animator().magnify(toFit: inClip(wanted))
