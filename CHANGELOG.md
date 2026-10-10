@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-10
+
 ### Security
 
 - An End card can no longer save its answer inside `.git`, `.claude` or `.queenbee`. The orchestrator is refused when it sets such a path, and a flow file that arrives with one shows a warning and saves nothing.
@@ -116,7 +118,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/bamboozledkitty/queen-bee/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.1...v0.2.0
