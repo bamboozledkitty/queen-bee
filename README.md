@@ -90,7 +90,7 @@ open build/Build/Products/Debug/QueenBee.app
 
 ```sh
 cd Core && swift test        # 165 unit tests on the model, store, engine, link router, snapping, layout, triggers and tools
-./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about five minutes
+./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about seven minutes
 ```
 
 The end-to-end script starts a separate test copy of the app with its own support folder, so a copy you have open is left alone. It builds a scratch project with one flow per scenario and drives the app through a test harness that only exists when the app is launched with `--testing`. Name scenarios to run a few: `./scripts/e2e.py guard loop`.

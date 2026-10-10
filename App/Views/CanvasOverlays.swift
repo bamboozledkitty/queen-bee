@@ -63,7 +63,7 @@ private struct PaletteRow: View {
         }
         // Beside the palette, level with the row, and never in the pointer's way.
         .overlay(alignment: .topLeading) {
-            if showsHelp {
+            if showsHelp || (role == nil && AppServices.shared.pinnedHelp == kind.rawValue) {
                 CardHelpView(kind: kind, role: role)
                     .offset(x: PaletteView.width + Theme.Space.xs)
                     .allowsHitTesting(false)

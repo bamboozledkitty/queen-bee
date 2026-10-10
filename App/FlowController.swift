@@ -685,6 +685,13 @@ final class FlowController: ToolHost {
             if left != ids { selection = .of(left) }
         default: break
         }
+        // A Flow card the orchestrator pointed at a flow by name is tied to that flow's id, so
+        // renaming the flow later doesn't cut it loose.
+        for index in flow.cards.indices where flow.cards[index].kind == .flow {
+            if let inner = innerFlow(of: flow.cards[index]), flow.cards[index].flowRef != inner.flow.id {
+                flow.cards[index].flowRef = inner.flow.id
+            }
+        }
         // A message waiting at a card that has been deleted has nowhere to be answered from.
         for hold in holds where flow.card(hold.cardID) == nil {
             scriptTasks[hold.id]?.cancel()
@@ -1333,8 +1340,11 @@ final class FlowController: ToolHost {
         if Task.isCancelled { return (false, "The run was stopped.") }
         guard let record = runs.last, record.id != before else { return (false, status) }
         let answers = flow.cards.filter { $0.kind == .end }.compactMap { record.results[$0.id] }
-        let text = answers.isEmpty ? record.log.last?.text ?? "" : answers.joined(separator: "\n\n")
-        return (record.outcome == .finished, text)
+        // A run that ended without anything reaching an Output has no answer to hand back.
+        guard record.outcome == .finished, !answers.isEmpty else {
+            return (false, answers.isEmpty ? "\(flow.name) ended without an answer reaching its Output. \(record.log.last?.text ?? "")" : answers.joined(separator: "\n\n"))
+        }
+        return (true, answers.joined(separator: "\n\n"))
     }
 
     /// Lays the flow out left to right in the order its links run, then shows all of it.

@@ -58,6 +58,7 @@ def read_exactly(s, n):
 
 class App:
     def __init__(self, project, support=SUPPORT, env=None):
+        self.project = project
         self.support = support
         shutil.rmtree(support, ignore_errors=True)
         before = set(pids())
@@ -441,6 +442,187 @@ def scenario_apifail(app):
     check("the card shows failed or exited", s["sessions"]["Broken"]["state"] in ("failed", "exited"), s["sessions"]["Broken"]["state"])
 
 
+GATES = flow("Gates", [
+    card("start", "Start", 0, 0, command="hello from the start card"),
+    card("script", "Shout", 312, 0, command="tr a-z A-Z"),
+    card("approval", "Check it", 624, 0, text="Is this loud enough?"),
+    card("end", "Done", 936, 0),
+    card("end", "Binned", 936, 192),
+    card("start", "Start 2", 0, 384, command="second start"),
+    card("end", "Other", 312, 384),
+], [("Start", "out", "Shout", 9), ("Shout", "pass", "Check it", 9), ("Check it", "approved", "Done", 9),
+    ("Check it", "rejected", "Binned", 9), ("Shout", "fail", "Binned", 9), ("Start 2", "out", "Other", 9)])
+
+INNER = flow("Inner", [
+    card("start", "Input", 0, 0, command="try me"),
+    card("script", "Loud", 312, 0, command="tr a-z A-Z"),
+    card("end", "Output", 624, 0),
+], [("Input", "out", "Loud", 9), ("Loud", "pass", "Output", 9)])
+INNER["isSubflow"] = True
+
+OUTER = flow("Outer", [
+    card("start", "Start", 0, 0, command="make this loud"),
+    card("flow", "Shouter", 312, 0, flowRef="Inner"),
+    card("end", "Done", 624, 0),
+    card("end", "Failed", 624, 192),
+    card("flow", "Empty", 0, 384),
+], [("Start", "out", "Shouter", 9), ("Shouter", "done", "Done", 9), ("Shouter", "fail", "Failed", 9)])
+
+TIMED = flow("Timed", [
+    card("start", "Clock", 0, 0, command="tick"),
+    card("end", "Rang", 312, 0),
+    card("start", "Shipped", 0, 240, command="came with the file"),
+    card("end", "Never", 312, 240),
+], [("Clock", "out", "Rang", 9), ("Shipped", "out", "Never", 9)])
+# A schedule that arrives in the file. Nobody on this Mac agreed to it, so it must stay off.
+TIMED["cards"][2]["trigger"] = {"kind": "interval", "minutes": 1, "hour": 9, "minute": 0, "weekdays": [2], "path": ""}
+
+
+FLOWS.update({"gates": GATES, "inner": INNER, "subflow": OUTER, "timed": TIMED})
+
+
+def held(app, fid, card=None, timeout=20):
+    """Waits until a message is held, at `card` if one is named: a script that is still running holds one too."""
+    return app.wait(fid, lambda s: s["holds"] and (card is None or s["holds"][0]["card"] == card), timeout,
+                    f"a message to be held at {card or 'a card'}")["holds"]
+
+
+def scenario_gates(app):
+    print("gates: Script and Approval cards, run history, run from here, several Start cards", flush=True)
+    fid = GATES["id"]
+    app.op(fid, "select")
+    time.sleep(2)
+    app.op(fid, "run")
+    h = held(app, fid)
+    check("a command that came in the file waits to be allowed", h[0]["card"] == "Shout" and h[0]["needsAllow"], str(h))
+    app.op(fid, "hold", answer="allow")
+    h = app.wait(fid, lambda s: s["holds"] and s["holds"][0]["card"] == "Check it", 20, "the approval")["holds"]
+    check("the script's output reaches the approval", h[0]["text"] == "HELLO FROM THE START CARD", str(h))
+    app.op(fid, "hold", answer="approve", text="HELLO, EDITED")
+    s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to end")
+    check("an approved, edited message goes on to Done", s["results"] == {"Done": "HELLO, EDITED"}, str(s["results"]))
+    check("the links recorded what they carried", s["messages"] == 3, str(s["messages"]))
+
+    app.op(fid, "run")
+    h = held(app, fid, "Check it")
+    check("an allowed command runs without asking again", h[0]["card"] == "Check it" and not h[0]["needsAllow"], str(h))
+    app.op(fid, "hold", answer="reject")
+    s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to end")
+    check("a rejected message goes out Rejected", s["results"] == {"Binned": "HELLO FROM THE START CARD"}, str(s["results"]))
+    check("both runs are kept", [r["outcome"] for r in s["runs"]] == ["finished", "finished"], str(s["runs"]))
+
+    first = s["runs"][0]["id"]
+    app.op(fid, "viewRun", run=first)
+    s = app.state(fid)
+    check("an earlier run can be put back on the canvas", s["viewedRun"] == first and s["results"] == {"Done": "HELLO, EDITED"}, str(s["results"]))
+    app.op(fid, "viewRun")
+    check("and the latest brought back", app.state(fid)["results"] == {"Binned": "HELLO FROM THE START CARD"})
+
+    app.op(fid, "runFrom", card="Check it", message="straight to the gate")
+    h = held(app, fid, "Check it")
+    check("a run can start at any card", h[0]["card"] == "Check it" and h[0]["text"] == "straight to the gate", str(h))
+    app.op(fid, "stop")
+    s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to stop")
+    check("stopping a run lets go of what was held", not s["holds"] and s["runs"][-1]["outcome"] == "stopped", f"{s['holds']} {s['runs'][-1]}")
+
+    app.op(fid, "pick", card="Start 2")
+    app.op(fid, "run")
+    s = app.wait(fid, lambda s: not s["isRunning"] and s["results"], 20, "the second start's run")
+    check("Run starts from the selected Start card", s["results"] == {"Other": "second start"}, str(s["results"]))
+    app.op(fid, "pick")
+
+    app.op(fid, "script", card="Shout", command="echo typed")
+    app.op(fid, "run")
+    h = held(app, fid, "Check it")
+    check("a command typed in the settings runs without asking", h[0]["card"] == "Check it" and h[0]["text"] == "typed", str(h))
+    app.op(fid, "pick", card="Check it")
+    app.op(fid, "delete")
+    s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to end when its card is deleted")
+    check("deleting a card that holds a message ends the run", not s["holds"] and "Check it" not in [c["name"] for c in s["cards"]], str(s["holds"]))
+    app.op(fid, "undo")
+    check("undo brings the card and its links back", "Check it" in [c["name"] for c in app.state(fid)["cards"]] and app.state(fid)["links"] == 6)
+
+    app.op(fid, "script", card="Shout", command="exit 3")
+    app.op(fid, "run")
+    s = app.wait(fid, lambda s: not s["isRunning"] and s["results"], 20, "the failing command's run")
+    check("a command that fails goes out Fail", "Binned" in s["results"], str(s["results"]))
+
+    before = {c["name"]: (c["x"], c["y"]) for c in s["cards"]}
+    app.op(fid, "tidy")
+    s = app.state(fid)
+    xs = {c["name"]: c["x"] for c in s["cards"]}
+    check("Tidy Up lays cards out in the order the links run", xs["Start"] < xs["Shout"] < xs["Check it"] < xs["Done"], str(xs))
+    app.op(fid, "undo")
+    check("and undo puts them back", {c["name"]: (c["x"], c["y"]) for c in app.state(fid)["cards"]} == before)
+
+    app.op(fid, "pickMany", cards=["Shout", "Check it"])
+    app.op(fid, "group")
+    s = app.state(fid)
+    check("selected cards can be grouped", s["groups"] == [{"name": "Group 1", "cards": 2, "folded": False}], str(s["groups"]))
+    app.op(fid, "fold", folded=True)
+    check("a group can be folded", app.state(fid)["groups"][0]["folded"] is True)
+    app.op(fid, "pick", card="Shout")
+    app.op(fid, "delete")
+    check("a group left with one card is no longer a group", app.state(fid)["groups"] == [], str(app.state(fid)["groups"]))
+    app.op(fid, "undo")
+    check("undo restores the group", len(app.state(fid)["groups"]) == 1)
+
+
+def scenario_subflow(app):
+    print("subflow: a Flow card runs another flow, and opening one makes or enters a sub-flow", flush=True)
+    fid, inner = OUTER["id"], INNER["id"]
+    app.op(fid, "select")
+    time.sleep(2)
+    check("a flow set by name is found", app.state(fid)["canRun"])
+    app.op(fid, "run")
+    h = held(app, inner)
+    check("the message reaches the inner flow", h[0]["card"] == "Loud" and h[0]["text"] == "make this loud", str(h))
+    app.op(inner, "hold", answer="allow")
+    s = app.wait(fid, lambda s: not s["isRunning"], 30, "the outer run to end")
+    check("the inner flow's answer comes back out Done", s["results"] == {"Done": "MAKE THIS LOUD"}, str(s["results"]))
+    check("the inner flow kept its own run", len(app.state(inner)["runs"]) == 1)
+
+    app.op(inner, "script", card="Loud", command="exit 1")
+    app.op(fid, "run")
+    s = app.wait(fid, lambda s: not s["isRunning"] and s["results"], 30, "the outer run to end")
+    check("an inner flow that never reaches its Output comes out Fail", list(s["results"]) == ["Failed"], str(s["results"]))
+
+    r = app.op(fid, "openSub", card="Shouter")
+    check("opening a Flow card goes into its flow", r == {"now": "Inner", "trail": 2}, str(r))
+    r = app.op(inner, "back")
+    check("and the trail leads back", r == {"now": "Outer"}, str(r))
+    r = app.op(fid, "openSub", card="Empty")
+    check("a Flow card with no flow gets a new sub-flow", r == {"now": "Empty", "trail": 2}, str(r))
+    s = app.state(fid)
+    check("the new sub-flow joins the project", "Empty" in s["flows"], str(s["flows"]))
+    app.op(fid, "select")
+
+
+def scenario_timed(app):
+    print("timed: schedules and file triggers start runs, and one that came in a file stays off", flush=True)
+    fid = TIMED["id"]
+    app.op(fid, "select")
+    time.sleep(2)
+    s = app.state(fid)
+    check("a schedule that arrived in the flow's file is off", s["armed"] == [] and s["scheduled"] == 0, f"{s['armed']} {s['scheduled']}")
+    folder = os.path.join(app.project, "inbox")
+    os.makedirs(folder, exist_ok=True)
+    app.op(fid, "trigger", card="Clock", path="inbox")
+    time.sleep(2)
+    with open(os.path.join(folder, "new.txt"), "w") as out:
+        out.write("x")
+    s = app.wait(fid, lambda s: s["results"].get("Rang"), 30, "the file trigger to start a run")
+    check("a changed file starts a run and names the file", "inbox" in s["results"]["Rang"], s["results"]["Rang"])
+    now = time.localtime(time.time() + 60)
+    app.op(fid, "trigger", card="Clock", hour=now.tm_hour, minute=now.tm_min)
+    check("a daily schedule set here is on", app.state(fid)["armed"] == ["Clock"] and app.state(fid)["scheduled"] == 1)
+    runs = len(app.state(fid)["runs"])
+    s = app.wait(fid, lambda s: len(s["runs"]) > runs, 75, "the daily schedule to fire")
+    check("the schedule starts a run at its time", s["results"].get("Rang") == "tick", str(s["results"]))
+    check("the schedule that came in the file never ran", "Never" not in s["results"])
+    app.op(fid, "trigger", card="Clock")
+
+
 def scenario_noclaude(project):
     print("noclaude: the app says so when Claude Code isn't installed", flush=True)
     empty = tempfile.mkdtemp(prefix="qb-nohome-")
@@ -462,12 +644,12 @@ def scenario_noclaude(project):
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "noclaude"]
+    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "subflow", "timed", "noclaude"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     project = tempfile.mkdtemp(prefix="qb-e2e-")
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
-    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail"]):
+    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "inner", "subflow", "timed"]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)
 
@@ -481,6 +663,8 @@ def main():
                 except Exception as e:  # one scenario failing shouldn't hide the others
                     check(f"{name} ran to the end", False, f"{type(e).__name__}: {e}"[:500])
                 flow_id = (GUARD if name in ("scroll", "settings") else FLOWS[name])["id"]
+                if name == "subflow":
+                    app.op(INNER["id"], "close")
                 # Guard's sessions are shared by the scenarios that follow it on the same flow.
                 later = in_app[in_app.index(name) + 1:]
                 if not (name in ("guard", "settings") and ("settings" in later or "scroll" in later)):

@@ -134,10 +134,16 @@ enum TestHarness {
             controller.addCard(.agent, role: role)
             return [:]
         case "trigger":
-            // Sets a Start card to run every `minutes`, the way the settings panel does.
+            // Sets what starts runs from a Start card, the way the settings panel does.
             guard let cardID else { return ["error": "trigger needs card"] }
-            controller.setTrigger(payload["minutes"]?.doubleValue.map { Trigger(kind: .interval, minutes: Int($0)) }
-                                  ?? payload["path"]?.stringValue.map { Trigger(kind: .file, path: $0) }, onCard: cardID)
+            var trigger: Trigger?
+            if let minutes = payload["minutes"]?.doubleValue { trigger = Trigger(kind: .interval, minutes: Int(minutes)) }
+            if let path = payload["path"]?.stringValue { trigger = Trigger(kind: .file, path: path) }
+            if let hour = payload["hour"]?.doubleValue, let minute = payload["minute"]?.doubleValue {
+                let days = (payload["weekdays"]?.arrayValue ?? []).compactMap { $0.doubleValue.map(Int.init) }
+                trigger = Trigger(kind: days.isEmpty ? .daily : .weekly, hour: Int(hour), minute: Int(minute), weekdays: days)
+            }
+            controller.setTrigger(trigger, onCard: cardID)
             return ["next": .array(controller.nextFires.values.map { .number($0.timeIntervalSinceNow) })]
         case "pickMany":
             let ids = (payload["cards"]?.arrayValue ?? []).compactMap { $0.stringValue }.compactMap { controller.flow.resolveCard($0)?.id }
@@ -147,6 +153,19 @@ enum TestHarness {
             guard let cardID else { return ["error": "openSub needs card"] }
             controller.openSubflow(forCard: cardID)
             return ["now": .string(AppServices.shared.current?.flow.name ?? ""), "trail": .number(Double(AppServices.shared.flowTrail.count))]
+        case "retry":
+            guard let cardID else { return ["error": "retry needs card"] }
+            controller.retry(cardID)
+            return [:]
+        case "center":
+            controller.canvas?.center(on: CGPoint(x: payload["x"]?.doubleValue ?? 0, y: payload["y"]?.doubleValue ?? 0))
+            return [:]
+        case "help":
+            AppServices.shared.pinnedHelp = payload["kind"]?.stringValue
+            return [:]
+        case "back":
+            if let outer = AppServices.shared.flowTrail.dropLast().last { AppServices.shared.goBack(to: outer) }
+            return ["now": .string(AppServices.shared.current?.flow.name ?? "")]
         case "find":
             AppServices.shared.showsFind = true
             return [:]
@@ -208,6 +227,12 @@ enum TestHarness {
             "name": .string(controller.flow.name),
             "cards": .array(controller.flow.cards.map { ["name": .string($0.name), "x": .number($0.x), "y": .number($0.y)] }),
             "links": .number(Double(controller.flow.links.count)),
+            "groups": .array((controller.flow.groups ?? []).map { ["name": .string($0.name), "cards": .number(Double($0.cardIDs.count)), "folded": .bool($0.isFolded)] }),
+            "armed": .array(controller.flow.cards.filter { controller.isArmed($0) }.map { .string($0.name) }),
+            "scheduled": .number(Double(controller.nextFires.count)),
+            "flows": .array(controller.project.controllers.map { .string($0.flow.name) }),
+            "trail": .number(Double(AppServices.shared.flowTrail.count)),
+            "canRun": .bool(controller.canRun),
             "cost": .number(controller.totalUsage.cost),
             "runs": .array(controller.runs.map { ["id": .string($0.id), "outcome": .string($0.outcome.rawValue), "command": .string($0.command)] }),
             "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
