@@ -457,6 +457,16 @@ class CardView: NSView {
             }
             menu.addItem(.separator())
         }
+        if !several, card.kind == .flow {
+            menu.addItem(menuItem("Open Its Flow") { [weak controller] in controller?.openSubflow(forCard: id) })
+        }
+        if !several, card.kind == .start {
+            menu.addItem(menuItem("Run from This Start") { [weak controller] in
+                guard let controller else { return }
+                Task { await controller.run(startCardID: id) }
+            })
+            menu.addItem(.separator())
+        }
         if !several, acceptsInput(card) {
             menu.addItem(menuItem("Run from Here…") { [weak controller] in
                 controller?.select(.card(id))
@@ -472,7 +482,12 @@ class CardView: NSView {
     }
 
     @objc private func handleDoubleClick(_ g: NSClickGestureRecognizer) {
-        canvas?.zoom(toCard: card.id)
+        // A Flow card is a way into another flow. Every other card zooms to fill the window.
+        if card.kind == .flow {
+            canvas?.controller?.openSubflow(forCard: card.id)
+        } else {
+            canvas?.zoom(toCard: card.id)
+        }
     }
 
     @objc private func handleMove(_ g: NSPanGestureRecognizer) {

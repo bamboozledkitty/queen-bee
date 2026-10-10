@@ -145,12 +145,34 @@ struct WorkspaceView: View {
                     .tint(Theme.live.ui)
                     .help("Go to the card that is waiting on you")
                 }
+                // Run and Stop are filled and named, so it is plain which one is on offer and
+                // whether it can be pressed. Greyed out means there is nothing to run yet.
                 if controller.isRunning {
-                    Button { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                    Button { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.live.ui)
                         .help("Stop the run")
+                } else if controller.startCards.count > 1 {
+                    // Several Start cards: say which one. The selected one runs on a plain click.
+                    Menu {
+                        ForEach(controller.startCards) { start in
+                            Button("Run from \(start.name)") { Task { await controller.run(startCardID: start.id) } }
+                        }
+                    } label: {
+                        Label("Run", systemImage: "play.fill").labelStyle(.titleAndIcon)
+                    } primaryAction: {
+                        Task { await controller.run() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.select.ui)
+                    .disabled(!controller.canRun)
+                    .help("This flow has \(controller.startCards.count) Start cards. Click to run from the selected one, or the first. Hold or use the arrow to choose.")
                 } else {
-                    Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill") }
-                        .help("Run the flow from its Start card")
+                    Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill").labelStyle(.titleAndIcon) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.select.ui)
+                        .disabled(!controller.canRun)
+                        .help(controller.canRun ? "Run the flow from its Start card" : "Nothing to run yet: give the Start card something to start with and link it to a card")
                 }
                 Button { showsPanel.toggle() } label: { Label("Panel", systemImage: "sidebar.trailing") }
                     .help("Show or hide the orchestrator, the log and the run's output")
@@ -195,9 +217,27 @@ private struct TitlePlate: View {
                     .onExitCommand { isRenaming = false }
                     .onChange(of: isFocused) { if !isFocused { isRenaming = false } }
             } else {
-                Text(controller?.flow.name ?? "Queen Bee")
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    // Inside a sub-flow, the flows it was opened from lead the way back.
+                    ForEach(trail, id: \.flow.id) { outer in
+                        Button { AppServices.shared.goBack(to: outer.flow.id) } label: {
+                            Text(outer.flow.name).font(.system(size: 13)).lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Back to \(outer.flow.name)")
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                    }
+                    Text(controller?.flow.name ?? "Queen Bee")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .onTapGesture {
+                            guard let controller, !isRenaming else { return }
+                            draft = controller.flow.name
+                            isRenaming = true
+                            isFocused = true
+                        }
+                }
             }
             if !subtitle.isEmpty {
                 Text(subtitle)
@@ -208,14 +248,13 @@ private struct TitlePlate: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 3)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard let controller, !isRenaming else { return }
-            draft = controller.flow.name
-            isRenaming = true
-            isFocused = true
-        }
-        .help(controller == nil ? "" : "Click to rename this flow")
+        .help(controller == nil ? "" : "Click the flow's name to rename it")
+    }
+
+    /// The flows this one was opened from, outermost first.
+    private var trail: [FlowController] {
+        let services = AppServices.shared
+        return services.flowTrail.dropLast().compactMap { id in services.allFlows.first { $0.flow.id == id } }
     }
 }
 

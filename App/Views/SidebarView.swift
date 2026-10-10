@@ -44,7 +44,10 @@ struct SidebarView: View {
                             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([project.root]) }
                             Button("Remove from This List") { services.removeProject(project) }
                         }
-                        ForEach(project.controllers.filter(matches), id: \.flow.id) { row(for: $0) }
+                        ForEach(nested(project), id: \.controller.flow.id) { entry in
+                            row(for: entry.controller)
+                                .padding(.leading, CGFloat(entry.depth) * 14)
+                        }
                         ForEach(project.unreadable, id: \.self) { url in
                             Label(url.lastPathComponent, systemImage: "exclamationmark.triangle")
                                 .font(.dsMono(Theme.Size.caption))
@@ -107,6 +110,26 @@ struct SidebarView: View {
             || controller.flow.cards.contains { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
+    /// A project's flows in order, with each sub-flow listed under the flow whose Flow card
+    /// runs it. A sub-flow nothing uses any more is listed with the rest, so it isn't lost.
+    private func nested(_ project: ProjectModel) -> [(controller: FlowController, depth: Int)] {
+        let all = project.controllers
+        func inner(of controller: FlowController) -> [FlowController] {
+            controller.flow.cards.filter { $0.kind == .flow }.compactMap(controller.innerFlow(of:))
+        }
+        let used = Set(all.flatMap(inner).map(\.flow.id))
+        var listed: Set<String> = []
+        var rows: [(FlowController, Int)] = []
+        func add(_ controller: FlowController, _ depth: Int) {
+            guard listed.insert(controller.flow.id).inserted else { return }
+            if matches(controller) { rows.append((controller, depth)) }
+            for child in inner(of: controller) where child.flow.isSubflow == true { add(child, depth + 1) }
+        }
+        for controller in all where !(controller.flow.isSubflow == true && used.contains(controller.flow.id)) { add(controller, 0) }
+        for controller in all { add(controller, 0) }
+        return rows
+    }
+
     @ViewBuilder
     private func row(for controller: FlowController) -> some View {
         let id = controller.flow.id
@@ -120,6 +143,9 @@ struct SidebarView: View {
                         renaming = nil
                     }
             } else {
+                if controller.flow.isSubflow == true {
+                    Image(systemName: "arrow.turn.down.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui)
+                }
                 Text(controller.flow.name).lineLimit(1)
                 Spacer(minLength: 4)
                 activity(of: controller)

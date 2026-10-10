@@ -7,6 +7,7 @@ import QueenBeeCore
 final class ProjectModel {
     let root: URL
     @ObservationIgnored let store: FlowStore
+    @ObservationIgnored private var watcher: FileWatcher?
     private(set) var controllers: [FlowController] = []
     /// Flow files that couldn't be read. Listed, never written.
     private(set) var unreadable: [URL] = []
@@ -20,6 +21,44 @@ final class ProjectModel {
         unreadable = loaded.unreadable
         controllers = loaded.flows.map { FlowController(flow: $0.flow, fileURL: $0.url, project: self) }
         controllers.forEach { AppServices.shared.register($0) }
+        // A flow file that appears later, for instance one an agent wrote, is picked up without reopening the project.
+        watcher = FileWatcher(url: store.directory) { [weak self] _ in
+            Task { @MainActor in self?.rescan() }
+        }
+    }
+
+    /// Takes in flow files that have appeared in the folder since it was read. Flows already
+    /// open are left exactly as they are.
+    func rescan() {
+        let loaded = store.loadAll()
+        let known = Set(controllers.map { $0.fileURL.standardizedFileURL.path })
+        var ids = Set(controllers.map(\.flow.id))
+        for file in loaded.flows where !known.contains(file.url.standardizedFileURL.path) && ids.insert(file.flow.id).inserted {
+            let controller = FlowController(flow: file.flow, fileURL: file.url, project: self)
+            controllers.append(controller)
+            AppServices.shared.register(controller)
+        }
+        let unread = loaded.unreadable.filter { !known.contains($0.standardizedFileURL.path) }
+        if unread != unreadable { unreadable = unread }
+    }
+
+    /// A new flow made to sit inside a Flow card: an Input to receive the message and an
+    /// Output for the answer that goes back.
+    func newSubflow(named wanted: String) -> FlowController? {
+        var name = wanted.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { name = "Sub-flow" }
+        var n = 2
+        let base = name
+        while controllers.contains(where: { $0.flow.name.caseInsensitiveCompare(name) == .orderedSame }) { name = "\(base) \(n)"; n += 1 }
+        var flow = Flow(name: name)
+        flow.isSubflow = true
+        _ = try? flow.addCard(kind: .start, name: "Input", x: 240, y: 120)
+        _ = try? flow.addCard(kind: .end, name: "Output", x: 600, y: 120)
+        guard let url = try? store.save(flow, to: nil) else { return nil }
+        let controller = FlowController(flow: flow, fileURL: url, project: self)
+        controllers.append(controller)
+        AppServices.shared.register(controller)
+        return controller
     }
 
     @discardableResult
@@ -50,6 +89,7 @@ final class ProjectModel {
 
     /// Stops every session this project started.
     func close() {
+        watcher?.stop()
         controllers.forEach { $0.shutDown(); AppServices.shared.unregister(flowID: $0.flow.id) }
     }
 }

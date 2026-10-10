@@ -143,6 +143,10 @@ enum TestHarness {
             let ids = (payload["cards"]?.arrayValue ?? []).compactMap { $0.stringValue }.compactMap { controller.flow.resolveCard($0)?.id }
             controller.select(.of(Set(ids)))
             return [:]
+        case "openSub":
+            guard let cardID else { return ["error": "openSub needs card"] }
+            controller.openSubflow(forCard: cardID)
+            return ["now": .string(AppServices.shared.current?.flow.name ?? ""), "trail": .number(Double(AppServices.shared.flowTrail.count))]
         case "find":
             AppServices.shared.showsFind = true
             return [:]

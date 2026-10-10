@@ -14,9 +14,11 @@ public struct FlowSnapshot: Sendable {
     public var flow: Flow
     public var agents: [String: AgentStatus]
     public var isRunning: Bool
+    /// The names of the project's other flows, which a Flow card can run.
+    public var otherFlows: [String]
 
-    public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool) {
-        self.flow = flow; self.agents = agents; self.isRunning = isRunning
+    public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool, otherFlows: [String] = []) {
+        self.flow = flow; self.agents = agents; self.isRunning = isRunning; self.otherFlows = otherFlows
     }
 }
 
@@ -201,7 +203,8 @@ public enum Tools {
             ]
         }
 
-        return ["name": .string(flow.name), "is_running": .bool(snapshot.isRunning), "cards": .array(cards), "links": .array(links)]
+        return ["name": .string(flow.name), "is_running": .bool(snapshot.isRunning), "cards": .array(cards), "links": .array(links),
+                "other_flows": .array(snapshot.otherFlows.map(JSONValue.string))]
     }
 
     // MARK: Definitions
@@ -232,7 +235,9 @@ public enum Tools {
             - approval: holds the message until the person approves or rejects it. They can edit it first. \
             Outputs: approved, rejected. Put one before anything that can't be taken back, such as sending an email.
             - flow: runs another flow in this project as one step, giving it the message as its command. \
-            Outputs: done (with that flow's final answer) and fail. The person chooses which flow in its settings.
+            Outputs: done (with that flow's final answer) and fail. Set "flow" to the name of one of the \
+            other_flows that get_flow lists. You cannot create a flow: if the one you need isn't listed, ask the \
+            person to double-click the Flow card, which makes a new sub-flow and opens it. Never write flow files yourself.
             - script: runs a shell command in the project folder, with the message on its standard input and in \
             $QB_MESSAGE. Outputs: pass (it exited with 0) and fail. What it printed is passed on. The person is \
             asked to allow a command they did not type themselves the first time a run reaches it.
@@ -325,6 +330,7 @@ public enum Tools {
         "template": ["type": "string", "description": "prompt: the rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from."],
         "save_to": ["type": "string", "description": "end: a file to save the final answer to, relative to the project folder."],
         "text": ["type": "string", "description": "note: the note's text. approval: what the person should check before approving."],
+        "flow": ["type": "string", "description": "flow: the name of the flow to run, one of other_flows from get_flow."],
     ]
 
     private static func schema(_ properties: [String: JSONValue], required: [String] = [], withSettings: Bool = false) -> JSONValue {
@@ -342,7 +348,7 @@ private struct Arguments: Sendable {
     private static let settings: [(key: String, kinds: Set<CardKind>)] = [
         ("instructions", [.agent]), ("model", [.agent]), ("effort", [.agent]), ("permission_mode", [.agent]), ("cwd", [.agent]),
         ("command", [.start, .script]), ("check", [.ifElse, .loop]), ("value", [.ifElse, .loop]), ("max_tries", [.loop]),
-        ("branches", [.switchCard]), ("template", [.prompt]), ("save_to", [.end]), ("text", [.note, .approval]),
+        ("branches", [.switchCard]), ("template", [.prompt]), ("save_to", [.end]), ("text", [.note, .approval]), ("flow", [.flow]),
     ]
 
     private func value(_ key: String) -> JSONValue? {
@@ -402,6 +408,7 @@ private struct Arguments: Sendable {
         patch.permissionMode = try string("permission_mode")
         patch.cwd = try string("cwd")
         patch.command = try string("command")
+        patch.flowRef = try string("flow")
         if let raw = try string("check") {
             guard let check = CheckKind(rawValue: raw.lowercased()) else {
                 throw FlowError.invalid("Unknown check \"\(raw)\". Use one of: \(CheckKind.allCases.map(\.rawValue).joined(separator: ", "))")

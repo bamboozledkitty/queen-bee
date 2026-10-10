@@ -1100,6 +1100,9 @@ final class FlowController: ToolHost {
     func run(command: String? = nil, startCardID: String? = nil) async -> String {
         guard let engine = readyEngine() else { return services.problem ?? "Claude Code isn't ready yet." }
         isClosed = false
+        // With several Start cards, the one that is selected is the one meant.
+        var startCardID = startCardID
+        if startCardID == nil, case .card(let id) = selection, flow.card(id)?.kind == .start { startCardID = id }
         let output = await engine.start(flow: flow, startCardID: startCardID, command: command)
         // Only a run that actually began clears the last one off the canvas.
         if let id = output.runID, !isRunning {
@@ -1212,7 +1215,7 @@ final class FlowController: ToolHost {
             pending.needsAllow = !ScriptRunner.isAllowed(pending.command, flowID: allowScope, cardID: card.id)
         }
         if hold.kind == .flow {
-            let inner = card.flowRef.flatMap { ref in project.controllers.first { $0.flow.id == ref } }
+            let inner = innerFlow(of: card)
             pending.command = inner?.flow.name ?? ""
             holds.append(pending)
             return runInnerFlow(pending, inner)
@@ -1249,6 +1252,38 @@ final class FlowController: ToolHost {
             self.resolve(hold.id, port: answer.finished ? "done" : "fail", text: answer.text)
         }
     }
+
+    /// The flow a Flow card runs: found by id, or by name when the orchestrator set it.
+    func innerFlow(of card: Card) -> FlowController? {
+        guard card.kind == .flow, let ref = card.flowRef?.trimmingCharacters(in: .whitespacesAndNewlines), !ref.isEmpty else { return nil }
+        let others = project.controllers.filter { $0 !== self }
+        return others.first { $0.flow.id == ref } ?? others.first { $0.flow.name.caseInsensitiveCompare(ref) == .orderedSame }
+    }
+
+    /// Goes into the flow a Flow card runs. A card with no flow yet gets a new sub-flow of its
+    /// own, with an Input and an Output ready to build between.
+    func openSubflow(forCard id: String) {
+        guard let card = flow.card(id), card.kind == .flow else { return }
+        if let inner = innerFlow(of: card) { return services.enter(inner, from: self) }
+        guard let made = project.newSubflow(named: card.name) else {
+            banner = "Couldn't make a sub-flow for \(card.name)."
+            return
+        }
+        var patch = CardPatch()
+        patch.flowRef = made.flow.id
+        update(id, patch)
+        services.enter(made, from: self)
+    }
+
+    /// Whether Run has anything to start: a Start card with a command and something linked from it.
+    var canRun: Bool {
+        flow.cards.contains { card in
+            card.kind == .start && !(card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !flow.links(from: card.id).isEmpty
+        }
+    }
+
+    /// The Start cards a run could begin at, for choosing between them.
+    var startCards: [Card] { flow.cards.filter { $0.kind == .start } }
 
     /// Runs the flow and waits for the run to end. The answer is what reached its End cards.
     func runToEnd(command: String) async -> (finished: Bool, text: String) {
@@ -1441,7 +1476,8 @@ final class FlowController: ToolHost {
             let session = sessions[card.id]
             agents[card.id] = AgentStatus(state: (session?.state ?? .notStarted).rawValue, lastReply: session?.lastReply)
         }
-        return FlowSnapshot(flow: flow, agents: agents, isRunning: isRunning)
+        return FlowSnapshot(flow: flow, agents: agents, isRunning: isRunning,
+                            otherFlows: project.controllers.filter { $0 !== self }.map(\.flow.name))
     }
 
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T {

@@ -10,7 +10,9 @@ All notable changes to Queen Bee are listed here. The format follows
 
 - **Approval** cards, which hold a message until you approve, edit or reject it.
 - **Script** cards, which run a shell command and route on whether it succeeded. A command you didn't type yourself waits for you to allow it.
-- **Flow** cards, which run another of the project's flows as one step.
+- **Flow** cards, which run another of the project's flows as one step. Double-click one to open its flow, or to make a new sub-flow with an Input and an Output; the title bar shows the way back, and sub-flows are listed under the flow that uses them.
+- With several Start cards, Run starts from the selected one, the Run button offers a choice, and each Start card has its own Run.
+- A flow file that appears in a project while it is open is picked up without reopening it.
 - Resting the pointer on a card type in the palette explains it in a sentence, with an example.
 - A link's settings list the messages it carried in the run on show.
 - Every run is kept, with its path, answers and messages. The Log tab can put an earlier run back on the canvas.
@@ -24,6 +26,7 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Changed
 
+- Run and Stop are filled, named buttons, and a button that can't be pressed is drawn as a faint outline.
 - A card only shows as live or waiting from run marks while a run is under way.
 - Wording across the app is plainer: settings, tips, warnings and log lines say what happens without the technical terms. The app's own labels, such as an agent's state and Claude Code's option names, are unchanged.
 

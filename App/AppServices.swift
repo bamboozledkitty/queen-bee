@@ -23,7 +23,12 @@ final class AppServices {
     private(set) var projects: [ProjectModel] = []
     /// The flow on the canvas.
     var selectedFlowID: String? {
-        didSet { if selectedFlowID != oldValue { current?.open() } }
+        didSet {
+            guard selectedFlowID != oldValue else { return }
+            // Going into a sub-flow sets the trail first. Any other change of flow starts a new one.
+            if flowTrail.last != selectedFlowID { flowTrail = selectedFlowID.map { [$0] } ?? [] }
+            current?.open()
+        }
     }
     /// How much of the canvas the floating panels cover, published by the window for the canvas.
     @ObservationIgnored var canvasObstruction = CanvasObstruction(left: 400, right: 450)
@@ -60,6 +65,24 @@ final class AppServices {
     func deleteRole(_ id: String) {
         roles.removeAll { $0.id == id }
         saveRoles()
+    }
+
+    /// The way into the flow on screen: the flow it was opened from, and that one's, back to
+    /// the first. One entry when the flow was picked directly.
+    private(set) var flowTrail: [String] = []
+
+    /// Opens a sub-flow from the flow whose Flow card runs it, remembering the way back.
+    func enter(_ inner: FlowController, from outer: FlowController) {
+        let upTo = flowTrail.firstIndex(of: outer.flow.id).map { Array(flowTrail[...$0]) } ?? [outer.flow.id]
+        flowTrail = upTo + [inner.flow.id]
+        selectedFlowID = inner.flow.id
+    }
+
+    /// Goes back up the trail to one of the flows on it.
+    func goBack(to flowID: String) {
+        guard let index = flowTrail.firstIndex(of: flowID) else { return }
+        flowTrail = Array(flowTrail[...index])
+        selectedFlowID = flowID
     }
 
     /// The find panel is open.
@@ -117,6 +140,10 @@ final class AppServices {
         installPlugin()
         startServer()
         loadRoles()
+        // Also a backstop for flow files the watcher missed while the app was in the background.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in AppServices.shared.projects.forEach { $0.rescan() } }
+        }
         restoreProjects()
         // A test run isn't a first run, unless it asks to see the walk-through.
         showsWelcome = remembersProjects ? !UserDefaults.standard.bool(forKey: OnboardingView.seenKey) : LaunchArguments.welcome

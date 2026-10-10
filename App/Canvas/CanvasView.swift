@@ -310,7 +310,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.result = controller.results[card.id]
             if card.kind == .flow, context.result == nil {
                 // What the card runs is another flow's name, which the card itself doesn't hold.
-                context.result = card.flowRef.flatMap { ref in controller.project.controllers.first { $0.flow.id == ref } }.map { "Runs \($0.flow.name)" }
+                context.result = controller.innerFlow(of: card).map { "Runs \($0.flow.name)\nDouble-click to open it" }
             }
             if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
                 context.isLive = true

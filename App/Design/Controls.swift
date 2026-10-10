@@ -33,41 +33,47 @@ private struct PanelButton: View {
         configuration.label
             .font(.dsMono(Theme.Size.caption, .medium))
             .foregroundStyle(foreground.ui)
-            .padding(.horizontal, kind == .quiet ? 4 : 10)
+            .padding(.horizontal, kind == .quiet ? 6 : 10)
             .padding(.vertical, 4)
             .background(background.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(border.ui, lineWidth: Theme.Stroke.card))
-            .opacity(isEnabled ? (configuration.isPressed ? 0.65 : 1) : 0.4)
+            .opacity(configuration.isPressed && isEnabled ? 0.6 : 1)
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
             .animation(Theme.Motion.quick, value: isHovered)
             .animation(Theme.Motion.quick, value: configuration.isPressed)
+            .animation(Theme.Motion.quick, value: isEnabled)
     }
 
+    // A button that can't be pressed is drawn as a faint outline of itself: no fill, no ink
+    // border, grey text. One that can is ink, and the one a panel is asking for is filled.
     private var foreground: NSColor {
+        guard isEnabled else { return Theme.inkSecondary.withAlphaComponent(0.55) }
         switch kind {
-        case .outline: Theme.ink
-        case .quiet: isHovered ? Theme.ink : Theme.inkSecondary
-        case .filled: Theme.surface
-        case .live: Theme.liveInk
+        case .outline: return Theme.ink
+        case .quiet: return isHovered ? Theme.ink : Theme.inkSecondary
+        case .filled: return Theme.surface
+        case .live: return Theme.liveInk
         }
     }
 
     private var background: NSColor {
+        guard isEnabled else { return .clear }
         switch kind {
-        case .outline: isHovered ? Theme.barHover : .clear
-        case .quiet: .clear
-        case .filled: isHovered ? Theme.inkSecondary : Theme.ink
-        case .live: Theme.liveTint
+        case .outline: return isHovered ? Theme.barHover : .clear
+        case .quiet: return isHovered ? Theme.barHover : .clear
+        case .filled: return isHovered ? Theme.inkSecondary : Theme.ink
+        case .live: return isHovered ? Theme.live.withAlphaComponent(0.25) : Theme.liveTint
         }
     }
 
     private var border: NSColor {
+        guard isEnabled else { return kind == .quiet ? .clear : Theme.hairline }
         switch kind {
-        case .outline: Theme.ink
-        case .quiet: .clear
-        case .filled: isHovered ? Theme.inkSecondary : Theme.ink
-        case .live: Theme.live
+        case .outline: return Theme.ink
+        case .quiet: return .clear
+        case .filled: return isHovered ? Theme.inkSecondary : Theme.ink
+        case .live: return Theme.live
         }
     }
 }

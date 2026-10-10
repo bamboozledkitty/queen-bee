@@ -47,6 +47,9 @@ private struct CardSettings: View {
             case .agent: agent
             case .start:
                 EditorField("What the run starts with", text: card.command ?? "") { v in patch { $0.command = v } }
+                if controller.flow.isSubflow == true {
+                    note("This is a sub-flow. When a Flow card runs it, the message that card was given is used in place of the text above. The text above is for trying the sub-flow by itself.")
+                }
                 TriggerSettings(controller: controller, card: card)
             case .ifElse:
                 condition
@@ -97,12 +100,24 @@ private struct CardSettings: View {
                     note("A run stops here and waits for you. You can edit the message, then approve or reject it.")
                 }
             case .flow:
+                let inner = controller.innerFlow(of: card)
                 row("Runs") {
                     let others = controller.project.controllers.filter { $0 !== controller }
-                    MenuField(options: [(value: "", label: "Choose a flow")] + others.map { (value: $0.flow.id, label: $0.flow.name) },
-                              selection: card.flowRef ?? "") { v in patch { $0.flowRef = v } }
+                    MenuField(options: [(value: "", label: "Nothing yet")] + others.map { (value: $0.flow.id, label: $0.flow.name) },
+                              selection: inner?.flow.id ?? "") { v in patch { $0.flowRef = v } }
                 }
-                note("Runs another of this project's flows as a single step. That flow starts with the message that arrives here, and its final answer comes out Done. If it stops early or fails, the message goes out Fail.")
+                HStack(spacing: Theme.Space.s) {
+                    Text(inner == nil ? "Make a sub-flow just for this card:" : "Build or change what it does:")
+                        .font(.dsSans(Theme.Size.caption))
+                        .foregroundStyle(Theme.inkSecondary.ui)
+                    Spacer()
+                    Button(inner == nil ? "New sub-flow" : "Open") { controller.openSubflow(forCard: card.id) }
+                        .buttonStyle(.panel(.filled))
+                        .help("You can also double-click the card")
+                }
+                .padding(.horizontal, Theme.Space.m)
+                .padding(.vertical, 6)
+                note("This card runs a whole flow as one step. The message that arrives here goes to that flow's Input, and what reaches its Output comes back out Done. If it stops early or fails, the message goes out Fail.")
             case .script:
                 EditorField("Command", text: card.command ?? "", mono: true) { v in controller.setScriptCommand(card.id, v) }
                     .help("For scripts that need it: the incoming message is in $QB_MESSAGE and on standard input, and the sender's name is in $QB_FROM.")
@@ -197,6 +212,13 @@ private struct CardSettings: View {
                 Button("Run from here…") { controller.runFromCardID = card.id }
                     .buttonStyle(.panel(.quiet))
                     .help("Start a run at this card with a message you give it, skipping everything that comes before")
+            }
+            if card.kind == .start {
+                Button { Task { await controller.run(startCardID: card.id) } } label: { Label("Run", systemImage: "play.fill") }
+                    .buttonStyle(.panel(.filled))
+                    .disabled(controller.isRunning || (card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || controller.flow.links(from: card.id).isEmpty)
+                    .help("Start a run from this Start card")
             }
             if card.kind == .agent {
                 let session = controller.session(forCard: card.id)
