@@ -370,40 +370,41 @@ struct FindPanel: View {
     }
 }
 
-/// What the flow has cost so far, beside the zoom control. Click it for where the cost went.
+/// What the flow has cost so far, beside the zoom control: this flow and every sub-flow
+/// below it. Click it for where the cost went.
 struct CostPill: View {
     let controller: FlowController
     @Binding var showsBreakdown: Bool
 
     var body: some View {
-        let total = controller.totalUsage
-        if !total.isZero {
-            Button { showsBreakdown.toggle() } label: {
-                HStack(spacing: 5) {
-                    Text(total.price)
-                        .font(.dsMono(Theme.Size.caption, .medium))
-                        .contentTransition(.numericText())
-                    if controller.isRunning {
-                        Circle().fill(Theme.live.ui).frame(width: 5, height: 5)
-                    }
+        let total = controller.usageWithSubflows
+        Button { showsBreakdown.toggle() } label: {
+            HStack(spacing: 5) {
+                Text(total.price)
+                    .font(.dsMono(Theme.Size.caption, .medium))
+                    .contentTransition(.numericText())
+                if controller.isRunning {
+                    Circle().fill(Theme.live.ui).frame(width: 5, height: 5)
                 }
-                .foregroundStyle(Theme.ink.ui)
-                .padding(.horizontal, Theme.Space.s)
-                .frame(height: 24)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .floatingPanel()
-            .help("An estimate of what this flow's work has cost so far. Click to see where it went.")
-            .animation(Theme.Motion.standard, value: total.price)
+            .foregroundStyle((total.isZero ? Theme.inkSecondary : Theme.ink).ui)
+            .padding(.horizontal, Theme.Space.s)
+            .frame(height: 24)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .floatingPanel()
+        .help(total.isZero ? "This flow hasn't used anything yet. The figure appears once an agent has replied."
+              : "An estimate of what this flow's work has cost so far, sub-flows included. Click to see where it went.")
+        .animation(Theme.Motion.standard, value: total.price)
     }
 }
 
-/// Where a flow's cost went: by session, then by run.
+/// Where a flow's cost went: its own agents, the sub-flows below it, then run by run.
 struct CostBreakdown: View {
     let controller: FlowController
     let close: () -> Void
+    private var services: AppServices { AppServices.shared }
 
     private var sessions: [(name: String, icon: String, usage: Usage)] {
         var rows: [(String, String, Usage)] = []
@@ -415,12 +416,16 @@ struct CostBreakdown: View {
     }
 
     var body: some View {
-        let total = controller.totalUsage
-        let top = sessions.first?.usage.cost ?? 0
+        let own = controller.totalUsage
+        let inner = controller.subflows()
+        let total = controller.usageWithSubflows
+        // Every bar is a share of the whole, so the eye can compare an agent with a sub-flow.
+        let whole = max(total.cost, 0.000001)
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Cost of this flow").font(.dsMono(Theme.Size.title, .medium))
+            HStack(alignment: .firstTextBaseline) {
+                Text("Cost of \(controller.flow.name)").font(.dsMono(Theme.Size.title, .medium)).lineLimit(1)
                 Spacer()
+                Text(total.price).font(.dsMono(Theme.Size.title, .medium))
                 Button(action: close) {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 16, height: 16).contentShape(Rectangle())
                 }
@@ -431,39 +436,38 @@ struct CostBreakdown: View {
             .padding(.vertical, Theme.Space.s)
             .background(Theme.bar.ui)
 
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(sessions, id: \.name) { row in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Image(systemName: row.icon).font(.system(size: 10, weight: .medium)).frame(width: 14)
-                            Text(row.name).font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
-                            Spacer(minLength: Theme.Space.s)
-                            Text(row.usage.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
-                            Text(row.usage.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
-                        }
-                        // The bar is this session's share of the most expensive one.
-                        GeometryReader { space in
-                            Rectangle().fill(Theme.ink.ui)
-                                .frame(width: max(2, space.size.width * (top > 0 ? row.usage.cost / top : 0)), height: 2)
-                        }
-                        .frame(height: 2)
+            if total.isZero {
+                Text("Nothing yet. A figure appears here once an agent in this flow has replied.")
+                    .font(.dsSans(Theme.Size.body))
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                    .padding(Theme.Space.m)
+                    .overlay(alignment: .top) { divider }
+            }
+
+            if !sessions.isEmpty {
+                part(inner.isEmpty ? nil : "This flow's own agents", trailing: inner.isEmpty ? nil : own.price) {
+                    ForEach(sessions, id: \.name) { row in
+                        line(icon: row.icon, name: row.name, usage: row.usage, share: row.usage.cost / whole)
                     }
                 }
-                HStack {
-                    Text("In all").font(.dsMono(Theme.Size.caption, .medium))
-                    Spacer()
-                    Text(total.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
-                    Text(total.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
-                }
-                .padding(.top, 4)
             }
-            .padding(Theme.Space.m)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+
+            if !inner.isEmpty {
+                part("Sub-flows", trailing: inner.reduce(Usage()) { $0 + $1.controller.totalUsage }.price) {
+                    ForEach(inner, id: \.controller.flow.id) { entry in
+                        Button { open(entry.controller) } label: {
+                            line(icon: "arrow.turn.down.right", name: entry.controller.flow.name, usage: entry.controller.totalUsage,
+                                 share: entry.controller.totalUsage.cost / whole, indent: CGFloat(entry.depth) * 12, opens: true)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open \(entry.controller.flow.name) to see its own breakdown")
+                    }
+                }
+            }
 
             let costed = controller.runs.reversed().filter { $0.usage != nil }.prefix(5)
             if !costed.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Recent runs").font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                part("Recent runs", trailing: nil) {
                     ForEach(Array(costed)) { run in
                         HStack {
                             Text("\(RunPicker.label(for: run.started)) · \(run.outcome.rawValue)").font(.dsMono(Theme.Size.caption))
@@ -472,22 +476,85 @@ struct CostBreakdown: View {
                         }
                     }
                 }
-                .padding(Theme.Space.m)
-                .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
             }
 
-            Text("An estimate of what this work would cost if you paid Anthropic by usage. On a Claude subscription you don't pay this, so read it as a measure of how much the flow uses. It updates each time an agent finishes a reply. A run's figure leaves out the orchestrator.")
+            // Inside a sub-flow, the figure above is only this part of something larger.
+            if let outer = services.flowTrail.dropLast().last.flatMap({ id in services.allFlows.first { $0.flow.id == id } }) {
+                Button { services.goBack(to: outer.flow.id) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.turn.left.up").font(.system(size: 10, weight: .medium)).frame(width: 14)
+                        Text("Part of \(outer.flow.name)").font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
+                        Spacer(minLength: Theme.Space.s)
+                        Text("\(outer.usageWithSubflows.price) in all").font(.dsMono(Theme.Size.caption))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, Theme.Space.m)
+                .padding(.vertical, Theme.Space.s)
+                .background(Theme.bar.ui)
+                .overlay(alignment: .top) { divider }
+                .help("Go back to \(outer.flow.name)")
+            }
+
+            Text("An estimate of what this work would cost if you paid Anthropic by usage. On a Claude subscription you don't pay this, so read it as a measure of how much the flow uses. It updates each time an agent finishes a reply. A run's figure covers the agents and sub-flows it used, not the orchestrator.")
                 .font(.dsSans(Theme.Size.caption))
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(Theme.Space.m)
-                .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+                .overlay(alignment: .top) { divider }
         }
         .foregroundStyle(Theme.ink.ui)
-        .frame(width: 300)
+        .frame(width: 320)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         .floatingPanel()
-        .task { await controller.refreshUsage() }
+        .task(id: controller.flow.id) { await controller.refreshUsageWithSubflows() }
+    }
+
+    private var divider: some View { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+
+    /// One titled part of the breakdown, with its subtotal on the right.
+    private func part<Content: View>(_ title: String?, trailing: String?, @ViewBuilder rows: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if let title {
+                HStack {
+                    Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                    Spacer()
+                    if let trailing { Text(trailing).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui) }
+                }
+            }
+            rows()
+        }
+        .padding(Theme.Space.m)
+        .overlay(alignment: .top) { divider }
+    }
+
+    /// One agent or sub-flow: its name, what it used, and a bar for its share of the whole.
+    private func line(icon: String, name: String, usage: Usage, share: Double, indent: CGFloat = 0, opens: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 10, weight: .medium)).frame(width: 14)
+                Text(name).font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
+                if opens { Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui) }
+                Spacer(minLength: Theme.Space.s)
+                Text(usage.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                Text(usage.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
+            }
+            GeometryReader { space in
+                Rectangle().fill(Theme.ink.ui)
+                    .frame(width: max(usage.isZero ? 0 : 2, space.size.width * min(1, max(0, share))), height: 2)
+            }
+            .frame(height: 2)
+        }
+        .padding(.leading, indent)
+        .contentShape(Rectangle())
+    }
+
+    /// Goes into a sub-flow and keeps the breakdown open there.
+    private func open(_ inner: FlowController) {
+        close()
+        services.enter(inner, from: controller)
+        inner.showsCost = true
     }
 }
 

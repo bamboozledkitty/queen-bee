@@ -401,8 +401,39 @@ final class FlowController: ToolHost {
 
     // MARK: Cost
 
-    /// Everything this flow's sessions have used, the orchestrator included.
+    /// Everything this flow's own sessions have used, the orchestrator included.
     var totalUsage: Usage { usage.values.reduce(Usage(), +) }
+
+    /// The flows this one's Flow cards run, each once, in canvas order.
+    var innerFlows: [FlowController] {
+        var seen: Set<String> = []
+        return flow.cards.compactMap(innerFlow(of:)).filter { seen.insert($0.flow.id).inserted }
+    }
+
+    /// Every flow below this one, with how deep it sits. A flow reached twice is listed once.
+    func subflows() -> [(controller: FlowController, depth: Int)] {
+        var seen: Set<String> = [flow.id]
+        var found: [(FlowController, Int)] = []
+        func walk(_ controller: FlowController, _ depth: Int) {
+            for inner in controller.innerFlows where seen.insert(inner.flow.id).inserted {
+                found.append((inner, depth))
+                walk(inner, depth + 1)
+            }
+        }
+        walk(self, 0)
+        return found
+    }
+
+    /// What this flow has used together with every sub-flow below it.
+    var usageWithSubflows: Usage {
+        subflows().reduce(totalUsage) { $0 + $1.controller.totalUsage }
+    }
+
+    /// Reads usage again for this flow and every sub-flow below it.
+    func refreshUsageWithSubflows() async {
+        await refreshUsage()
+        for inner in subflows() { await inner.controller.refreshUsage() }
+    }
 
     /// What a card used in the run on show: the recorded figure for a finished run, or the
     /// running difference while one is going.
@@ -425,13 +456,22 @@ final class FlowController: ToolHost {
     private func recordUsage(forRun id: String) {
         let before = usageAtRunStart
         Task {
-            try? await Task.sleep(for: .seconds(2))
+            // Long enough for a sub-flow that ended just before this run to have costed its own.
+            try? await Task.sleep(for: .seconds(4))
             await self.refreshUsage()
             guard !self.isClosed, let index = self.runs.firstIndex(where: { $0.id == id }) else { return }
             var shares: [String: Usage] = [:]
             for (key, now) in self.usage where key != Self.orchestratorKey {
                 let share = now.since(before[key] ?? Usage())
                 if !share.isZero { shares[key] = share }
+            }
+            // A Flow card's share is what the flow it ran used while this run was going.
+            let run = self.runs[index]
+            for card in self.flow.cards where card.kind == .flow {
+                guard let inner = self.innerFlow(of: card) else { continue }
+                let during = inner.runs.filter { $0.started >= run.started.addingTimeInterval(-1) && $0.started <= run.ended }
+                let share = during.reduce(Usage()) { $0 + $1.cost }
+                if !share.isZero { shares[card.id] = share }
             }
             self.runs[index].usage = shares
             self.saveHistory()
