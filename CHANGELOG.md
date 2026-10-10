@@ -6,6 +6,16 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- An End card can no longer save its answer inside `.git`, `.claude` or `.queenbee`. The orchestrator is refused when it sets such a path, and a flow file that arrives with one shows a warning and saves nothing.
+- The orchestrator's secret is no longer on its session's command line, where any process could list it.
+
+### Changed
+
+- A build from source is its own app, Queen Bee Dev, with its own settings and support folder, so it runs beside an installed copy.
+- `scripts/build.sh` fails when the build fails.
+
 ## [0.3.1] - 2026-10-10
 
 ### Fixed

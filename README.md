@@ -1,6 +1,8 @@
 # Queen Bee
 
-A Mac app for building and running flows of Claude Code agents on a canvas.
+A Mac app for building and running flows of Claude Code agents on a canvas. It needs macOS 26 or later on Apple silicon.
+
+Queen Bee is a work in progress. It is open source, and [contributions are welcome](CONTRIBUTING.md).
 
 Each agent is a live `claude` session in a terminal that sits on the canvas. You can click into any of them and type. Logic cards (If / Else, Switch, And, Or, Prompt, Loop until, Approval, Script, Flow, End) route each agent's finished reply to the next cards. Every flow also has an orchestrator, a Claude Code session docked beside the canvas that can edit the flow, run it and talk to the agents.
 
@@ -50,6 +52,8 @@ You need Xcode 27 and [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew i
 open build/Build/Products/Debug/QueenBee.app
 ```
 
+A build from source is called Queen Bee Dev. It keeps its own settings and support folder, so it can run beside an installed copy without touching it.
+
 ## Use
 
 - **Add Project Folder…** at the foot of the sidebar adds a folder. Each folder lists its flows, and **+** beside its name makes a new one.
@@ -89,7 +93,7 @@ open build/Build/Products/Debug/QueenBee.app
 ## Tests
 
 ```sh
-cd Core && swift test        # 165 unit tests on the model, store, engine, link router, snapping, layout, triggers and tools
+cd Core && swift test        # 174 unit tests on the model, store, engine, link router, snapping, layout, triggers and tools
 ./scripts/e2e.py             # end-to-end: real Claude Code sessions on Haiku, about seven minutes
 ```
 
@@ -106,7 +110,7 @@ The end-to-end script starts a separate test copy of the app with its own suppor
 
 ## Releasing
 
-For maintainers. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, add a section for the version to `CHANGELOG.md`, then:
+For maintainers. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, put the same version in `Plugin/qb-link/.claude-plugin/plugin.json` and in `serverInfo` in `Core/Sources/QueenBeeCore/MCP.swift`, add a section for the version to `CHANGELOG.md`, then:
 
 ```sh
 ./scripts/release.sh            # build, sign, notarize and write appcast.xml, into dist/
@@ -114,6 +118,10 @@ For maintainers. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `pro
 ```
 
 The script's header lists the certificate, notarization profile and update key it needs.
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing and the list of known issues where help is wanted.
 
 ## License
 
