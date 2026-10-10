@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-10
+
 ### Added
 
 - **Approval** cards, which hold a message until you approve, edit or reject it.
@@ -26,22 +28,19 @@ All notable changes to Queen Bee are listed here. The format follows
 - A link's settings list the messages it carried in the run on show.
 - Every run is kept, with its path, answers and messages. The Log tab can put an earlier run back on the canvas.
 - **Run from here** starts a run at any card with a message you give it, and a card a run stopped at can be retried.
-- Cost: each agent's card shows what it used in the run, a figure beside the zoom control shows the flow's total, and clicking it breaks the total down by session and by run.
+- Cost: each agent's card shows what it used in the run, a figure beside the zoom control shows the flow's total, and clicking it breaks the total down by agent, sub-flow and run.
 - Agent roles: an agent's instructions, model, effort and permissions saved under a name and reused from the palette in any flow.
 - A Start card can run on a schedule (every so often, daily, or on chosen days) or when a file or folder in the project changes.
 - Groups: cards framed together under a name, which fold into one card.
 - **Tidy Up** (⇧⌘L) lays a flow out left to right in the order its links run.
 - **Find** (⌘F) goes to a card or flow by name, and a map in the corner shows the whole flow and where the window is looking.
+- Dragging to the edge of the canvas pans it, so a link, a card, a selection box, a resize or a new card from the palette can reach what is out of view.
 
 ### Changed
 
 - Run and Stop are filled, named buttons, and a button that can't be pressed is drawn as a faint outline.
 - A card only shows as live or waiting from run marks while a run is under way.
 - Wording across the app is plainer: settings, tips, warnings and log lines say what happens without the technical terms. The app's own labels, such as an agent's state and Claude Code's option names, are unchanged.
-
-### Added
-
-- Dragging to the edge of the canvas pans it, so a link, a card, a selection box, a resize or a new card from the palette can reach what is out of view.
 
 ## [0.2.0] - 2026-10-09
 
@@ -100,7 +99,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bamboozledkitty/queen-bee/releases/tag/v0.1.0
