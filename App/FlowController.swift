@@ -1080,11 +1080,16 @@ final class FlowController: ToolHost {
         switch event {
         case "SessionStart":
             pluginSpoke.remove(who)
+            askedThisTurn.remove(who)
+        case "SessionEnd":
+            // The turn it asked in never reached its end, so the next one starts clean.
+            askedThisTurn.remove(who)
         case "Stop":
             let reply = payload["last_assistant_message"]?.stringValue ?? ""
             session.lastReply = reply
             routeIfPluginIsSilent(who, reply: reply)
         case "StopFailure":
+            askedThisTurn.remove(who)
             guard isRunning, let engine else { return }
             let name = flow.card(who)?.name ?? who
             markFailed(who)
@@ -1115,7 +1120,6 @@ final class FlowController: ToolHost {
         guard let engine = readyEngine() else { return [] }
         // The answer to a question arrives as a new turn, so this turn's last words aren't the reply.
         let asked = askedThisTurn.remove(who) != nil && isRunning
-        if asked { awaitingAnswer.insert(who) } else { awaitingAnswer.remove(who) }
         return absorb(await engine.agentReplied(flow: flow, cardID: who, text: answer, waitingOnAnswer: asked), sender: who)
     }
 
@@ -1290,6 +1294,7 @@ final class FlowController: ToolHost {
             messages[travel.linkID] = Array(carried.suffix(Self.keptMessagesPerLink))
         }
         output.holds.forEach(take)
+        if output.runID != nil, awaitingAnswer != Set(output.asking) { awaitingAnswer = Set(output.asking) }
         if !output.stalledOn.isEmpty { noteStalled(on: output.stalledOn) }
         scheduleHistorySave()
         if output.finished {

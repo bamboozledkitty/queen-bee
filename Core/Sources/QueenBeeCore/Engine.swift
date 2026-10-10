@@ -97,6 +97,8 @@ public struct RunOutput: Equatable, Sendable {
     /// Agents the run has just come to hang on: each asked a question, has had no answer, and
     /// nothing else is under way. Empty unless this call is what left the run that way.
     public var stalledOn: [String] = []
+    /// Every agent the run is owed a reply from whose last turn ended on a question of its own.
+    public var asking: [String] = []
 
     public init(deliveries: [Delivery] = [], log: [String] = [], results: [EndResult] = [],
                 visits: [CardVisit] = [], holds: [Hold] = [], finished: Bool = false, runID: String? = nil) {
@@ -322,6 +324,7 @@ public actor Engine {
             // A held message is owed too, under its own key, so a run with one is not stalled.
             let stalled = state.pending.isSubset(of: state.asking)
             if stalled, !state.saidStalled { output.stalledOn = state.pending.sorted() }
+            output.asking = state.asking.sorted()
             state.saidStalled = stalled
             run = state
         }

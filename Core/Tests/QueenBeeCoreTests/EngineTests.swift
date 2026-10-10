@@ -183,12 +183,20 @@ actor ScriptedJudge: Judge {
         #expect(asked.deliveries.isEmpty && asked.visits.isEmpty && !asked.finished)
         #expect(asked.log == ["Writer asked a question and is waiting for the answer"])
         // Nobody else is working, so the run now hangs on that answer.
-        #expect(asked.stalledOn == [writer])
+        #expect(asked.stalledOn == [writer] && asked.asking == [writer])
 
         // The answer came, and the turn after it is the reply. The link's one pass is still unspent.
         let out = await engine.agentReplied(flow: flow, cardID: writer, text: "Old pond")
         #expect(out.deliveries.count == 1 && out.deliveries.first?.text.hasSuffix("Old pond") == true)
-        #expect(out.stalledOn.isEmpty)
+        #expect(out.stalledOn.isEmpty && out.asking.isEmpty)
+    }
+
+    @Test func aQuestionFromAnAgentTheRunIsNotWaitingOnChangesNothing() async throws {
+        let flow = try chain()
+        let engine = Engine(judge: ScriptedJudge())
+        _ = await engine.start(flow: flow, startCardID: nil, command: nil)
+        let out = await engine.agentReplied(flow: flow, cardID: try id("Reviewer", in: flow), text: "Asked", waitingOnAnswer: true)
+        #expect(out.log.isEmpty && out.asking.isEmpty && out.stalledOn.isEmpty && !out.finished)
     }
 
     @Test func aRunWithOthersStillWorkingIsNotStalledByAQuestion() async throws {

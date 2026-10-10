@@ -261,6 +261,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private static let fitFloor: CGFloat = 0.05
     /// True while a fit is animating, when the zoom may be on its way below `minZoom`.
     private var isFitting = false
+    /// Counts fits, so one that ends while a later one is still moving doesn't end that one too.
+    private var fitCount = 0
 
     private func publishZoom() {
         // A fit may have gone below the usual floor. Once the zoom is back above it, the floor returns.
@@ -966,6 +968,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         let floor = min(Self.minZoom, max(Self.fitFloor, needed))
         scrollView.minMagnification = floor
         isFitting = true
+        fitCount += 1
+        let thisFit = fitCount
         let zoom = min(atMost ?? scrollView.maxMagnification, scrollView.maxMagnification, max(floor, needed))
         // Held below a full fit, the box is shown in the middle of the room with space round it.
         let shown = CGSize(width: max(box.width, room.width / zoom), height: max(box.height, room.height / zoom))
@@ -978,9 +982,10 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             scrollView.animator().magnify(toFit: inClip(wanted))
         } then: { [weak self] in
             Task { @MainActor in
-                self?.isFitting = false
-                self?.publishZoom()
-                self?.document.needsDisplay = true
+                guard let self, self.fitCount == thisFit else { return }
+                self.isFitting = false
+                self.publishZoom()
+                self.document.needsDisplay = true
             }
         }
     }
