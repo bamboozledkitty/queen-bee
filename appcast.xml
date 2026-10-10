@@ -3,6 +3,22 @@
     <channel>
         <title>QueenBee</title>
         <item>
+            <title>0.3.1</title>
+            <pubDate>Sat, 10 Oct 2026 20:43:32 +0400</pubDate>
+            <link>https://github.com/bamboozledkitty/queen-bee</link>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[
+### Fixed
+
+- The 0.3.0 download contained the 0.2.0 app under a 0.3.0 label, so none of 0.3.0's features were in it and it could not read flows that use the new cards. This release is the real one. Everything listed under 0.3.0 arrives with it.
+- The release script now stops when the build fails, and checks that the app it packages is the one it just built.
+
+]]></description>
+            <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.3.1/QueenBee-0.3.1.dmg" length="11110018" type="application/octet-stream" sparkle:edSignature="oTPWxmIjugFBlhuFut6UrXs6XYMM5Sbonj8P2jRmR2juRve2++B+MFJrwAGmfURcB3jubjgDkjbv6i5VLyNzCQ=="/>
+        </item>
+        <item>
             <title>0.3.0</title>
             <pubDate>Sat, 10 Oct 2026 20:27:44 +0400</pubDate>
             <link>https://github.com/bamboozledkitty/queen-bee</link>
@@ -83,21 +99,6 @@
 
 ]]></description>
             <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.2.0/QueenBee-0.2.0.dmg" length="9612007" type="application/octet-stream" sparkle:edSignature="3IUkIxgtNJq9+ymftlZpfvKi5k3ZqqU8P5Xma0EnsDtW6vrSHfpS2WuSSzEVk6b0YoFKHYcQe6N1P3VoaZRoCQ=="/>
-        </item>
-        <item>
-            <title>0.1.1</title>
-            <pubDate>Fri, 09 Oct 2026 17:42:38 +0400</pubDate>
-            <link>https://github.com/bamboozledkitty/queen-bee</link>
-            <sparkle:version>2</sparkle:version>
-            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[
-### Fixed
-
-- **Queen Bee → Check for Updates…** was always greyed out. It now turns on once the updater is ready.
-
-]]></description>
-            <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.1.1/QueenBee-0.1.1.dmg" length="9098128" type="application/octet-stream" sparkle:edSignature="9vpQm5KKHZ4slf3nBjaPCfcAgonAhY7Ld7d3vwcBZ7sqsTXqPZPFQDAN+CBcYQAU3s8XEMThm+yq56hHlb+IBg=="/>
         </item>
     </channel>
 </rss>
