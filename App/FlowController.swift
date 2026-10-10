@@ -1574,30 +1574,36 @@ final class FlowController: ToolHost {
     }
 
     private func save(_ text: String, to file: String, card: String) {
-        // Symlinks are followed before the check, so a link inside the project can't point the save somewhere else.
+        // Symlinks are followed before the checks, so a link inside the project can't point the save somewhere else.
         let root = project.root.resolvingSymlinksInPath()
-        let url = root.appendingPathComponent(file).standardizedFileURL.resolvingSymlinksInPath()
+        let url = Self.resolvingExistingPart(of: root.appendingPathComponent(file).standardizedFileURL)
         guard url.path.hasPrefix(root.path + "/") else {
             append("\(card) didn't save: \(file) is outside the project folder")
             return
         }
-        // Checked on the path the save would really land on, so a link into one of these folders is caught too.
         guard !Checks.isProtectedSavePath(String(url.path.dropFirst(root.path.count))) else {
             append("\(card) didn't save: \(file) is in a folder Queen Bee doesn't write to")
             return
         }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            // Creating the folders may have gone through a link that didn't resolve while they were missing.
-            guard url.deletingLastPathComponent().resolvingSymlinksInPath().path.hasPrefix(root.path) else {
-                append("\(card) didn't save: \(file) is outside the project folder")
-                return
-            }
             try text.write(to: url, atomically: true, encoding: .utf8)
             append("\(card) saved the answer to \(file)")
         } catch {
             append("\(card) couldn't save to \(file): \(error.localizedDescription)")
         }
+    }
+
+    /// `url` with the symlinks in the part of it that exists followed. A file about to be made doesn't exist yet,
+    /// and a path that doesn't exist is otherwise left as written, links and all.
+    private static func resolvingExistingPart(of url: URL) -> URL {
+        var existing = url
+        var missing: [String] = []
+        while !FileManager.default.fileExists(atPath: existing.path), existing.pathComponents.count > 1 {
+            missing.insert(existing.lastPathComponent, at: 0)
+            existing = existing.deletingLastPathComponent()
+        }
+        return missing.reduce(existing.resolvingSymlinksInPath()) { $0.appendingPathComponent($1) }
     }
 
     private func notifyOrchestrator(of output: RunOutput) {
