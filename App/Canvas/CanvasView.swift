@@ -309,6 +309,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                 context.needsRestart = !controller.settingsAwaitingRestart(forCard: card.id).isEmpty
                 context.isLive = session.state == .working || session.state == .needsYou
                     || (controller.isRunning && context.mark.arrivals > context.mark.passes)
+                if let used = controller.runUsage(forCard: card.id), !used.isZero { context.cost = used.price }
                 agentView.attach(terminal: session.view)
             }
             if !view.isCurrent(card: card, context: context) { view.update(card: card, context: context) }

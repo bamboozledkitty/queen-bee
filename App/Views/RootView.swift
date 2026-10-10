@@ -240,7 +240,19 @@ struct CanvasControls: View {
                 }
             }
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }
-            .overlay(alignment: .bottomTrailing) { ZoomPill(controller: controller) }
+            .overlay(alignment: .bottomTrailing) {
+                VStack(alignment: .trailing, spacing: Theme.Space.s) {
+                    if controller.showsCost {
+                        CostBreakdown(controller: controller) { controller.showsCost = false }
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
+                    HStack(spacing: Theme.Space.s) {
+                        CostPill(controller: controller, showsBreakdown: Binding(get: { controller.showsCost }, set: { controller.showsCost = $0 }))
+                        ZoomPill(controller: controller)
+                    }
+                }
+                .animation(Theme.Motion.standard, value: controller.showsCost)
+            }
             .overlay(alignment: .trailing) {
                 if showsCallout {
                     // Halfway down the panel's edge, clear of a new flow's Start card and the zoom control.

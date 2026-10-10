@@ -7,6 +7,8 @@ final class AgentCardView: CardView {
     private let stateBadge = BadgeLabel()
     /// Shown when the card's settings have changed and the running session doesn't have them yet.
     private let restartBadge = BadgeLabel()
+    /// What the session cost in the run on show.
+    private let costBadge = BadgeLabel()
     private let startButton = NSButton(title: "Start session", target: nil, action: nil)
     private let terminalHolder = FlippedView()
     private weak var terminal: NSView?
@@ -18,6 +20,8 @@ final class AgentCardView: CardView {
         super.init(card: card)
         titleBar.addSubview(stateBadge)
         titleBar.addSubview(restartBadge)
+        titleBar.addSubview(costBadge)
+        costBadge.toolTip = "What this agent used in the run on show, at API prices"
         restartBadge.toolTip = "This card's settings changed after its session started. Restart the session from its settings to apply them."
 
         terminalHolder.wantsLayer = true
@@ -30,7 +34,7 @@ final class AgentCardView: CardView {
         content.addSubview(startButton)
     }
 
-    override var titleAccessories: [NSView] { [stateBadge, restartBadge] }
+    override var titleAccessories: [NSView] { [stateBadge, costBadge, restartBadge] }
 
     func attach(terminal view: NSView) {
         guard terminal !== view else { return }
@@ -53,6 +57,7 @@ final class AgentCardView: CardView {
         stateText = isWaiting ? "waiting" : state.label.lowercased()
         stateBadge.set(stateText, tone: tone)
         restartBadge.set(context.needsRestart ? "restart to apply" : "", tone: .live)
+        costBadge.set(context.cost ?? "", tone: .plain)
         let live = state != .notStarted && state != .exited
         startButton.isHidden = live
         startButton.title = state == .exited ? "Restart session" : "Start session"

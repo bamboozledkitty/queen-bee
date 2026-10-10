@@ -189,6 +189,127 @@ struct ZoomPill: View {
     }
 }
 
+/// What the flow has cost so far, beside the zoom control. Click it for where the cost went.
+struct CostPill: View {
+    let controller: FlowController
+    @Binding var showsBreakdown: Bool
+
+    var body: some View {
+        let total = controller.totalUsage
+        if !total.isZero {
+            Button { showsBreakdown.toggle() } label: {
+                HStack(spacing: 5) {
+                    Text(total.price)
+                        .font(.dsMono(Theme.Size.caption, .medium))
+                        .contentTransition(.numericText())
+                    if controller.isRunning {
+                        Circle().fill(Theme.live.ui).frame(width: 5, height: 5)
+                    }
+                }
+                .foregroundStyle(Theme.ink.ui)
+                .padding(.horizontal, Theme.Space.s)
+                .frame(height: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .floatingPanel()
+            .help("What this flow has used so far, at API prices. Click for the breakdown.")
+            .animation(Theme.Motion.standard, value: total.price)
+        }
+    }
+}
+
+/// Where a flow's cost went: by session, then by run.
+struct CostBreakdown: View {
+    let controller: FlowController
+    let close: () -> Void
+
+    private var sessions: [(name: String, icon: String, usage: Usage)] {
+        var rows: [(String, String, Usage)] = []
+        if let used = controller.usage[FlowController.orchestratorKey], !used.isZero { rows.append(("Orchestrator", "sparkles", used)) }
+        for card in controller.flow.cards where card.kind == .agent {
+            if let used = controller.usage[card.id], !used.isZero { rows.append((card.name, "terminal", used)) }
+        }
+        return rows.sorted { $0.2.cost > $1.2.cost }
+    }
+
+    var body: some View {
+        let total = controller.totalUsage
+        let top = sessions.first?.usage.cost ?? 0
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Cost of this flow").font(.dsMono(Theme.Size.title, .medium))
+                Spacer()
+                Button(action: close) {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 16, height: 16).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.inkSecondary.ui)
+            }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
+            .background(Theme.bar.ui)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(sessions, id: \.name) { row in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Image(systemName: row.icon).font(.system(size: 10, weight: .medium)).frame(width: 14)
+                            Text(row.name).font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
+                            Spacer(minLength: Theme.Space.s)
+                            Text(row.usage.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                            Text(row.usage.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
+                        }
+                        // The bar is this session's share of the most expensive one.
+                        GeometryReader { space in
+                            Rectangle().fill(Theme.ink.ui)
+                                .frame(width: max(2, space.size.width * (top > 0 ? row.usage.cost / top : 0)), height: 2)
+                        }
+                        .frame(height: 2)
+                    }
+                }
+                HStack {
+                    Text("In all").font(.dsMono(Theme.Size.caption, .medium))
+                    Spacer()
+                    Text(total.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                    Text(total.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
+                }
+                .padding(.top, 4)
+            }
+            .padding(Theme.Space.m)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+
+            let costed = controller.runs.reversed().filter { $0.usage != nil }.prefix(5)
+            if !costed.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent runs").font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                    ForEach(Array(costed)) { run in
+                        HStack {
+                            Text("\(RunPicker.label(for: run.started)) · \(run.outcome.rawValue)").font(.dsMono(Theme.Size.caption))
+                            Spacer()
+                            Text(run.cost.price).font(.dsMono(Theme.Size.caption, .medium))
+                        }
+                    }
+                }
+                .padding(Theme.Space.m)
+                .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+            }
+
+            Text("Worked out by Claude Code at API prices. On a Claude plan you aren't billed per token, so read it as a measure of how much the flow uses. A run's figure leaves out the orchestrator.")
+                .font(.dsSans(Theme.Size.caption))
+                .foregroundStyle(Theme.inkSecondary.ui)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(Theme.Space.m)
+                .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+        }
+        .foregroundStyle(Theme.ink.ui)
+        .frame(width: 300)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .floatingPanel()
+        .task { await controller.refreshUsage() }
+    }
+}
+
 /// The run's latest step in one line. Click it for the whole log.
 struct StatusStrip: View {
     let controller: FlowController

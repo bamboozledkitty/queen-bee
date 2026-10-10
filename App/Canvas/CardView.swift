@@ -587,6 +587,8 @@ struct CardContext: Equatable {
     var warning: String?
     var inputCount = 0
     var result: String?
+    /// What the card's session cost in the run on show, like "$0.02". Nil when nothing was used.
+    var cost: String?
     /// What a card holding a message is waiting on, in a few words.
     var waiting: String?
     var sessionState: SessionState = .notStarted

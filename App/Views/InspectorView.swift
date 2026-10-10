@@ -223,6 +223,14 @@ private struct CardSettings: View {
             MenuField(options: [(value: "", label: "Model default")] + ["low", "medium", "high", "xhigh", "max"].map { (value: $0, label: $0) },
                       selection: card.effort ?? "") { v in patch { $0.effort = v } }
         }
+        if let all = controller.usage[card.id], !all.isZero {
+            row("Cost") {
+                let run = controller.runUsage(forCard: card.id)
+                Text(run.map { $0.isZero ? "\(all.price) in all" : "\($0.price) this run · \(all.price) in all" } ?? "\(all.price) in all")
+                    .font(.dsMono(Theme.Size.caption, .medium))
+                    .help("\(all.tokenCount) so far, at API prices. On a Claude plan you aren't billed per token.")
+            }
+        }
         row("Permissions") {
             MenuField(options: [(value: "", label: "Your default"), (value: "manual", label: "Ask each time"),
                                 (value: "acceptEdits", label: "Accept edits"), (value: "plan", label: "Plan only"), (value: "auto", label: "Auto")],

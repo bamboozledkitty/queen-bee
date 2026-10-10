@@ -89,6 +89,10 @@ nonisolated struct RunRecord: Codable, Identifiable, Sendable {
     var linkPasses: [String: Int]
     var messages: [String: [LinkMessage]]
     var handOffs: Int
+    /// What each agent's session used during the run, by card id. Filled in a moment after the run ends.
+    var usage: [String: Usage]?
+
+    var cost: Usage { (usage ?? [:]).values.reduce(Usage(), +) }
 }
 
 /// What a flow's runs left behind, kept between launches: the log, each End card's answer,
@@ -143,6 +147,12 @@ final class FlowController: ToolHost {
     private(set) var runs: [RunRecord] = []
     /// The earlier run the canvas is showing in place of the latest, if any.
     private(set) var viewedRunID: String?
+    /// What each session has used since it was made, by card id, with the orchestrator under its key.
+    private(set) var usage: [String: Usage] = [:]
+    /// Each session's usage when the latest run began, to tell the run's share from the rest.
+    @ObservationIgnored private var usageAtRunStart: [String: Usage] = [:]
+    /// The cost breakdown is open over the canvas.
+    var showsCost = false
     /// The card whose "run from here" box is open in the settings panel.
     var runFromCardID: String?
     @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
@@ -254,6 +264,45 @@ final class FlowController: ToolHost {
         try? data.write(to: historyURL, options: .atomic)
     }
 
+    // MARK: Cost
+
+    /// Everything this flow's sessions have used, the orchestrator included.
+    var totalUsage: Usage { usage.values.reduce(Usage(), +) }
+
+    /// What a card used in the run on show: the recorded figure for a finished run, or the
+    /// running difference while one is going.
+    func runUsage(forCard id: String) -> Usage? {
+        if isRunning || currentRun != nil { return usage[id].map { $0.since(usageAtRunStart[id] ?? Usage()) } }
+        let record = viewedRunID.flatMap { id in runs.first { $0.id == id } } ?? runs.last
+        return record?.usage?[id]
+    }
+
+    /// Reads usage again from the sessions' transcripts: one session's, or all of them.
+    func refreshUsage(_ only: String? = nil) async {
+        var ids: [String: String] = [:]
+        if only == nil || only == Self.orchestratorKey { ids[Self.orchestratorKey] = flow.orchestratorSessionID }
+        for card in flow.cards where card.kind == .agent && (only == nil || only == card.id) { ids[card.id] = card.sessionID }
+        let read = await Task.detached { ids.compactMapValues { UsageReader.usage(sessionID: $0) } }.value
+        for (key, value) in read where usage[key] != value { usage[key] = value }
+    }
+
+    /// A moment after a run ends, once Claude Code has written its totals, the run is given its share.
+    private func recordUsage(forRun id: String) {
+        let before = usageAtRunStart
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            await self.refreshUsage()
+            guard let index = self.runs.firstIndex(where: { $0.id == id }) else { return }
+            var shares: [String: Usage] = [:]
+            for (key, now) in self.usage where key != Self.orchestratorKey {
+                let share = now.since(before[key] ?? Usage())
+                if !share.isZero { shares[key] = share }
+            }
+            self.runs[index].usage = shares
+            self.saveHistory()
+        }
+    }
+
     // MARK: Looking at earlier runs
 
     /// The log on show: an earlier run's when one is being looked at, else everything.
@@ -284,6 +333,7 @@ final class FlowController: ToolHost {
         handOffs = 0
         viewedRunID = nil
         runLogStart = log.count
+        usageAtRunStart = usage
     }
 
     private func finishRecord(_ output: RunOutput) {
@@ -295,6 +345,7 @@ final class FlowController: ToolHost {
                               log: Array(log.dropFirst(runLogStart)), results: results, marks: marks, linkPasses: linkPasses,
                               messages: messages, handOffs: handOffs))
         if runs.count > Self.keptRuns { runs.removeFirst(runs.count - Self.keptRuns) }
+        recordUsage(forRun: run.id)
     }
 
     /// The last message that reached a card in the run on show: what "run from here" starts with.
@@ -327,6 +378,7 @@ final class FlowController: ToolHost {
         Task {
             while services.environment == nil { try? await Task.sleep(for: .milliseconds(100)) }
             startMissingSessions()
+            await refreshUsage()
         }
     }
 
@@ -739,6 +791,13 @@ final class FlowController: ToolHost {
                           flowID: flow.id, cardID: who)
         }
         if event == "Stop", let reply = payload["last_assistant_message"]?.stringValue { session.lastReply = reply }
+        if event == "Stop" || event == "StopFailure" {
+            // The turn's cost reaches the transcript a moment after the hook fires.
+            Task {
+                try? await Task.sleep(for: .milliseconds(1500))
+                await self.refreshUsage(who)
+            }
+        }
         guard who != Self.orchestratorKey else { return }
         switch event {
         case "SessionStart":

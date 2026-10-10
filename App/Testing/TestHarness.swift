@@ -122,6 +122,9 @@ enum TestHarness {
         case "viewRun":
             controller.view(run: payload["run"]?.stringValue)
             return [:]
+        case "showCost":
+            controller.showsCost = true
+            return [:]
         case "selectAll":
             controller.selectAll()
             return [:]
@@ -170,6 +173,7 @@ enum TestHarness {
             "name": .string(controller.flow.name),
             "cards": .array(controller.flow.cards.map { ["name": .string($0.name), "x": .number($0.x), "y": .number($0.y)] }),
             "links": .number(Double(controller.flow.links.count)),
+            "cost": .number(controller.totalUsage.cost),
             "runs": .array(controller.runs.map { ["id": .string($0.id), "outcome": .string($0.outcome.rawValue), "command": .string($0.command)] }),
             "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
             "messages": .number(Double(controller.messages.values.reduce(0) { $0 + $1.count })),
