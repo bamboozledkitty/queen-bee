@@ -18,10 +18,10 @@ struct OnboardingView: View {
     private static let steps = [
         Step(title: "Flows of agents, on a canvas",
              text: "Queen Bee runs Claude Code agents as a flow. Each card does one job, and links carry every finished reply to the cards that come next."),
-        Step(title: "Every agent is a live terminal",
-             text: "An agent card runs its own Claude Code session. Click into one to type, or let the flow hand it work. When it finishes, its reply travels along the link to the next card."),
+        Step(title: "Every agent is a live Claude Code",
+             text: "Each agent card has its own Claude Code running on it, live. Click into one and type, just as you would in any Claude Code window, or let the flow hand it work. When it finishes, its reply travels along the link to the next card."),
         Step(title: "Logic cards decide where a reply goes",
-             text: "If / Else, Switch, Loop until and the rest route each reply. A link turns orange while a message is on it and green once the run has passed, with a count of how many times."),
+             text: "If / Else, Switch, Loop until and the rest decide which card gets each reply next. A link turns orange while a message is travelling along it, and green once the run has been that way, with a count of how many times."),
         Step(title: "The orchestrator builds and runs it",
              text: "Every flow has an orchestrator beside the canvas. Tell it what you want and it lays out the cards, links them, runs the flow and reports back. You can also build by hand from the palette."),
     ]
@@ -181,7 +181,7 @@ private struct ClaudeCheck: View {
             if environment == nil || (environment?.claude != nil && !checked) {
                 Badge(text: "Looking for Claude Code…")
             } else if environment?.claude == nil {
-                Badge(text: "Claude Code isn't installed, or isn't on your PATH", symbol: "xmark", tone: .fail)
+                Badge(text: "Queen Bee can't find Claude Code. Install it, then reopen Queen Bee.", symbol: "xmark", tone: .fail)
             } else if let version, version.compare(ResolvedEnvironment.minimumClaude, options: .numeric) == .orderedAscending {
                 Badge(text: "Claude Code \(version) is too old: update to \(ResolvedEnvironment.minimumClaude) or later", symbol: "xmark", tone: .fail)
             } else if let version {

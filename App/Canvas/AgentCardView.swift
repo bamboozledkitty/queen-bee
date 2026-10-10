@@ -9,7 +9,7 @@ final class AgentCardView: CardView {
     private let restartBadge = BadgeLabel()
     /// What the session cost in the run on show.
     private let costBadge = BadgeLabel()
-    private let startButton = NSButton(title: "Start session", target: nil, action: nil)
+    private let startButton = NSButton(title: "Start agent", target: nil, action: nil)
     private let terminalHolder = FlippedView()
     private weak var terminal: NSView?
     private var stateText = ""
@@ -21,8 +21,8 @@ final class AgentCardView: CardView {
         titleBar.addSubview(stateBadge)
         titleBar.addSubview(restartBadge)
         titleBar.addSubview(costBadge)
-        costBadge.toolTip = "What this agent used in the run on show, at API prices"
-        restartBadge.toolTip = "This card's settings changed after its session started. Restart the session from its settings to apply them."
+        costBadge.toolTip = "An estimate of what this agent's work cost in the run on show"
+        restartBadge.toolTip = "You changed this agent's settings while it was running. Restart it from its settings to use them."
 
         terminalHolder.wantsLayer = true
         content.addSubview(terminalHolder)
@@ -60,7 +60,7 @@ final class AgentCardView: CardView {
         costBadge.set(context.cost ?? "", tone: .plain)
         let live = state != .notStarted && state != .exited
         startButton.isHidden = live
-        startButton.title = state == .exited ? "Restart session" : "Start session"
+        startButton.title = state == .exited ? "Restart agent" : "Start agent"
         super.update(card: new, context: context)
     }
 

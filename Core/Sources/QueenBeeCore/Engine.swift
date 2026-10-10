@@ -308,7 +308,7 @@ public actor Engine {
             let passes = state.passes[link.id, default: 0]
             if passes >= link.maxPasses {
                 let source = flow.card(link.from)?.name ?? "?"
-                output.log.append("Link \(source) → \(target.name) stopped: max passes (\(link.maxPasses)) reached")
+                output.log.append("Link \(source) → \(target.name) stopped: it reached its limit of \(link.maxPasses) for this run")
                 continue
             }
             state.passes[link.id] = passes + 1
@@ -357,7 +357,7 @@ public actor Engine {
             output.log.append("\(message.fromName) → \(card.name)")
             state.pending.insert(card.id)
             if state.deliveries >= Self.maxDeliveries {
-                output.log.append("Run stopped: it reached the limit of \(Self.maxDeliveries) hand-offs")
+                output.log.append("Run stopped: agents had passed \(Self.maxDeliveries) messages, which is the most one run allows")
                 state.hitLimit = true
             }
             return nil

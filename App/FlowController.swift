@@ -981,7 +981,7 @@ final class FlowController: ToolHost {
         session.apply(hook: event, notificationType: type)
         if session.state == .needsYou, !wasWaiting {
             let name = who == Self.orchestratorKey ? "The orchestrator" : flow.card(who)?.name ?? "An agent"
-            Notifier.post(title: "\(name) needs you", body: "In \(flow.name). It is waiting for an answer or a permission.",
+            Notifier.post(title: "\(name) needs you", body: "In \(flow.name). It is waiting for your answer or your go-ahead.",
                           flowID: flow.id, cardID: who)
         }
         if event == "Stop", let reply = payload["last_assistant_message"]?.stringValue { session.lastReply = reply }
@@ -1017,7 +1017,7 @@ final class FlowController: ToolHost {
         Task {
             try? await Task.sleep(for: .seconds(3))
             guard self.isRunning, !self.pluginSpoke.contains(who) else { return }
-            self.append("The session plugin didn't report \(self.flow.card(who)?.name ?? who)'s reply, so the app passed it on")
+            self.append("\(self.flow.card(who)?.name ?? who)'s reply didn't come through the usual way, so Queen Bee passed it on itself")
             self.absorb(await engine.agentReplied(flow: self.flow, cardID: who, text: reply), sender: nil)
         }
     }
@@ -1038,7 +1038,7 @@ final class FlowController: ToolHost {
             guard let to = result["to"]?.stringValue, let delivery = inFlight.removeValue(forKey: to) else { continue }
             if result["isDelivered"]?.boolValue == false {
                 let name = flow.card(delivery.toCardID)?.name ?? delivery.toCardID
-                append("Couldn't message \(name) (\(result["reason"]?.stringValue ?? "no reason given")), so the hand-off was typed in")
+                append("Couldn't message \(name) directly (\(result["reason"]?.stringValue ?? "no reason given")), so the message was typed into its terminal")
                 session(forCard: delivery.toCardID).send(delivery.text)
             }
         }
@@ -1221,8 +1221,8 @@ final class FlowController: ToolHost {
         if pending.kind == .approval {
             Notifier.post(title: "\(card.name) needs your approval", body: String(hold.text.prefix(200)), flowID: flow.id, cardID: card.id)
         } else if pending.needsAllow {
-            append("\(card.name) is waiting for you to allow its command")
-            Notifier.post(title: "\(card.name) needs you", body: "Allow its command to run: \(pending.command.prefix(160))", flowID: flow.id, cardID: card.id)
+            append("\(card.name) is waiting for you to let its command run")
+            Notifier.post(title: "\(card.name) needs you", body: "It wants to run a command you haven't seen: \(pending.command.prefix(160))", flowID: flow.id, cardID: card.id)
         } else {
             runScript(pending)
         }
@@ -1311,7 +1311,7 @@ final class FlowController: ToolHost {
     }
 
     private func runScript(_ hold: PendingHold) {
-        guard let environment = services.environment else { return resolve(hold.id, port: "fail", text: "Claude Code's environment isn't ready.") }
+        guard let environment = services.environment else { return resolve(hold.id, port: "fail", text: "Queen Bee was still starting up.") }
         let folder = project.root
         scriptTasks[hold.id] = Task {
             let result = await ScriptRunner.run(hold.command, message: hold.text, from: hold.from, in: folder, environment: environment)
@@ -1349,7 +1349,7 @@ final class FlowController: ToolHost {
 
     func refuseScript(_ id: String) {
         guard holds.first(where: { $0.id == id })?.kind == .script else { return }
-        resolve(id, port: "fail", text: "The command was not allowed to run.")
+        resolve(id, port: "fail", text: "You chose not to run the command.")
     }
 
     /// The person typed a Script card's command, which also allows it: they wrote it.

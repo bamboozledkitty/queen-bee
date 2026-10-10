@@ -51,7 +51,7 @@ struct SidebarView: View {
                                 .foregroundStyle(Theme.failInk.ui)
                                 .padding(.horizontal, Theme.Space.s)
                                 .padding(.vertical, 4)
-                                .help("This file isn't a flow Queen Bee can read. It is left untouched.")
+                                .help("Queen Bee can't read this file as a flow, so it has left it alone.")
                         }
                     }
                 }
@@ -76,7 +76,7 @@ struct SidebarView: View {
                 deleting = nil
             }
         } message: {
-            Text("Its sessions are stopped and its file is removed. The agents' chats stay in Claude Code's history.")
+            Text("Its agents are stopped and the flow is removed. What the agents said stays in Claude Code's history.")
         }
     }
 
@@ -129,7 +129,7 @@ struct SidebarView: View {
         .contextMenu {
             Button("Rename") { draftName = controller.flow.name; renaming = id }
             Button(services.pinnedFlowIDs.contains(id) ? "Unpin" : "Pin") { services.togglePin(id) }
-            Button("Stop Its Sessions") { controller.shutDown() }
+            Button("Stop Its Agents") { controller.shutDown() }
             Divider()
             Button("Delete…", role: .destructive) { deleting = controller }
         }

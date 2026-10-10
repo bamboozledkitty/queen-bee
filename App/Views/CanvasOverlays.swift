@@ -135,7 +135,7 @@ enum CardHelp {
     static func text(for kind: CardKind) -> (what: String, example: String) {
         switch kind {
         case .agent:
-            ("A live Claude Code session that does one job. It is given a message, does the work, and its reply goes to whatever it is linked to.",
+            ("A live Claude Code agent that does one job. It is given a message, does the work, and its reply goes to whatever it is linked to.",
              "A Writer drafts a slogan, and the draft goes on to a Reviewer.")
         case .start:
             ("Where a run begins. It holds the first message and sends it when you press Run.",
@@ -394,7 +394,7 @@ struct CostPill: View {
             }
             .buttonStyle(.plain)
             .floatingPanel()
-            .help("What this flow has used so far, at API prices. Click for the breakdown.")
+            .help("An estimate of what this flow's work has cost so far. Click to see where it went.")
             .animation(Theme.Motion.standard, value: total.price)
         }
     }
@@ -438,8 +438,8 @@ struct CostBreakdown: View {
                             Image(systemName: row.icon).font(.system(size: 10, weight: .medium)).frame(width: 14)
                             Text(row.name).font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
                             Spacer(minLength: Theme.Space.s)
-                            Text(row.usage.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                             Text(row.usage.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
+                                .help(row.usage.tokenCount)
                         }
                         // The bar is this session's share of the most expensive one.
                         GeometryReader { space in
@@ -452,8 +452,8 @@ struct CostBreakdown: View {
                 HStack {
                     Text("In all").font(.dsMono(Theme.Size.caption, .medium))
                     Spacer()
-                    Text(total.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                     Text(total.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
+                        .help(total.tokenCount)
                 }
                 .padding(.top, 4)
             }
@@ -476,7 +476,7 @@ struct CostBreakdown: View {
                 .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
             }
 
-            Text("Worked out by Claude Code at API prices. On a Claude plan you aren't billed per token, so read it as a measure of how much the flow uses. A run's figure leaves out the orchestrator.")
+            Text("An estimate of what this work would cost if you paid Anthropic by usage, as Claude Code works it out. On a Claude subscription you don't pay this, so read it as a measure of how much the flow uses. A run's figure leaves out the orchestrator.")
                 .font(.dsSans(Theme.Size.caption))
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
@@ -507,7 +507,7 @@ struct StatusStrip: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if controller.handOffs > 0 {
-                        Text("\(controller.handOffs) hand-offs")
+                        Text("\(controller.handOffs) \(controller.handOffs == 1 ? "message" : "messages") passed")
                             .foregroundStyle(Theme.inkSecondary.ui)
                             .contentTransition(.numericText())
                     }
@@ -521,7 +521,7 @@ struct StatusStrip: View {
             }
             .buttonStyle(.plain)
             .floatingPanel()
-            .help("Show the run log")
+            .help("Show everything the run has done")
             .animation(Theme.Motion.standard, value: controller.handOffs)
         }
     }
@@ -574,7 +574,7 @@ struct OrchestratorCallout: View {
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .help("Build it by hand")
                 }
-                Text(isOff ? "The orchestrator builds it on the canvas, but its session isn't running."
+                Text(isOff ? "The orchestrator builds it on the canvas, but it isn't running yet."
                            : "Tell the orchestrator and it builds it here. Or drag cards in from the palette.")
                     .font(.dsSans(Theme.Size.caption))
                     .foregroundStyle(Theme.inkSecondary.ui)

@@ -74,7 +74,7 @@ struct SidePanel: View {
                     Button("Clear") { controller.clearLog() }
                         .buttonStyle(.panel(.quiet))
                         .padding(.trailing, Theme.Space.s)
-                        .help("Empty the log. Runs are kept here between launches.")
+                        .help("Clear the log and the list of earlier runs")
                 }
             }
             .background(Theme.bar.ui)
@@ -147,7 +147,7 @@ struct RunPicker: View {
             ForEach(controller.runs.reversed()) { run in
                 let isShown = controller.viewedRunID == run.id || (controller.viewedRunID == nil && run.id == controller.runs.last?.id)
                 Toggle(isOn: Binding(get: { isShown }, set: { _ in controller.view(run: run.id) })) {
-                    Text("\(Self.label(for: run.started)) · \(run.outcome.rawValue) · \(run.handOffs) hand-offs")
+                    Text("\(Self.label(for: run.started)) · \(run.outcome.rawValue) · \(run.handOffs) \(run.handOffs == 1 ? "message" : "messages") passed")
                     Text(run.command)
                 }
             }
@@ -185,7 +185,7 @@ private struct LogList: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if controller.shownLog.isEmpty {
-                        Text("Runs are logged here: each hand-off, each condition's answer, and why a run stopped. The log is kept between launches.")
+                        Text("What each run did shows here, step by step: who passed what to whom, which way each decision went, and why a run stopped.")
                             .font(.dsSans(Theme.Size.body))
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }

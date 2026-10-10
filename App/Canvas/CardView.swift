@@ -18,7 +18,7 @@ final class PortDotView: NSView {
         wantsLayer = true
         dot.lineWidth = Theme.Stroke.card
         layer?.addSublayer(dot)
-        toolTip = isOutput ? "\(portLabel(port)): drag to another card to link" : "Input"
+        toolTip = isOutput ? "\(portLabel(port)): drag from here to another card to link them" : "Messages arrive here"
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
@@ -453,7 +453,7 @@ class CardView: NSView {
             menu.addItem(menuItem("Zoom to Card") { [weak canvas] in canvas?.zoom(toCard: id) })
             if card.kind == .agent {
                 let isLive = controller.session(forCard: id).isLive
-                menu.addItem(menuItem(isLive ? "Restart Session" : "Start Session") { [weak controller] in controller?.startSession(forCard: id) })
+                menu.addItem(menuItem(isLive ? "Restart Agent" : "Start Agent") { [weak controller] in controller?.startSession(forCard: id) })
             }
             menu.addItem(.separator())
         }

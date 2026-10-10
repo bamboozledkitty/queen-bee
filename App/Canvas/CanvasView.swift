@@ -316,7 +316,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
                 context.isLive = true
                 context.waiting = hold.kind == .approval ? "Waiting for you to approve"
                     : hold.kind == .flow ? "Running \(hold.command)…"
-                    : hold.needsAllow ? "Waiting for you to allow its command" : "Running its command…"
+                    : hold.needsAllow ? "Waiting for you to let its command run" : "Running its command…"
             }
             context.mark = controller.marks[card.id] ?? RunMark()
             context.isRunning = controller.isRunning

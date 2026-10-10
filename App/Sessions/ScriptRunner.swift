@@ -38,7 +38,7 @@ enum ScriptRunner {
         } catch is CancellationError {
             return (false, "The command was stopped before it finished.")
         } catch {
-            return (false, "The command couldn't be run: \(error.localizedDescription)")
+            return (false, "The command couldn't be started: \(error.localizedDescription)")
         }
     }
 

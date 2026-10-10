@@ -15,7 +15,7 @@ struct SettingsView: View {
             .onChange(of: mode) { Theme.apply(Theme.Mode(rawValue: mode) ?? .system) }
 
             Picker("New agents run on", selection: $defaultModel) {
-                Text("Your Claude Code default").tag("")
+                Text("Your usual model").tag("")
                 ForEach(["fable", "opus", "sonnet", "haiku"], id: \.self) { Text($0.capitalized).tag($0) }
             }
 
@@ -27,7 +27,7 @@ struct SettingsView: View {
                 } else if services.environment == nil {
                     Text("Looking…").foregroundStyle(.secondary)
                 } else {
-                    Text("Not found on your PATH").foregroundStyle(Theme.failInk.ui)
+                    Text("Not found. Install Claude Code, then reopen Queen Bee.").foregroundStyle(Theme.failInk.ui)
                 }
             }
         }

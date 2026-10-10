@@ -125,7 +125,7 @@ final class AppServices {
             let resolved = await ResolvedEnvironment.resolve()
             self.environment = resolved
             if resolved.claude == nil {
-                self.problem = "Claude Code isn't installed, or `claude` isn't on your PATH. Install it from claude.com/claude-code, then reopen Queen Bee."
+                self.problem = "Queen Bee can't find Claude Code. Install it from claude.com/claude-code, then reopen Queen Bee."
             }
         }
     }
@@ -140,7 +140,7 @@ final class AppServices {
         do {
             try fm.copyItem(at: bundled, to: pluginDirectory)
         } catch {
-            problem = "Couldn't install the session plugin: \(error.localizedDescription)"
+            problem = "Queen Bee couldn't set up the link between its agents: \(error.localizedDescription)"
         }
     }
 
@@ -162,7 +162,7 @@ final class AppServices {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "Trust the flows in “\(root.lastPathComponent)”?"
-            alert.informativeText = "This folder already has Queen Bee flows in it. Opening them starts Claude Code sessions with the instructions, working folders and permission settings saved in those files. Only continue if you trust where this folder came from."
+            alert.informativeText = "This folder already has Queen Bee flows in it. Opening them starts Claude Code agents that follow the instructions saved in those files, with the permissions those files give them. Only continue if you trust where this folder came from."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Trust and Open")
             guard alert.runModal() == .alertSecondButtonReturn else { return false }
@@ -281,7 +281,7 @@ final class AppServices {
                     try await connection.send(Wire.frame(reply.data()))
                 }
             } catch {
-                await MainActor.run { AppServices.shared.problem = "Couldn't open the app's socket: \(error.localizedDescription)" }
+                await MainActor.run { AppServices.shared.problem = "Queen Bee couldn't start listening for its agents: \(error.localizedDescription)" }
             }
         }
     }

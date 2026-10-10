@@ -92,9 +92,9 @@ final class LogicCardView: CardView {
         let mark = context.mark
         switch card.kind {
         case .and where mark.holding > 0:
-            return "Waiting: \(mark.holding) of \(context.inputCount) in"
+            return "Waiting: \(mark.holding) of \(context.inputCount) have answered"
         case .or where mark.passes > 0 && mark.holding > 0:
-            return "Passed 1 on, dropped \(mark.holding)"
+            return "Passed the first on, ignored \(mark.holding)"
         default:
             return nil
         }
@@ -125,8 +125,8 @@ enum CardSummary {
             return card.trigger.map { "\(command)\n\($0.summary)" } ?? command
         case .ifElse: return check(card)
         case .switchCard: return "Claude picks one of \((card.branches ?? []).count) branches"
-        case .and: return "Waits for all \(inputs) inputs"
-        case .or: return "Passes on the first of \(inputs)"
+        case .and: return "Waits for all \(inputs) linked cards"
+        case .or: return "Passes on the first of \(inputs) to answer"
         case .prompt:
             let first = (card.template ?? "").split(separator: "\n").first.map(String.init) ?? ""
             return first.isEmpty ? "Passes the message on" : first
@@ -148,7 +148,7 @@ enum CardSummary {
 
     private static func check(_ card: Card) -> String {
         let value = (card.value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return "Set its condition" }
+        guard !value.isEmpty else { return "Say what to check" }
         switch card.check ?? .judge {
         case .judge: return "\(value)?"
         case .contains: return "Has \"\(value)\""

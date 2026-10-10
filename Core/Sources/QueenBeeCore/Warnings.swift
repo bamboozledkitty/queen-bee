@@ -37,7 +37,7 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
         if (card.branches ?? []).isEmpty { return "Add a branch" }
     case .and:
         // An And waits for one message per card that links in, so two links from one card are one input.
-        if Set(incoming.map(\.from)).count < 2 { return "Needs 2+ inputs" }
+        if Set(incoming.map(\.from)).count < 2 { return "Link in 2 or more cards" }
     case .approval:
         if nothing(on: "approved") { return "Nothing on Approved" }
     case .script:
@@ -50,8 +50,8 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
         break
     }
 
-    if incoming.isEmpty { return "Nothing links in" }
-    if circling { return "Circles with no agent" }
+    if incoming.isEmpty { return "Nothing is linked to it" }
+    if circling { return "Goes round with no agent" }
     return nil
 }
 

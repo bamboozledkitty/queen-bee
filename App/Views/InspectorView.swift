@@ -46,7 +46,7 @@ private struct CardSettings: View {
             switch card.kind {
             case .agent: agent
             case .start:
-                EditorField("Command the run begins with", text: card.command ?? "") { v in patch { $0.command = v } }
+                EditorField("What the run starts with", text: card.command ?? "") { v in patch { $0.command = v } }
                 TriggerSettings(controller: controller, card: card)
             case .ifElse:
                 condition
@@ -64,12 +64,12 @@ private struct CardSettings: View {
                     let names = v.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
                     patch { $0.branches = names }
                 }
-                note("Claude picks the branch a message belongs to. Anything else goes out Other.")
+                note("Claude reads each message and sends it down the branch it fits best. A message that fits none of them goes out Other.")
             case .prompt:
                 EditorField("Rewrite the message as", text: card.template ?? "") { v in patch { $0.template = v } }
-                note("{{message}} is what came in and {{from}} is who sent it. Without {{message}}, the message is added underneath.")
+                note("Write {{message}} where the incoming message should go, and {{from}} for the name of the card it came from. If you leave {{message}} out, the message is added at the end.")
             case .end:
-                LineField("Save the answer to a file", placeholder: "output/answer.md", text: card.saveTo ?? "") { v in patch { $0.saveTo = v } }
+                LineField("Save the answer to a file (optional)", placeholder: "output/answer.md", text: card.saveTo ?? "") { v in patch { $0.saveTo = v } }
                 if let result = controller.results[card.id] {
                     section {
                         field("Latest answer") {
@@ -82,9 +82,9 @@ private struct CardSettings: View {
                     }
                 }
             case .and:
-                note("Waits until every card linked into it has replied in this run, then passes their answers on together.")
+                note("Waits until every card linked into it has answered, then passes all their answers on together.")
             case .or:
-                note("Passes on the first reply in a run and drops later ones.")
+                note("Passes on whichever answer arrives first in a run and ignores the rest.")
             case .note:
                 EditorField("Note", text: card.text ?? "") { v in patch { $0.text = v } }
             case .approval:
@@ -102,10 +102,11 @@ private struct CardSettings: View {
                     MenuField(options: [(value: "", label: "Choose a flow")] + others.map { (value: $0.flow.id, label: $0.flow.name) },
                               selection: card.flowRef ?? "") { v in patch { $0.flowRef = v } }
                 }
-                note("Runs another flow in this project as one step. The message becomes that flow's command, and what reaches its End cards comes out Done. If that flow stops or fails, the message goes out Fail.")
+                note("Runs another of this project's flows as a single step. That flow starts with the message that arrives here, and its final answer comes out Done. If it stops early or fails, the message goes out Fail.")
             case .script:
                 EditorField("Command", text: card.command ?? "", mono: true) { v in controller.setScriptCommand(card.id, v) }
-                note("Runs in the project folder. The message arrives on standard input and in $QB_MESSAGE. Exit code 0 goes out Pass, anything else Fail, and what the command printed is passed on.")
+                    .help("For scripts that need it: the incoming message is in $QB_MESSAGE and on standard input, and the sender's name is in $QB_FROM.")
+                note("Runs this command in the project's folder, as if you had typed it in Terminal. If the command succeeds, the run carries on from Pass. If it fails, from Fail. Whatever the command prints is what gets passed on.")
                 if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
                     ScriptReview(controller: controller, hold: hold)
                         .id(hold.id)
@@ -141,7 +142,7 @@ private struct CardSettings: View {
             if !pending.isEmpty {
                 // The session is still running on what it was started with. Say so beside
                 // the buttons that settle it.
-                Text("Not applied yet. The running session keeps its old \(Self.list(pending)) until it restarts.")
+                Text("Not in use yet. The agent keeps working with its old \(Self.list(pending)) until you restart it.")
                     .font(.dsSans(Theme.Size.caption))
                     .foregroundStyle(Theme.liveInk.ui)
                     .fixedSize(horizontal: false, vertical: true)
@@ -195,21 +196,21 @@ private struct CardSettings: View {
             if acceptsInput(card), controller.runFromCardID != card.id {
                 Button("Run from here…") { controller.runFromCardID = card.id }
                     .buttonStyle(.panel(.quiet))
-                    .help("Start a run at this card with a message you give it, without running what comes before")
+                    .help("Start a run at this card with a message you give it, skipping everything that comes before")
             }
             if card.kind == .agent {
                 let session = controller.session(forCard: card.id)
                 if pending.isEmpty {
                     Button(session.isLive ? "Restart" : "Start") { controller.startSession(forCard: card.id) }
                         .buttonStyle(.panel())
-                        .help(session.isLive ? "Restart the session. Its conversation is kept." : "Start the session with these settings")
+                        .help(session.isLive ? "Restart the agent. It keeps its conversation so far." : "Start the agent with these settings")
                 } else {
                     Button("Undo") { controller.revertSettings(forCard: card.id) }
                         .buttonStyle(.panel())
-                        .help("Put these settings back to what the running session has")
+                        .help("Put these settings back to what the agent is using now")
                     Button("Restart to apply") { controller.startSession(forCard: card.id) }
                         .buttonStyle(.panel(.live))
-                        .help(session.state == .working ? "Restarting interrupts what the agent is doing now. Its conversation is kept." : "The agent's conversation is kept.")
+                        .help(session.state == .working ? "Restarting interrupts what the agent is doing now. It keeps its conversation so far." : "The agent keeps its conversation so far.")
                 }
             }
         }
@@ -225,25 +226,29 @@ private struct CardSettings: View {
         row("Model") {
             let known = ["fable", "opus", "sonnet", "haiku"]
             let custom = (card.model ?? "").isEmpty || known.contains(card.model ?? "") ? [] : [(value: card.model ?? "", label: card.model ?? "")]
-            MenuField(options: [(value: "", label: "Your default")] + known.map { (value: $0, label: $0.capitalized) } + custom,
+            MenuField(options: [(value: "", label: "Your usual model")] + known.map { (value: $0, label: $0.capitalized) } + custom,
                       selection: card.model ?? "") { v in patch { $0.model = v } }
         }
         row("Effort") {
-            MenuField(options: [(value: "", label: "Model default")] + ["low", "medium", "high", "xhigh", "max"].map { (value: $0, label: $0) },
+            MenuField(options: [(value: "", label: "The model's usual"), (value: "low", label: "Low"), (value: "medium", label: "Medium"),
+                                (value: "high", label: "High"), (value: "xhigh", label: "Very high"), (value: "max", label: "Maximum")],
                       selection: card.effort ?? "") { v in patch { $0.effort = v } }
+                .help("How hard the agent thinks before it answers. Higher is slower and uses more.")
         }
         if let all = controller.usage[card.id], !all.isZero {
             row("Cost") {
                 let run = controller.runUsage(forCard: card.id)
                 Text(run.map { $0.isZero ? "\(all.price) in all" : "\($0.price) this run · \(all.price) in all" } ?? "\(all.price) in all")
                     .font(.dsMono(Theme.Size.caption, .medium))
-                    .help("\(all.tokenCount) so far, at API prices. On a Claude plan you aren't billed per token.")
+                    .help("An estimate of what this agent's work would cost if you paid Anthropic by usage (\(all.tokenCount) so far). On a Claude subscription you don't pay this.")
             }
         }
         row("Permissions") {
-            MenuField(options: [(value: "", label: "Your default"), (value: "manual", label: "Ask each time"),
-                                (value: "acceptEdits", label: "Accept edits"), (value: "plan", label: "Plan only"), (value: "auto", label: "Auto")],
+            MenuField(options: [(value: "", label: "Your usual setting"), (value: "manual", label: "Ask before each action"),
+                                (value: "acceptEdits", label: "Edit files without asking"), (value: "plan", label: "Plan only, change nothing"),
+                                (value: "auto", label: "Decide for itself")],
                       selection: card.permissionMode ?? "") { v in patch { $0.permissionMode = v } }
+                .help("What the agent may do without stopping to ask you first")
         }
     }
 
@@ -273,7 +278,7 @@ private struct CardSettings: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("A role is this agent's instructions, model, effort and permissions saved under a name, to reuse in any flow")
+            .help("A role is an agent's settings saved under a name, so you can make more agents like it in any flow")
         }
         if let current, !current.matches(card) {
             HStack(spacing: Theme.Space.s) {
@@ -286,7 +291,7 @@ private struct CardSettings: View {
                     .help("Put this card back to what the role holds")
                 Button("Update role") { controller.saveRole(fromCard: card.id) }
                     .buttonStyle(.panel())
-                    .help("Save this card's settings into the role. Other cards with the role can then take them with Reset.")
+                    .help("Save this card's settings into the role. Other agents with the same role can then take them with Reset.")
             }
             .padding(.horizontal, Theme.Space.m)
             .padding(.bottom, 6)
@@ -302,11 +307,11 @@ private struct CardSettings: View {
     @ViewBuilder private var condition: some View {
         let check = card.check ?? .judge
         row("Check") {
-            MenuField(options: [(value: CheckKind.judge, label: "Claude judges"), (value: .contains, label: "Contains"),
-                                (value: .notContains, label: "Doesn't contain"), (value: .regex, label: "Matches a pattern")],
+            MenuField(options: [(value: CheckKind.judge, label: "Ask Claude"), (value: .contains, label: "Message contains"),
+                                (value: .notContains, label: "Message doesn't contain"), (value: .regex, label: "Matches a pattern")],
                       selection: check) { v in patch { $0.check = v } }
         }
-        LineField(check == .judge ? "Statement, in plain English" : "Text or pattern",
+        LineField(check == .judge ? "What should be true of the message?" : check == .regex ? "Pattern (a regular expression)" : "Text to look for",
                   placeholder: check == .judge ? "The review approves the draft" : "APPROVED",
                   text: card.value ?? "", lines: 1...4) { v in patch { $0.value = v } }
     }
@@ -347,11 +352,11 @@ private struct ApprovalReview: View {
             HStack(spacing: Theme.Space.s) {
                 Button("Reject") { controller.reject(hold.id) }
                     .buttonStyle(.panel())
-                    .help("Send the message out the Rejected output, as it arrived")
+                    .help("Send the message on along the Rejected link, unchanged")
                 Spacer()
                 Button(draft == hold.text ? "Approve" : "Approve edited") { controller.approve(hold.id, text: draft) }
                     .buttonStyle(.panel(.live))
-                    .help("Send the message out the Approved output")
+                    .help("Send the message on along the Approved link")
             }
         }
         .foregroundStyle(Theme.liveInk.ui)
@@ -372,7 +377,7 @@ private struct ScriptReview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             if hold.needsAllow {
-                Text("You didn't type this command, so it hasn't run. Read it, then allow it or fail the step.")
+                Text("You didn't write this command yourself, so it is waiting for you. Read it, then let it run or skip it.")
                     .font(.dsSans(Theme.Size.caption))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(hold.command)
@@ -383,12 +388,12 @@ private struct ScriptReview: View {
                     .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
                     .foregroundStyle(Theme.ink.ui)
                 HStack(spacing: Theme.Space.s) {
-                    Button("Fail the step") { controller.refuseScript(hold.id) }
+                    Button("Don't run") { controller.refuseScript(hold.id) }
                         .buttonStyle(.panel())
                     Spacer()
                     Button("Allow and run") { controller.allowScript(hold.id) }
                         .buttonStyle(.panel(.live))
-                        .help("Runs the command now, and lets this card run it in later runs until it changes")
+                        .help("Runs the command now. This card won't ask again unless the command changes.")
                 }
             } else {
                 Text("Running its command…")
@@ -465,12 +470,12 @@ private struct TriggerSettings: View {
 
             if controller.isArmed(card) {
                 note(trigger.kind == .file
-                     ? "A run starts when it changes, with the file's name added to the command. Queen Bee has to be open, and a change made while a run is going doesn't start another."
+                     ? "A run starts whenever it changes, and is told which file changed. Queen Bee has to be open, and a change made while a run is going doesn't start another."
                      : "\(controller.nextFires[card.id].map { "Next: \(Self.when($0)). " } ?? "")Queen Bee has to be open for it to run. A run that falls due while another is going is skipped.")
             } else {
                 // A schedule that came in the flow's file, or from an undo, hasn't been agreed to here.
                 HStack(spacing: Theme.Space.s) {
-                    Text("This schedule is off. It wasn't set on this Mac.")
+                    Text("This schedule came with the flow and is switched off until you agree to it.")
                         .font(.dsSans(Theme.Size.caption))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -680,10 +685,10 @@ private struct LinkSettings: View {
             .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Space.s)
             .background(Theme.bar.ui)
-            row("Most passes per run") {
+            row("Limit per run") {
                 StepField(value: link.maxPasses, range: 1...50) { controller.setMaxPasses(link.id, $0) }
             }
-            note("A link stops passing messages once it has fired this many times in one run, so loops always end.")
+            note("This link carries at most this many messages in one run. The limit is what stops a loop from going round for ever.")
             LinkMessages(messages: controller.messages[link.id] ?? [])
             HStack {
                 Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }

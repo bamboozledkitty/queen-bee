@@ -114,7 +114,7 @@ struct WorkspaceView: View {
     private var subtitle: String {
         guard let controller = services.current else { return "" }
         let project = controller.project.name
-        if controller.isRunning { return "\(project) · running, \(controller.handOffs) hand-offs" }
+        if controller.isRunning { return "\(project) · running, \(controller.handOffs) \(controller.handOffs == 1 ? "message" : "messages") passed" }
         return project
     }
 
@@ -153,7 +153,7 @@ struct WorkspaceView: View {
                         .help("Run the flow from its Start card")
                 }
                 Button { showsPanel.toggle() } label: { Label("Panel", systemImage: "sidebar.trailing") }
-                    .help("Show or hide the orchestrator, log and output")
+                    .help("Show or hide the orchestrator, the log and the run's output")
             }
         }
     }
@@ -164,7 +164,7 @@ struct WorkspaceView: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Add"
-        panel.message = "Flows are kept in a .queenbee folder inside the project, and agents work in the project folder."
+        panel.message = "Choose the folder your agents should work in. Your flows are saved inside it."
         if panel.runModal() == .OK, let url = panel.url, AppServices.shared.confirmTrust(url) {
             let project = AppServices.shared.addProject(url)
             if project.controllers.isEmpty { project.newFlow() }
@@ -299,7 +299,7 @@ struct WelcomeView: View {
             Text("Queen Bee")
                 .font(.dsMono(22, .medium))
                 .foregroundStyle(Theme.ink.ui)
-            Text("Add a project folder to start. Its flows are kept in a .queenbee folder inside it, and agents work in that folder.")
+            Text("To start, choose the folder your agents should work in. Queen Bee saves your flows inside it.")
                 .font(.dsSans(Theme.Size.title))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.inkSecondary.ui)
