@@ -316,7 +316,8 @@ public enum Tools {
             description: """
             Link one card's output to another card's input, so messages travel that way during a run. Output names: \
             agent, start, and, or and prompt cards have out; if has yes and no; loop has done and again; switch has \
-            one per branch plus other. Leave port out to use the card's first output. Start and note cards take no \
+            one per branch plus other; approval has approved and rejected; script has pass and fail; flow has done \
+            and fail. Leave port out to use the card's first output. Start and note cards take no \
             input, end and note cards have no outputs, and a card cannot link to itself. max_passes is how many \
             times the link may fire in one run, which is what makes a loop between cards end.
             """,
@@ -383,7 +384,7 @@ public enum Tools {
         "max_tries": ["type": "integer", "minimum": 1, "maximum": 50, "description": "loop: tries before it gives up and takes done. Defaults to 3."],
         "branches": ["type": "array", "items": ["type": "string"], "description": "switch: the branch names. Each one becomes an output."],
         "template": ["type": "string", "description": "prompt: the rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from."],
-        "save_to": ["type": "string", "description": "end: a file to save the final answer to, relative to the project folder."],
+        "save_to": ["type": "string", "description": "end: a file to save the final answer to, relative to the project folder. Not inside .git, .claude or .queenbee."],
         "text": ["type": "string", "description": "note: the note's text. approval: what the person should check before approving."],
         "flow": ["type": "string", "description": "flow: the name of the flow to run, one of other_flows from get_flow."],
     ]
