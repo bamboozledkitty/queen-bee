@@ -10,6 +10,8 @@ Claude Code sessions on Haiku, and checks what the app did.
 
 Scenarios: guard, settings, scroll, pan, fanout, switch, loop, exit, apifail, noclaude.
 """
+import atexit
+import glob
 import json
 import os
 import shutil
@@ -23,7 +25,9 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "build/Build/Products/Debug/QueenBee.app")
 # Unix socket paths are capped at 104 bytes, so the test copy's support folder has to be short.
-SUPPORT = os.path.expanduser("~/Library/Application Support/QueenBeeTest")
+# Each run has its own, named for its process, so two runs at once leave each other alone.
+SUPPORT_PREFIX = os.path.expanduser("~/Library/Application Support/QBTest-")
+SUPPORT = SUPPORT_PREFIX + str(os.getpid())
 
 results = []
 
@@ -61,7 +65,7 @@ class App:
         self.project = project
         self.support = support
         shutil.rmtree(support, ignore_errors=True)
-        before = set(pids())
+        atexit.register(shutil.rmtree, support, ignore_errors=True)
         cmd = ["open", "-g", "-n", APP, "--env", f"QB_SUPPORT_DIR={support}"]
         for k, v in (env or {}).items():
             cmd += ["--env", f"{k}={v}"]
@@ -71,9 +75,9 @@ class App:
         deadline = time.time() + 30
         self.pid = None
         while time.time() < deadline:
-            new = set(pids()) - before
-            if new and os.path.exists(os.path.join(support, "qb.sock")):
-                self.pid = new.pop()
+            mine = [p for p in pids() if uses(p, support)]
+            if mine and os.path.exists(os.path.join(support, "qb.sock")):
+                self.pid = mine[0]
                 break
             time.sleep(0.3)
         if self.pid is None:
@@ -122,6 +126,30 @@ class App:
 def pids():
     out = subprocess.run(["pgrep", "-x", "QueenBee"], capture_output=True, text=True).stdout.split()
     return [int(p) for p in out]
+
+
+def uses(pid, support):
+    """Whether a copy of the app was started on this support folder. Another run's copy never is."""
+    out = subprocess.run(["ps", "eww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+    return f"QB_SUPPORT_DIR={support} " in out + " "
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
+
+
+def sweep():
+    """Removes the folders of runs that died without tidying up. A run that is still going keeps its own."""
+    for folder in glob.glob(SUPPORT_PREFIX + "*"):
+        owner = os.path.basename(folder)[len("QBTest-"):].split("-")[0]
+        if owner.isdigit() and not alive(int(owner)):
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 # ---- building flows ----
@@ -506,9 +534,11 @@ def scenario_gates(app):
     app.op(fid, "run")
     h = held(app, fid, "Check it")
     check("an allowed command runs without asking again", h[0]["card"] == "Check it" and not h[0]["needsAllow"], str(h))
-    app.op(fid, "hold", answer="reject")
+    app.op(fid, "hold", answer="reject", text="Too loud")
     s = app.wait(fid, lambda s: not s["isRunning"], 20, "the run to end")
-    check("a rejected message goes out Rejected", s["results"] == {"Binned": "HELLO FROM THE START CARD"}, str(s["results"]))
+    binned = s["results"].get("Binned", "")
+    check("a rejected message goes out Rejected with the reason ahead of it",
+          list(s["results"]) == ["Binned"] and binned.startswith("Too loud\n") and binned.endswith("\nHELLO FROM THE START CARD"), str(s["results"]))
     check("both runs are kept", [r["outcome"] for r in s["runs"]] == ["finished", "finished"], str(s["runs"]))
 
     first = s["runs"][0]["id"]
@@ -726,7 +756,7 @@ def scenario_deep(app):
 def scenario_noclaude(project):
     print("noclaude: the app says so when Claude Code isn't installed", flush=True)
     empty = tempfile.mkdtemp(prefix="qb-nohome-")
-    support = SUPPORT + "NoClaude"
+    support = SUPPORT + "-nc"
     app = App(project, support=support, env={"HOME": empty, "CFFIXED_USER_HOME": empty, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"})
     try:
         deadline = time.time() + 40
@@ -740,13 +770,13 @@ def scenario_noclaude(project):
         check("it reports that Claude Code isn't installed", "can't find Claude Code" in (s.get("problem") or ""), str(s))
     finally:
         app.quit()
-        shutil.rmtree(support, ignore_errors=True)
 
 
 def main():
     wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "subflow", "timed", "deep", "noclaude"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
+    sweep()
     project = tempfile.mkdtemp(prefix="qb-e2e-")
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
     for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "inner", "subflow", "timed"]
@@ -774,7 +804,6 @@ def main():
                     app.op(flow_id, "close")
         finally:
             app.quit()
-            shutil.rmtree(SUPPORT, ignore_errors=True)
     if "noclaude" in wanted:
         try:
             scenario_noclaude(project)
