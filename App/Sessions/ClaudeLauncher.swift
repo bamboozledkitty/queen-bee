@@ -149,6 +149,8 @@ enum ClaudeLauncher {
         If a hand-off needs no response at all, reply with exactly "[no reply]" and nothing is passed on.
 
         You may use SendMessage for a question mid-task, to an agent your card is linked to or to "\(orchestratorName(for: flow))", the session that runs this flow. Messages to agents you are not linked to are refused. The answer reaches you as a new message, so end your turn after asking. What you say in a turn where you asked a question is not passed on; the reply you give once you have the answer is.
+
+        To see what a folder holds or to search files, use ls, find or grep in the shell. They only read, so they run without approval in every permission mode. Look before you guess at a file's name.
         """
         let instructions = (card.instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !instructions.isEmpty { text += "\n\n# Your instructions as \(card.name)\n\(instructions)" }
@@ -168,7 +170,7 @@ enum ClaudeLauncher {
 
         When a run finishes, stalls or hits a limit, you get a message that begins "[Queen Bee · notice]". It is information from the app, not a new request from the person.
 
-        \(flow.isSubflow == true ? "This flow is a sub-flow: a Flow card in another flow runs it as one step. The message that Flow card receives arrives at this flow's Start card, named Input, in place of that card's own command, and whatever reaches its End card, named Output, is handed back. So build what goes between Input and Output, keep exactly one way in, and make sure every path ends at Output.\n\n" : "")Keep the flow small and readable. Give each agent clear instructions in its card. Every loop needs a way out: a condition, a max tries on a Loop card, or a link's max passes.
+        \(flow.isSubflow == true ? "This flow is a sub-flow: a Flow card in another flow runs it as one step. The message that Flow card receives arrives at this flow's Start card, named Input, in place of that card's own command, and whatever reaches its End card, named Output, is handed back. So build what goes between Input and Output, keep exactly one way in, and make sure every path ends at Output.\n\n" : "")Keep the flow small and readable. Give each agent clear instructions in its card, and name the files and folders it reads and writes. Agents look through folders with ls, find and grep in the shell, which need no approval, so don't tell an agent to avoid the shell altogether. Every loop needs a way out: a condition, a max tries on a Loop card, or a link's max passes.
         """
     }
 }
