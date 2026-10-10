@@ -133,6 +133,12 @@ enum TestHarness {
             guard let role = AppServices.shared.roles.first(where: { $0.name == payload["role"]?.stringValue }) else { return ["error": "no such role"] }
             controller.addCard(.agent, role: role)
             return [:]
+        case "trigger":
+            // Sets a Start card to run every `minutes`, the way the settings panel does.
+            guard let cardID else { return ["error": "trigger needs card"] }
+            controller.setTrigger(payload["minutes"]?.doubleValue.map { Trigger(kind: .interval, minutes: Int($0)) }
+                                  ?? payload["path"]?.stringValue.map { Trigger(kind: .file, path: $0) }, onCard: cardID)
+            return ["next": .array(controller.nextFires.values.map { .number($0.timeIntervalSinceNow) })]
         case "selectAll":
             controller.selectAll()
             return [:]

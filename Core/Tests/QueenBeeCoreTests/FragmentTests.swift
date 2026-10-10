@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import QueenBeeCore
 
@@ -64,5 +65,53 @@ import Testing
         let result = Snapping.snap(CGRect(x: 131, y: 59, width: 240, height: 96), to: [], grid: 24, tolerance: 6)
         #expect(result.origin == CGPoint(x: 120, y: 48))
         #expect(result.guides.isEmpty)
+    }
+}
+
+@Suite struct TriggerTests {
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    /// Wednesday 7 October 2026, 08:30 UTC.
+    private var wednesday: Date { utc.date(from: DateComponents(year: 2026, month: 10, day: 7, hour: 8, minute: 30))! }
+
+    @Test func anIntervalFiresThatManyMinutesOn() {
+        let next = Trigger(kind: .interval, minutes: 30).nextFire(after: wednesday, calendar: utc)
+        #expect(next == wednesday.addingTimeInterval(1800))
+    }
+
+    @Test func dailyFiresTodayIfTheTimeIsStillAheadElseTomorrow() {
+        let nine = Trigger(kind: .daily, hour: 9, minute: 0).nextFire(after: wednesday, calendar: utc)
+        #expect(nine == utc.date(from: DateComponents(year: 2026, month: 10, day: 7, hour: 9)))
+        let eight = Trigger(kind: .daily, hour: 8, minute: 0).nextFire(after: wednesday, calendar: utc)
+        #expect(eight == utc.date(from: DateComponents(year: 2026, month: 10, day: 8, hour: 8)))
+    }
+
+    @Test func weeklyFiresOnTheNextChosenDay() {
+        // Monday is 2 and Friday is 6. From a Wednesday, Friday comes first.
+        let next = Trigger(kind: .weekly, hour: 9, minute: 0, weekdays: [2, 6]).nextFire(after: wednesday, calendar: utc)
+        #expect(next == utc.date(from: DateComponents(year: 2026, month: 10, day: 9, hour: 9)))
+        #expect(Trigger(kind: .weekly, weekdays: []).nextFire(after: wednesday, calendar: utc) == nil)
+    }
+
+    @Test func aFileTriggerHasNoClockTime() {
+        #expect(Trigger(kind: .file, path: "src").nextFire(after: wednesday, calendar: utc) == nil)
+    }
+
+    @Test func summariesReadPlainly() {
+        #expect(Trigger(kind: .interval, minutes: 120).summary == "Every 2 hours")
+        #expect(Trigger(kind: .daily, hour: 9, minute: 5).summary == "Every day at 09:05")
+        #expect(Trigger(kind: .weekly, hour: 18, minute: 0, weekdays: [6, 2]).summary == "Mon, Fri at 18:00")
+        #expect(Trigger(kind: .file, path: "inbox").summary == "When inbox changes")
+    }
+
+    @Test func aPastedStartCardLosesItsSchedule() {
+        var flow = Flow(name: "Empty")
+        var card = Card.make(kind: .start, name: "Start", x: 0, y: 0)
+        card.trigger = Trigger(kind: .interval, minutes: 1)
+        #expect(flow.insert(FlowFragment(cards: [card], links: []))[0].trigger == nil)
     }
 }

@@ -117,7 +117,11 @@ final class FlowController: ToolHost {
     static let orchestratorKey = "orchestrator"
 
     var flow: Flow {
-        didSet { if flow != oldValue { scheduleSave() } }
+        didSet {
+            guard flow != oldValue else { return }
+            scheduleSave()
+            if flow.cards.map(\.trigger) != oldValue.cards.map(\.trigger) || flow.cards.count != oldValue.cards.count { reschedule() }
+        }
     }
     @ObservationIgnored let fileURL: URL
     @ObservationIgnored unowned let project: ProjectModel
@@ -213,6 +217,94 @@ final class FlowController: ToolHost {
         self.project = project
         undoManager.groupsByEvent = false
         loadHistory()
+        reschedule()
+    }
+
+    // MARK: Schedules
+
+    /// When the clock next starts a run from each Start card whose schedule is on, by card id.
+    private(set) var nextFires: [String: Date] = [:]
+    @ObservationIgnored private var scheduleTask: Task<Void, Never>?
+    @ObservationIgnored private var watchers: [String: (path: String, watcher: FileWatcher)] = [:]
+    @ObservationIgnored private var lastFileFire = Date.distantPast
+
+    /// Whether a Start card's schedule is one the person turned on in this app.
+    func isArmed(_ card: Card) -> Bool {
+        card.trigger.map { ScheduleArming.isArmed($0, flowID: flow.id, cardID: card.id) } ?? false
+    }
+
+    /// Sets what starts runs from a Start card, and turns it on: the person chose it.
+    func setTrigger(_ trigger: Trigger?, onCard id: String) {
+        ScheduleArming.arm(trigger, flowID: flow.id, cardID: id)
+        let changed = perform("Change Schedule", key: "trigger:\(id)") {
+            guard let index = $0.cards.firstIndex(where: { $0.id == id && $0.kind == .start }) else { return }
+            $0.cards[index].trigger = trigger
+        }
+        // Turning on a schedule that came with the flow changes nothing in the flow itself.
+        if changed { reschedule() }
+    }
+
+    /// Works out what fires next and waits for it. Called whenever a schedule changes.
+    private func reschedule() {
+        scheduleTask?.cancel()
+        let armed = flow.cards.filter { $0.kind == .start && isArmed($0) }
+        var fires: [String: Date] = [:]
+        for card in armed {
+            if let next = card.trigger?.nextFire(after: Date()) { fires[card.id] = next }
+        }
+        if nextFires != fires { nextFires = fires }
+        watchFiles(for: armed.filter { $0.trigger?.kind == .file })
+        guard let (cardID, when) = fires.min(by: { $0.value < $1.value }) else { return }
+        scheduleTask = Task {
+            try? await Task.sleep(for: .seconds(max(0, when.timeIntervalSinceNow)))
+            guard !Task.isCancelled else { return }
+            self.fire(cardID, because: "on schedule")
+            self.reschedule()
+        }
+    }
+
+    private func watchFiles(for cards: [Card]) {
+        let root = project.root.resolvingSymlinksInPath()
+        var wanted: [String: String] = [:]
+        for card in cards {
+            let relative = (card.trigger?.path ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !relative.isEmpty else { continue }
+            // Only inside the project, with links followed first, as an End card's save path is checked.
+            let url = root.appendingPathComponent(relative).standardizedFileURL.resolvingSymlinksInPath()
+            if url.path == root.path || url.path.hasPrefix(root.path + "/") { wanted[card.id] = url.path }
+        }
+        for (id, watching) in watchers where wanted[id] != watching.path {
+            watching.watcher.stop()
+            watchers[id] = nil
+        }
+        for (id, path) in wanted where watchers[id] == nil {
+            let watcher = FileWatcher(url: URL(fileURLWithPath: path)) { [weak self] changed in
+                Task { @MainActor in self?.fileChanged(id, path: changed) }
+            }
+            if let watcher { watchers[id] = (path, watcher) }
+        }
+    }
+
+    private func fileChanged(_ cardID: String, path: String) {
+        // The flow's own agents change files too. A change during a run, or straight after
+        // one this started, isn't a reason to start another.
+        guard !isRunning, Date().timeIntervalSince(lastFileFire) > 5, !path.contains("/.queenbee/") else { return }
+        lastFileFire = Date()
+        // The watcher reports paths with links followed, so the project's folder is compared the same way.
+        let root = project.root.resolvingSymlinksInPath().path
+        let name = path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
+        fire(cardID, because: "\(name) changed", changed: name)
+    }
+
+    private func fire(_ cardID: String, because reason: String, changed: String? = nil) {
+        guard let card = flow.card(cardID), card.kind == .start, isArmed(card) else { return }
+        if isRunning {
+            append("Skipped a run of \(card.name) (\(reason)): a run was already going")
+            return
+        }
+        append("Starting \(card.name): \(reason)")
+        let command = changed.map { "\(card.command ?? "")\n\nThe file that changed: \($0)" }
+        Task { await self.run(command: command, startCardID: cardID) }
     }
 
     // MARK: History
@@ -383,6 +475,9 @@ final class FlowController: ToolHost {
     }
 
     func shutDown() {
+        scheduleTask?.cancel()
+        watchers.values.forEach { $0.watcher.stop() }
+        watchers.removeAll()
         saveNow()
         if historyTask != nil { saveHistory() }
         sessions.values.forEach { $0.terminate() }
@@ -943,12 +1038,12 @@ final class FlowController: ToolHost {
     // MARK: Runs
 
     @discardableResult
-    func run(command: String? = nil) async -> String {
+    func run(command: String? = nil, startCardID: String? = nil) async -> String {
         guard let engine = readyEngine() else { return services.problem ?? "Claude Code isn't ready yet." }
         if !isRunning { clearForRun() }
-        let output = await engine.start(flow: flow, startCardID: nil, command: command)
+        let output = await engine.start(flow: flow, startCardID: startCardID, command: command)
         if let id = output.runID, !isRunning {
-            let first = command ?? flow.cards.first { $0.kind == .start }?.command ?? ""
+            let first = command ?? (startCardID.flatMap { flow.card($0) } ?? flow.cards.first { $0.kind == .start })?.command ?? ""
             currentRun = (id, Date(), String(first.prefix(200)))
         }
         absorb(output, sender: nil)

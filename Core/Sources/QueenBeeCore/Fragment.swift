@@ -34,6 +34,8 @@ extension Flow {
             card.x += dx
             card.y += dy
             card.sessionID = nil
+            // A copy never brings a schedule with it: the person sets that on each card themselves.
+            card.trigger = nil
             if let mode = card.permissionMode, !Card.permissionModes.contains(mode) { card.permissionMode = nil }
             if let effort = card.effort, !Card.effortLevels.contains(effort) { card.effort = nil }
             card.width = max(card.width, Card.minimumWidth(for: card))

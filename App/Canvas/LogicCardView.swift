@@ -121,7 +121,8 @@ enum CardSummary {
         case .agent: return ""
         case .start:
             let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
-            return first.isEmpty ? "Write the command" : first
+            let command = first.isEmpty ? "Write the command" : first
+            return card.trigger.map { "\(command)\n\($0.summary)" } ?? command
         case .ifElse: return check(card)
         case .switchCard: return "Claude picks one of \((card.branches ?? []).count) branches"
         case .and: return "Waits for all \(inputs) inputs"

@@ -47,6 +47,7 @@ private struct CardSettings: View {
             case .agent: agent
             case .start:
                 EditorField("Command the run begins with", text: card.command ?? "") { v in patch { $0.command = v } }
+                TriggerSettings(controller: controller, card: card)
             case .ifElse:
                 condition
             case .loop:
@@ -393,6 +394,108 @@ private struct ScriptReview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.liveTint.ui)
         .overlay(alignment: .top) { rule }
+    }
+}
+
+/// What starts runs from a Start card besides the Run button: the clock, or a file changing.
+private struct TriggerSettings: View {
+    let controller: FlowController
+    let card: Card
+
+    private static let intervals = [5, 10, 15, 30, 60, 120, 240, 480, 720, 1440]
+    private static let days = [(2, "M"), (3, "T"), (4, "W"), (5, "T"), (6, "F"), (7, "S"), (1, "S")]
+
+    private func set(_ change: (inout Trigger) -> Void) {
+        var trigger = card.trigger ?? Trigger(kind: .daily)
+        change(&trigger)
+        controller.setTrigger(trigger, onCard: card.id)
+    }
+
+    var body: some View {
+        let trigger = card.trigger
+        row("Runs") {
+            MenuField(options: [(value: "", label: "When you press Run"), (value: "interval", label: "Every so often"),
+                                (value: "daily", label: "Every day"), (value: "weekly", label: "On chosen days"),
+                                (value: "file", label: "When a file changes")],
+                      selection: trigger?.kind.rawValue ?? "") { raw in
+                guard let kind = Trigger.Kind(rawValue: raw) else { return controller.setTrigger(nil, onCard: card.id) }
+                set { $0.kind = kind }
+            }
+        }
+        if let trigger {
+            switch trigger.kind {
+            case .interval:
+                row("Every") {
+                    MenuField(options: (Self.intervals + (Self.intervals.contains(trigger.minutes) ? [] : [trigger.minutes])).sorted()
+                                .map { (value: $0, label: Trigger(kind: .interval, minutes: $0).summary.replacingOccurrences(of: "Every ", with: "")) },
+                              selection: trigger.minutes) { v in set { $0.minutes = v } }
+                }
+            case .daily:
+                timeRow(trigger)
+            case .weekly:
+                row("On") {
+                    HStack(spacing: 3) {
+                        ForEach(Self.days, id: \.0) { day, letter in
+                            let isOn = trigger.weekdays.contains(day)
+                            Button {
+                                set { $0.weekdays = isOn ? $0.weekdays.filter { $0 != day } : ($0.weekdays + [day]).sorted() }
+                            } label: {
+                                Text(letter)
+                                    .font(.dsMono(Theme.Size.caption, .medium))
+                                    .frame(width: 20, height: 20)
+                                    .foregroundStyle((isOn ? Theme.surface : Theme.ink).ui)
+                                    .background((isOn ? Theme.ink : Theme.bar).ui, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                timeRow(trigger)
+            case .file:
+                LineField("File or folder in the project", placeholder: "inbox", text: trigger.path) { v in set { $0.path = v } }
+            }
+
+            if controller.isArmed(card) {
+                note(trigger.kind == .file
+                     ? "A run starts when it changes, with the file's name added to the command. Queen Bee has to be open, and a change made while a run is going doesn't start another."
+                     : "\(controller.nextFires[card.id].map { "Next: \(Self.when($0)). " } ?? "")Queen Bee has to be open for it to run. A run that falls due while another is going is skipped.")
+            } else {
+                // A schedule that came in the flow's file, or from an undo, hasn't been agreed to here.
+                HStack(spacing: Theme.Space.s) {
+                    Text("This schedule is off. It wasn't set on this Mac.")
+                        .font(.dsSans(Theme.Size.caption))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Turn on") { controller.setTrigger(trigger, onCard: card.id) }
+                        .buttonStyle(.panel(.live))
+                }
+                .foregroundStyle(Theme.liveInk.ui)
+                .padding(.horizontal, Theme.Space.m)
+                .padding(.vertical, 6)
+                .background(Theme.liveTint.ui)
+                .overlay(alignment: .top) { rule }
+            }
+        }
+    }
+
+    private func timeRow(_ trigger: Trigger) -> some View {
+        row("At") {
+            HStack(spacing: 2) {
+                MenuField(options: (0...23).map { (value: $0, label: String(format: "%02d", $0)) }, selection: trigger.hour) { v in set { $0.hour = v } }
+                Text(":").font(.dsMono(Theme.Size.caption, .medium))
+                MenuField(options: stride(from: 0, to: 60, by: 5).map { (value: $0, label: String(format: "%02d", $0)) } + (trigger.minute % 5 == 0 ? [] : [(value: trigger.minute, label: String(format: "%02d", trigger.minute))]),
+                          selection: trigger.minute) { v in set { $0.minute = v } }
+            }
+        }
+    }
+
+    private static func when(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.doesRelativeDateFormatting = true
+        f.dateStyle = Calendar.current.isDateInToday(date) ? .none : .medium
+        f.timeStyle = .short
+        return f.string(from: date)
     }
 }
 

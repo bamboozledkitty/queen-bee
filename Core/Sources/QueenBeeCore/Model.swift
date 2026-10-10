@@ -69,6 +69,8 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     // Start
     /// The command a run begins with.
     public var command: String?
+    /// What starts a run from this card besides the Run button. Nil for only the button.
+    public var trigger: Trigger?
 
     // If, Loop
     public var check: CheckKind?
