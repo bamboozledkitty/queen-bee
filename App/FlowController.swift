@@ -157,8 +157,10 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var usageAtRunStart: [String: Usage] = [:]
     /// The cost breakdown is open over the canvas.
     var showsCost = false
-    /// How many flows up the chain started the run that is going: 0 when this flow was run directly.
-    @ObservationIgnored private var runDepth = 0
+    /// How many more levels of sub-flow the run that is going may still enter.
+    @ObservationIgnored private var runLevelsLeft = FlowController.usualSubflowLimit
+    /// The flow's own settings are open over the canvas.
+    var showsFlowSettings = false
     /// The card whose "run from here" box is open in the settings panel.
     var runFromCardID: String?
     @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
@@ -707,6 +709,7 @@ final class FlowController: ToolHost {
     }
 
     func select(_ new: Selection) {
+        if new != .none { showsFlowSettings = false }
         if selection != new { selection = new }
     }
 
@@ -1149,10 +1152,12 @@ final class FlowController: ToolHost {
     // MARK: Runs
 
     @discardableResult
-    func run(command: String? = nil, startCardID: String? = nil, depth: Int = 0) async -> String {
+    func run(command: String? = nil, startCardID: String? = nil, levelsLeft given: Int? = nil) async -> String {
         guard let engine = readyEngine() else { return services.problem ?? "Claude Code isn't ready yet." }
         isClosed = false
-        if !isRunning { runDepth = depth }
+        // Run directly, a flow goes by its own place under the flow at the top. Run by a Flow
+        // card, it is handed what is left of the run's allowance.
+        if !isRunning { runLevelsLeft = given ?? levelsLeft }
         // With several Start cards, the one that is selected is the one meant.
         var startCardID = startCardID
         if startCardID == nil, case .card(let id) = selection, flow.card(id)?.kind == .start { startCardID = id }
@@ -1176,6 +1181,7 @@ final class FlowController: ToolHost {
             return banner ?? ""
         }
         isClosed = false
+        runLevelsLeft = levelsLeft
         let output = await engine.start(flow: flow, at: cardID, message: message, fromName: sender)
         if let id = output.runID {
             clearForRun()
@@ -1290,10 +1296,9 @@ final class FlowController: ToolHost {
         guard let inner, inner !== self else {
             return resolve(hold.id, port: "fail", text: "The flow this card runs is no longer in the project.")
         }
-        // Whatever a flow's file says, a run never goes deeper than the limit.
-        let limit = Self.nestingLimit
-        guard runDepth + 1 <= limit else {
-            return resolve(hold.id, port: "fail", text: "Sub-flows only go \(limit) \(limit == 1 ? "level" : "levels") deep, so \(inner.flow.name) wasn't run. The limit is in Settings.")
+        // Whatever a flow's file says, a run never goes deeper than the flow at the top allows.
+        guard runLevelsLeft >= 1 else {
+            return resolve(hold.id, port: "fail", text: "\(inner.flow.name) wasn't run: it is deeper than the sub-flow limit of the flow this run started from.")
         }
         // This also stops two flows that run each other from going round for ever.
         guard !inner.isRunning else {
@@ -1301,7 +1306,7 @@ final class FlowController: ToolHost {
         }
         scriptTasks[hold.id] = Task {
             let answer = await withTaskCancellationHandler {
-                await inner.runToEnd(command: hold.text, depth: self.runDepth + 1)
+                await inner.runToEnd(command: hold.text, levelsLeft: self.runLevelsLeft - 1)
             } onCancel: {
                 Task { @MainActor in await inner.stop() }
             }
@@ -1313,19 +1318,38 @@ final class FlowController: ToolHost {
 
     // MARK: How deep sub-flows go
 
-    /// How many levels of sub-flow may sit below a flow, as set in Settings.
-    static var nestingLimit: Int {
-        let set = UserDefaults.standard.integer(forKey: "subflowDepth")
-        return set == 0 ? 3 : min(max(set, 1), 6)
+    /// How many levels of sub-flow may sit below a flow when nobody has said otherwise.
+    static let usualSubflowLimit = 3
+
+    /// The limit set on this flow, for when it is the flow at the top.
+    var ownSubflowLimit: Int { min(max(flow.subflowLimit ?? Self.usualSubflowLimit, 0), 10) }
+
+    /// Sets how many levels of sub-flow may sit below this flow.
+    func setSubflowLimit(_ levels: Int) {
+        let wanted = min(max(levels, 0), 10)
+        guard wanted != ownSubflowLimit else { return }
+        let old = flow
+        flow.subflowLimit = wanted == Self.usualSubflowLimit ? nil : wanted
+        registerUndo(from: old, "Change Sub-flow Limit", key: "limit")
+    }
+
+    func setNotifiesOrchestrator(_ on: Bool) {
+        guard flow.notifyOrchestrator != on else { return }
+        let old = flow
+        flow.notifyOrchestrator = on
+        registerUndo(from: old, on ? "Tell Orchestrator of Runs" : "Stop Telling Orchestrator of Runs")
+    }
+
+    /// The flows that run this one, each once.
+    var outerFlows: [FlowController] {
+        project.controllers.filter { outer in outer !== self && outer.innerFlows.contains { $0 === self } }
     }
 
     /// How many flows sit above this one: 0 for a flow nothing runs, 1 for a sub-flow, and so on.
     var levelsAbove: Int {
         func above(_ controller: FlowController, _ seen: Set<String>) -> Int {
-            let parents = controller.project.controllers.filter { parent in
-                !seen.contains(parent.flow.id) && parent.innerFlows.contains { $0 === controller }
-            }
-            return parents.map { 1 + above($0, seen.union([controller.flow.id])) }.max() ?? 0
+            controller.outerFlows.filter { !seen.contains($0.flow.id) }
+                .map { 1 + above($0, seen.union([controller.flow.id])) }.max() ?? 0
         }
         return above(self, [])
     }
@@ -1339,26 +1363,49 @@ final class FlowController: ToolHost {
         return below(self, [])
     }
 
+    /// How many more levels of sub-flow may sit below this flow. The limit belongs to the flow
+    /// at the top, and each level down uses one up. A flow that two others run goes by the
+    /// stricter of the two. Below zero means this flow is itself past the limit.
+    var levelsLeft: Int {
+        func left(_ controller: FlowController, _ seen: Set<String>) -> Int {
+            let outer = controller.outerFlows.filter { !seen.contains($0.flow.id) }
+            if outer.isEmpty { return controller.ownSubflowLimit }
+            return outer.map { left($0, seen.union([controller.flow.id])) - 1 }.min() ?? controller.ownSubflowLimit
+        }
+        return left(self, [])
+    }
+
+    /// The flows at the top of every chain that leads down to this one. A flow nothing runs is its own.
+    var topFlows: [FlowController] {
+        var found: [FlowController] = [], seen: Set<String> = []
+        func climb(_ controller: FlowController) {
+            guard seen.insert(controller.flow.id).inserted else { return }
+            let outer = controller.outerFlows
+            if outer.isEmpty { found.append(controller) } else { outer.forEach(climb) }
+        }
+        climb(self)
+        return found
+    }
+
     /// Why a Flow card in this flow can't run `inner`, or nil if it can: a flow can't end up
-    /// running itself, and sub-flows only go as deep as Settings allows.
+    /// running itself, and sub-flows only go as deep as the flow at the top allows.
     func nestingProblem(placing inner: FlowController) -> String? {
         if inner === self { return "A flow can't run itself." }
         if inner.subflows().contains(where: { $0.controller === self }) {
             return "\(inner.flow.name) already runs \(flow.name), so the two would go round for ever."
         }
-        let limit = Self.nestingLimit
-        if levelsAbove + 1 + inner.levelsBelow > limit {
-            return "That would put sub-flows more than \(limit) \(limit == 1 ? "level" : "levels") deep, which is the limit in Settings."
-        }
+        if 1 + inner.levelsBelow > levelsLeft { return Self.tooDeep(topFlows.first ?? self) }
         return nil
     }
 
     /// Why this flow can't be given another sub-flow of its own, or nil if it can.
     var newSubflowProblem: String? {
-        let limit = Self.nestingLimit
-        return levelsAbove + 1 > limit
-            ? "Sub-flows only go \(limit) \(limit == 1 ? "level" : "levels") deep, and this flow is already at the bottom. The limit is in Settings."
-            : nil
+        levelsLeft < 1 ? Self.tooDeep(topFlows.first ?? self) : nil
+    }
+
+    private static func tooDeep(_ top: FlowController) -> String {
+        let limit = top.ownSubflowLimit
+        return "\(top.flow.name) allows sub-flows \(limit) \(limit == 1 ? "level" : "levels") deep, and this would go deeper. Change the limit in \(top.flow.name)'s flow settings."
     }
 
     /// The flow a Flow card runs: found by id, or by name when the orchestrator set it.
@@ -1410,9 +1457,9 @@ final class FlowController: ToolHost {
     var startCards: [Card] { flow.cards.filter { $0.kind == .start } }
 
     /// Runs the flow and waits for the run to end. The answer is what reached its End cards.
-    func runToEnd(command: String, depth: Int = 0) async -> (finished: Bool, text: String) {
+    func runToEnd(command: String, levelsLeft: Int) async -> (finished: Bool, text: String) {
         let before = runs.last?.id
-        let status = await run(command: command, depth: depth)
+        let status = await run(command: command, levelsLeft: levelsLeft)
         while isRunning, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(300)) }
         if Task.isCancelled { return (false, "The run was stopped.") }
         guard let record = runs.last, record.id != before else { return (false, status) }
@@ -1605,7 +1652,7 @@ final class FlowController: ToolHost {
         }
         return FlowSnapshot(flow: flow, agents: agents, isRunning: isRunning,
                             otherFlows: project.controllers.filter { $0 !== self && self.nestingProblem(placing: $0) == nil }.map(\.flow.name),
-                            subflowLevel: levelsAbove, subflowLimit: Self.nestingLimit)
+                            subflowLevelsLeft: levelsLeft)
     }
 
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T {

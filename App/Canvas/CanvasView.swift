@@ -312,6 +312,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.linkedInputs = flow.links.contains { $0.to == card.id }
             context.linkedPorts = Set(flow.links(from: card.id).map(\.port))
             context.warning = warnings[card.id]
+            // A Flow card in a flow with no levels left can't be run, though it is kept.
+            if card.kind == .flow, context.warning == nil, controller.levelsLeft < 1 { context.warning = "Past the sub-flow limit" }
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
             if flow.isSubflow == true, context.result == nil {

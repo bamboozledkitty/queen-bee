@@ -5,7 +5,7 @@ struct SettingsView: View {
     @AppStorage(Theme.modeKey) private var mode = Theme.Mode.system.rawValue
     @AppStorage("defaultModel") private var defaultModel = ""
     @AppStorage(Notifier.settingKey) private var notifies = true
-    @AppStorage("subflowDepth") private var subflowDepth = 3
+
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
@@ -22,10 +22,6 @@ struct SettingsView: View {
 
             Toggle("Notify me when a card needs me or a run ends", isOn: $notifies)
 
-            Stepper(value: $subflowDepth, in: 1...6) {
-                Text("Sub-flows can go \(subflowDepth) \(subflowDepth == 1 ? "level" : "levels") deep")
-                Text("A Flow card runs another flow, which can have Flow cards of its own. This is how far down that can go. A run never goes deeper, whatever a flow's file says.")
-            }
 
             LabeledContent("Claude Code") {
                 if let claude = services.environment?.claude {

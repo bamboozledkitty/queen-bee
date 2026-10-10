@@ -176,6 +176,11 @@ struct WorkspaceView: View {
                               ? "To try this sub-flow by itself, give its Input something to start with and link it to a card"
                               : "Nothing to run yet: give the Start card something to start with and link it to a card")
                 }
+                Button {
+                    controller.select(.none)
+                    controller.showsFlowSettings.toggle()
+                } label: { Label("Flow Settings", systemImage: "slider.horizontal.3") }
+                    .help("Settings for this flow: its name, how deep sub-flows may go, and whether its orchestrator hears when a run ends")
                 Button { showsPanel.toggle() } label: { Label("Panel", systemImage: "sidebar.trailing") }
                     .help("Show or hide the orchestrator, the log and the run's output")
             }
@@ -286,6 +291,9 @@ struct CanvasControls: View {
                 if controller.selection != .none {
                     InspectorView(controller: controller)
                         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
+                } else if controller.showsFlowSettings {
+                    FlowSettingsView(controller: controller)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
                 }
             }
             .overlay(alignment: .top) {
@@ -323,6 +331,7 @@ struct CanvasControls: View {
                 }
             }
             .animation(Theme.Motion.standard, value: controller.selection)
+            .animation(Theme.Motion.standard, value: controller.showsFlowSettings)
             .animation(Theme.Motion.standard, value: showsCallout)
     }
 }

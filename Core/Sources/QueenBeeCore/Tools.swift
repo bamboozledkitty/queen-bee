@@ -16,14 +16,12 @@ public struct FlowSnapshot: Sendable {
     public var isRunning: Bool
     /// The names of the project's other flows that a Flow card here may run.
     public var otherFlows: [String]
-    /// How many flows sit above this one, and how many levels of sub-flow the person allows.
-    public var subflowLevel: Int
-    public var subflowLimit: Int
+    /// How many more levels of sub-flow may sit below this flow, by the limit the person set on the flow at the top.
+    public var subflowLevelsLeft: Int
 
-    public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool, otherFlows: [String] = [],
-                subflowLevel: Int = 0, subflowLimit: Int = 3) {
+    public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool, otherFlows: [String] = [], subflowLevelsLeft: Int = 3) {
         self.flow = flow; self.agents = agents; self.isRunning = isRunning; self.otherFlows = otherFlows
-        self.subflowLevel = subflowLevel; self.subflowLimit = subflowLimit
+        self.subflowLevelsLeft = subflowLevelsLeft
     }
 }
 
@@ -210,7 +208,7 @@ public enum Tools {
 
         return ["name": .string(flow.name), "is_running": .bool(snapshot.isRunning), "cards": .array(cards), "links": .array(links),
                 "other_flows": .array(snapshot.otherFlows.map(JSONValue.string)),
-                "sub_flow_level": .number(Double(snapshot.subflowLevel)), "sub_flow_limit": .number(Double(snapshot.subflowLimit))]
+                "sub_flow_levels_left": .number(Double(max(0, snapshot.subflowLevelsLeft)))]
     }
 
     // MARK: Definitions
@@ -244,9 +242,9 @@ public enum Tools {
             Outputs: done (with that flow's final answer) and fail. Set "flow" to the name of one of the \
             other_flows that get_flow lists. You cannot create a flow: if the one you need isn't listed, ask the \
             person to double-click the Flow card, which makes a new sub-flow and opens it. Never write flow files yourself. \
-            Sub-flows only nest as deep as the person allows: get_flow gives this flow's sub_flow_level (0 for a flow \
-            nothing runs) and the sub_flow_limit. A flow at the limit can't have a Flow card, other_flows only lists \
-            flows that fit, and an edit that would go deeper is refused. Don't try to work round it.
+            Sub-flows only nest as deep as the person allows on the flow at the top: get_flow gives \
+            sub_flow_levels_left for this flow. At 0 it can't have a Flow card. other_flows only lists flows that \
+            fit, and an edit that would go deeper is refused. Don't try to work round it.
             - script: runs a shell command in the project folder, with the message on its standard input and in \
             $QB_MESSAGE. Outputs: pass (it exited with 0) and fail. What it printed is passed on. The person is \
             asked to allow a command they did not type themselves the first time a run reaches it.

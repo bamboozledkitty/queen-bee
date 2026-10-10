@@ -153,6 +153,13 @@ enum TestHarness {
             guard let cardID else { return ["error": "openSub needs card"] }
             controller.openSubflow(forCard: cardID)
             return ["now": .string(AppServices.shared.current?.flow.name ?? ""), "trail": .number(Double(AppServices.shared.flowTrail.count))]
+        case "limit":
+            controller.setSubflowLimit(Int(payload["levels"]?.doubleValue ?? 3))
+            return [:]
+        case "flowSettings":
+            controller.select(.none)
+            controller.showsFlowSettings = true
+            return [:]
         case "tool":
             // Calls one of the orchestrator's tools, as its session would.
             guard let name = payload["name"]?.stringValue else { return ["error": "tool needs name"] }
@@ -239,7 +246,7 @@ enum TestHarness {
             "trail": .number(Double(AppServices.shared.flowTrail.count)),
             "canRun": .bool(controller.canRun),
             "levelsAbove": .number(Double(controller.levelsAbove)),
-            "nestingLimit": .number(Double(FlowController.nestingLimit)),
+            "levelsLeft": .number(Double(controller.levelsLeft)),
             "blank": .bool(controller.isBlank),
             "warnings": .object(Dictionary(uniqueKeysWithValues: controller.warnings.map { (controller.flow.card($0.key)?.name ?? $0.key, JSONValue.string($0.value)) })),
             "viewport": .number(Double(controller.viewport.width)),

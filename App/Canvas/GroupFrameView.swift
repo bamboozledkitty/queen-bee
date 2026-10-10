@@ -3,7 +3,7 @@ import QueenBeeCore
 
 /// A group of cards on the canvas. Unfolded, it is a named frame drawn behind its cards.
 /// Folded, it is one small card that stands in for all of them.
-final class GroupFrameView: NSView {
+final class GroupFrameView: NSView, NSGestureRecognizerDelegate {
     /// How far the frame stands off from its cards, and the room its name takes above them.
     static let padding: CGFloat = 18
     static let titleHeight: CGFloat = 24
@@ -39,6 +39,7 @@ final class GroupFrameView: NSView {
 
         handle.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(handleMove(_:))))
         handle.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:))))
+        handle.addGestureRecognizer(GrabGesture.make(target: self, action: #selector(handleGrab(_:)), delegate: self))
         let double = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
         double.numberOfClicksRequired = 2
         handle.addGestureRecognizer(double)
@@ -137,6 +138,14 @@ final class GroupFrameView: NSView {
     }
 
     // MARK: Gestures
+
+    @objc private func handleGrab(_ g: NSPressGestureRecognizer) {
+        GrabGesture.follow(g, in: window, handle: handle)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer, shouldRecognizeSimultaneouslyWith other: NSGestureRecognizer) -> Bool {
+        gestureRecognizer is NSPressGestureRecognizer || other is NSPressGestureRecognizer
+    }
 
     @objc private func handleClick(_ g: NSClickGestureRecognizer) {
         canvas?.controller?.select(.of(Set(group.cardIDs)))

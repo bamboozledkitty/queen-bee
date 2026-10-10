@@ -130,7 +130,7 @@ enum LinkDrop {
 /// A card on the canvas: a title bar to drag it by, dots for its links, a corner to resize it.
 /// Its frame is the card's rectangle widened by `gutter` on each side, so the dots that
 /// straddle the card's edges stay inside the view and can be clicked.
-class CardView: NSView {
+class CardView: NSView, NSGestureRecognizerDelegate {
     static let gutter: CGFloat = CanvasGeometry.portRadius + 3
     /// As far left or up as a card may be dragged: just inside the canvas's edge.
     static let farLeft: CGFloat = -CanvasView.margin + 100
@@ -213,6 +213,7 @@ class CardView: NSView {
         for handle in [titleBar, overview] {
             handle.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(handleMove(_:))))
             handle.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:))))
+            handle.addGestureRecognizer(GrabGesture.make(target: self, action: #selector(handleGrab(_:)), delegate: self))
             let double = NSClickGestureRecognizer(target: self, action: #selector(handleDoubleClick(_:)))
             double.numberOfClicksRequired = 2
             handle.addGestureRecognizer(double)
@@ -490,6 +491,16 @@ class CardView: NSView {
         }
     }
 
+    /// The hand closes the moment the button goes down on the handle, before any movement,
+    /// so it is plain the card has been taken hold of.
+    @objc private func handleGrab(_ g: NSPressGestureRecognizer) {
+        GrabGesture.follow(g, in: window, handle: g.view)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: NSGestureRecognizer, shouldRecognizeSimultaneouslyWith other: NSGestureRecognizer) -> Bool {
+        gestureRecognizer is NSPressGestureRecognizer || other is NSPressGestureRecognizer
+    }
+
     @objc private func handleMove(_ g: NSPanGestureRecognizer) {
         guard let canvas else { return }
         switch g.state {
@@ -612,6 +623,34 @@ struct CardContext: Equatable {
     /// A run is under way. Marks left by a run that has ended say where it went, not what is live.
     var isRunning = false
     var mark = RunMark()
+}
+
+/// A press that begins the instant the button goes down, used to close the hand over something
+/// that can be dragged. It runs alongside the click and drag gestures and never replaces them.
+enum GrabGesture {
+    static func make(target: AnyObject, action: Selector, delegate: NSGestureRecognizerDelegate) -> NSPressGestureRecognizer {
+        let press = NSPressGestureRecognizer(target: target, action: action)
+        press.minimumPressDuration = 0
+        // However far the pointer then moves, it is still the same grab.
+        press.allowableMovement = .greatestFiniteMagnitude
+        press.delegate = delegate
+        return press
+    }
+
+    static func follow(_ press: NSPressGestureRecognizer, in window: NSWindow?, handle: NSView?) {
+        switch press.state {
+        case .began:
+            window?.disableCursorRects()
+            NSCursor.closedHand.set()
+        case .ended, .cancelled, .failed:
+            window?.enableCursorRects()
+            if let handle { window?.invalidateCursorRects(for: handle) }
+            // Still over the handle, so the open hand comes straight back.
+            NSCursor.openHand.set()
+        default:
+            break
+        }
+    }
 }
 
 /// Runs a closure when its menu item is picked, for menus built on the spot.

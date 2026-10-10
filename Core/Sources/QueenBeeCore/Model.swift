@@ -160,6 +160,8 @@ public struct Flow: Codable, Identifiable, Equatable, Sendable {
     public var orchestratorSessionID: String?
     /// Post a notice to the orchestrator when a run finishes, stalls or hits a limit.
     public var notifyOrchestrator: Bool
+    /// How many levels of sub-flow may sit below this flow when it is the one at the top. Nil for the usual three.
+    public var subflowLimit: Int?
     /// True for a flow made to live inside a Flow card: it is listed under the flows that use it.
     public var isSubflow: Bool?
     /// Named sets of cards that are framed together and can be folded into one card. Nil in
