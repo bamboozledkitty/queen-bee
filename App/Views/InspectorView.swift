@@ -101,10 +101,20 @@ private struct CardSettings: View {
                 }
             case .flow:
                 let inner = controller.innerFlow(of: card)
+                let everyOther = controller.project.controllers.filter { $0 !== controller }
+                // Only flows that fit: not ones that would run this flow in turn, or nest too deep.
+                let others = everyOther.filter { $0 === inner || controller.nestingProblem(placing: $0) == nil }
                 row("Runs") {
-                    let others = controller.project.controllers.filter { $0 !== controller }
                     MenuField(options: [(value: "", label: "Nothing yet")] + others.map { (value: $0.flow.id, label: $0.flow.name) },
                               selection: inner?.flow.id ?? "") { v in patch { $0.flowRef = v } }
+                }
+                if let inner, let problem = controller.nestingProblem(placing: inner) {
+                    Label(problem, systemImage: "exclamationmark.triangle")
+                        .font(.dsSans(Theme.Size.caption))
+                        .foregroundStyle(Theme.failInk.ui)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, Theme.Space.m)
+                        .padding(.bottom, 6)
                 }
                 HStack(spacing: Theme.Space.s) {
                     Text(inner == nil ? "Make a sub-flow just for this card:" : "Build or change what it does:")
@@ -113,7 +123,8 @@ private struct CardSettings: View {
                     Spacer()
                     Button(inner == nil ? "New sub-flow" : "Open") { controller.openSubflow(forCard: card.id) }
                         .buttonStyle(.panel(.filled))
-                        .help("You can also double-click the card")
+                        .disabled(inner == nil && controller.newSubflowProblem != nil)
+                        .help(inner == nil ? controller.newSubflowProblem ?? "You can also double-click the card" : "You can also double-click the card")
                 }
                 .padding(.horizontal, Theme.Space.m)
                 .padding(.vertical, 6)

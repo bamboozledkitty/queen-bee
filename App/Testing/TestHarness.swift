@@ -77,7 +77,7 @@ enum TestHarness {
             return [:]
         case "scroll":
             let how = controller.canvas?.testScroll(cardID: cardID, dy: payload["dy"]?.doubleValue ?? -120,
-                                                    mode: payload["mode"]?.stringValue ?? "direct")
+                                                    mode: payload["mode"]?.stringValue ?? "direct", withCommand: payload["command"]?.boolValue ?? false)
             return ["posted": how.map(JSONValue.string) ?? .null]
         case "edgeLink":
             // A link dragged from a card to the canvas's edge, and held there until the card
@@ -153,6 +153,11 @@ enum TestHarness {
             guard let cardID else { return ["error": "openSub needs card"] }
             controller.openSubflow(forCard: cardID)
             return ["now": .string(AppServices.shared.current?.flow.name ?? ""), "trail": .number(Double(AppServices.shared.flowTrail.count))]
+        case "tool":
+            // Calls one of the orchestrator's tools, as its session would.
+            guard let name = payload["name"]?.stringValue else { return ["error": "tool needs name"] }
+            let result = await Tools.call(name: name, arguments: payload["arguments"] ?? [:], host: controller)
+            return ["text": .string(result.text), "isError": .bool(result.isError)]
         case "retry":
             guard let cardID else { return ["error": "retry needs card"] }
             controller.retry(cardID)
@@ -233,6 +238,8 @@ enum TestHarness {
             "flows": .array(controller.project.controllers.map { .string($0.flow.name) }),
             "trail": .number(Double(AppServices.shared.flowTrail.count)),
             "canRun": .bool(controller.canRun),
+            "levelsAbove": .number(Double(controller.levelsAbove)),
+            "nestingLimit": .number(Double(FlowController.nestingLimit)),
             "blank": .bool(controller.isBlank),
             "warnings": .object(Dictionary(uniqueKeysWithValues: controller.warnings.map { (controller.flow.card($0.key)?.name ?? $0.key, JSONValue.string($0.value)) })),
             "viewport": .number(Double(controller.viewport.width)),

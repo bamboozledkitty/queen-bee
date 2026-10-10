@@ -623,6 +623,68 @@ def scenario_timed(app):
     app.op(fid, "trigger", card="Clock")
 
 
+def level(n, last=4):
+    """One link in a chain of flows that each run the next. The last just passes its message to its Output."""
+    if n == last:
+        return flow(f"Level{n}", [card("start", "Input", 0, 0, command="alone"), card("end", "Output", 312, 0)], [("Input", "out", "Output", 9)])
+    cards = [card("start", "Input", 0, 0, command="go"), card("flow", "Next", 312, 0, flowRef=f"Level{n + 1}"), card("end", "Output", 624, 0)]
+    links = [("Input", "out", "Next", 9), ("Next", "done", "Output", 9)]
+    if n == 0:
+        cards.append(card("end", "Failed", 624, 192))
+        links.append(("Next", "fail", "Failed", 9))
+    return flow(f"Level{n}", cards, links)
+
+
+LEVELS = [level(n) for n in range(5)]
+FLOWS.update({f"level{n}": f for n, f in enumerate(LEVELS)})
+
+
+def scenario_deep(app):
+    print("deep: sub-flows nest as far as the limit and no further", flush=True)
+    ids = [f["id"] for f in LEVELS]
+    app.op(ids[1], "select")
+    time.sleep(2)
+    s = app.state(ids[4])
+    check("each flow knows how far down it sits", s["levelsAbove"] == 4 and s["nestingLimit"] == 3, f"{s['levelsAbove']} {s['nestingLimit']}")
+    app.op(ids[1], "run")
+    s = app.wait(ids[1], lambda s: not s["isRunning"] and s["runs"], 40, "the three-level run to end")
+    check("a run goes three levels down", s["results"] == {"Output": "go"}, str(s["results"]))
+    check("every level kept its own run", all(len(app.state(i)["runs"]) == 1 for i in ids[1:]))
+
+    app.op(ids[0], "select")
+    app.op(ids[0], "run")
+    s = app.wait(ids[0], lambda s: not s["isRunning"] and s["runs"], 40, "the four-level run to end")
+    check("a fourth level is not run", list(s["results"]) == ["Failed"] and len(app.state(ids[4])["runs"]) == 1, str(s["results"]))
+    check("the flow at the limit took the Fail output", any("Fail" in line for line in app.state(ids[3])["log"]), str(app.state(ids[3])["log"][-3:]))
+
+    r = app.op(ids[4], "tool", name="add_card", arguments={"kind": "flow", "name": "Deeper"})
+    check("the orchestrator can't add a Flow card below the limit", r["isError"] and "deep" in r["text"], str(r))
+    r = app.op(ids[3], "tool", name="update_card", arguments={"card": "Next", "flow": "Level0"})
+    check("or point a flow at one that already runs it", r["isError"] and "round" in r["text"], str(r))
+    r = app.op(ids[2], "tool", name="get_flow", arguments={})
+    check("and is told its level and the limit", '"sub_flow_level":2' in r["text"].replace(" ", "") and '"sub_flow_limit":3' in r["text"].replace(" ", ""), r["text"][-200:])
+    # Mouse navigation, on a canvas with no terminals to get in the way.
+    app.op(ids[1], "select")
+    time.sleep(1)
+    app.op(ids[1], "zoom", to=1.0)
+    app.op(ids[1], "scroll", dy=40, mode="direct", command=True)
+    zoomed = app.state(ids[1])["canvas"]["magnification"]
+    check("Command and the scroll wheel zoom in", zoomed > 1.05, str(zoomed))
+    app.op(ids[1], "scroll", dy=-80, mode="direct", command=True)
+    check("and out", app.state(ids[1])["canvas"]["magnification"] < zoomed, str(app.state(ids[1])["canvas"]["magnification"]))
+    before = app.state(ids[1])["canvas"]
+    app.op(ids[1], "scroll", dy=-60, mode="direct")
+    after = app.state(ids[1])["canvas"]
+    check("the wheel alone still pans", abs(after["y"] - before["y"]) > 1 and abs(after["magnification"] - before["magnification"]) < 0.001, f"{before} {after}")
+
+    app.op(ids[4], "select")
+    app.op(ids[4], "add", kind="flow")
+    r = app.op(ids[4], "openSub", card="Flow")
+    check("double-clicking a Flow card at the limit makes no sub-flow", r["now"] == "Level4" and "deep" in (app.state(ids[4])["banner"] or ""), str(r))
+    for i in ids:
+        app.op(i, "close")
+
+
 def scenario_noclaude(project):
     print("noclaude: the app says so when Claude Code isn't installed", flush=True)
     empty = tempfile.mkdtemp(prefix="qb-nohome-")
@@ -644,12 +706,13 @@ def scenario_noclaude(project):
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "subflow", "timed", "noclaude"]
+    wanted = sys.argv[1:] or ["guard", "settings", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "subflow", "timed", "deep", "noclaude"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     project = tempfile.mkdtemp(prefix="qb-e2e-")
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
-    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "inner", "subflow", "timed"]):
+    for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "gates", "inner", "subflow", "timed"]
+                             + [f"level{n}" for n in range(5)]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)
 
@@ -662,6 +725,8 @@ def main():
                     globals()[f"scenario_{name}"](app)
                 except Exception as e:  # one scenario failing shouldn't hide the others
                     check(f"{name} ran to the end", False, f"{type(e).__name__}: {e}"[:500])
+                if name == "deep":
+                    continue
                 flow_id = (GUARD if name in ("scroll", "settings") else FLOWS[name])["id"]
                 if name == "subflow":
                     app.op(INNER["id"], "close")

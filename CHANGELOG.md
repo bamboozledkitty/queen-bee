@@ -12,6 +12,8 @@ All notable changes to Queen Bee are listed here. The format follows
 - **Script** cards, which run a shell command and route on whether it succeeded. A command you didn't type yourself waits for you to allow it.
 - **Flow** cards, which run another of the project's flows as one step. Double-click one to open its flow, or to make a new sub-flow with an Input and an Output; the title bar shows the way back, and sub-flows are listed under the flow that uses them.
 - A sub-flow's canvas opens with all of it in view, shows the map and the note pointing at the orchestrator, and its Input no longer warns that it has no command. Its orchestrator is told it is building a sub-flow.
+- Sub-flows only nest as deep as a limit in Settings, three levels unless changed. Edits, the orchestrator's tools and runs are all held to it, and a flow can't be made to run itself.
+- Mouse navigation: Command or Control with the scroll wheel zooms about the pointer, and holding Space or the middle button drags the canvas.
 - With several Start cards, Run starts from the selected one, the Run button offers a choice, and each Start card has its own Run.
 - A flow file that appears in a project while it is open is picked up without reopening it.
 - Resting the pointer on a card type in the palette explains it in a sentence, with an example.

@@ -193,6 +193,12 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private var groupViews: [String: GroupFrameView] = [:]
     private(set) weak var controller: FlowController?
     private var scrollMonitor: Any?
+    /// Watches for Space and for the mouse buttons that pan the canvas by dragging.
+    private var panMonitor: Any?
+    /// Space is down and the canvas has taken it: a drag with the main button pans.
+    private var isSpaceHeld = false
+    /// A pan by dragging is under way, with Space or with the middle button.
+    private var isHandPanning = false
     private var responderObservation: NSKeyValueObservation?
     private var didInitialScroll = false
     /// False until the flow's saved cards are on screen, so only cards added later draw in.
@@ -398,6 +404,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         endEdgePan()
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         scrollMonitor = nil
+        if let panMonitor { NSEvent.removeMonitor(panMonitor) }
+        panMonitor = nil
+        endHand()
         responderObservation = nil
         guard let window else { return }
         if LaunchArguments.floats {
@@ -409,7 +418,18 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         // terminal scrolls its own history.
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, event.window === self.window else { return event }
+            // Command or Control with the wheel zooms about the pointer, as drawing tools do.
+            if self.zoomWithWheel(event) { return nil }
             return self.panInsteadOfScrolling(event, atWindowPoint: event.locationInWindow) ? nil : event
+        }
+
+        // Holding Space turns the pointer into a hand that drags the canvas, and so does the
+        // middle mouse button. Both are for a mouse, which has no two-finger scroll.
+        let panEvents: NSEvent.EventTypeMask = [.keyDown, .keyUp, .leftMouseDown, .leftMouseDragged, .leftMouseUp,
+                                                .otherMouseDown, .otherMouseDragged, .otherMouseUp]
+        panMonitor = NSEvent.addLocalMonitorForEvents(matching: panEvents) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            return self.handPan(event) ? nil : event
         }
 
         responderObservation = window.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
@@ -427,6 +447,100 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         // A canvas that has just appeared, or whose window changed size, hasn't scrolled, so
         // nothing else would tell the zoom control and the map where it is looking.
         publishZoom()
+    }
+
+    // MARK: Mouse and keyboard navigation
+
+    private func isOverCanvas(_ point: NSPoint) -> Bool {
+        guard let content = window?.contentView,
+              let hit = content.hitTest(content.superview?.convert(point, from: nil) ?? point) else { return false }
+        return hit === self || hit.isDescendant(of: self)
+    }
+
+    /// Whether the keyboard is in something that is typed into: a terminal, or a text box.
+    private var isTyping: Bool {
+        guard let responder = window?.firstResponder else { return false }
+        if responder is NSText { return true }
+        var view = responder as? NSView
+        while let v = view {
+            if v is TerminalView { return true }
+            view = v.superview
+        }
+        return false
+    }
+
+    /// Command or Control with the scroll wheel zooms in and out about the pointer.
+    private func zoomWithWheel(_ event: NSEvent, atWindowPoint given: NSPoint? = nil) -> Bool {
+        let spot = given ?? event.locationInWindow
+        let wants = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control)
+        guard wants, isOverCanvas(spot) else { return false }
+        // A trackpad reports fine movement, a wheel reports clicks. Each is scaled to feel alike.
+        let amount = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * 0.005 : event.scrollingDeltaY * 0.08
+        guard amount != 0 else { return true }
+        let target = min(scrollView.maxMagnification, max(scrollView.minMagnification, scrollView.magnification * exp(amount)))
+        let point = scrollView.contentView.convert(spot, from: nil)
+        zoomTarget = nil
+        scrollView.setMagnification(target, centeredAt: point)
+        publishZoom()
+        document.needsDisplay = true
+        return true
+    }
+
+    /// Space-and-drag and middle-button drag. Returns whether the event was the canvas's to keep.
+    private func handPan(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .keyDown where event.keyCode == 49:
+            // Space typed into a terminal or a text box is a space.
+            if isSpaceHeld { return true }
+            guard !isTyping, event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                  isOverCanvas(window?.mouseLocationOutsideOfEventStream ?? .zero) else { return false }
+            isSpaceHeld = true
+            window?.disableCursorRects()
+            NSCursor.openHand.set()
+            return true
+        case .keyUp where event.keyCode == 49:
+            guard isSpaceHeld else { return false }
+            endHand()
+            return true
+        case .leftMouseDown where isSpaceHeld:
+            isHandPanning = true
+            NSCursor.closedHand.set()
+            return true
+        case .otherMouseDown where event.buttonNumber == 2 && isOverCanvas(event.locationInWindow):
+            isHandPanning = true
+            window?.disableCursorRects()
+            NSCursor.closedHand.set()
+            return true
+        case .leftMouseDragged where isSpaceHeld && isHandPanning, .otherMouseDragged where isHandPanning:
+            let zoom = max(scrollView.magnification, 0.01)
+            let origin = scrollView.documentVisibleRect.origin
+            document.scroll(CGPoint(x: origin.x - event.deltaX / zoom, y: origin.y - event.deltaY / zoom))
+            return true
+        case .leftMouseUp where isSpaceHeld && isHandPanning:
+            isHandPanning = false
+            NSCursor.openHand.set()
+            return true
+        case .otherMouseUp where isHandPanning:
+            if isSpaceHeld {
+                isHandPanning = false
+                NSCursor.openHand.set()
+            } else {
+                endHand()
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Puts the pointer back to normal after a hand pan.
+    private func endHand() {
+        guard isSpaceHeld || isHandPanning else { return }
+        isSpaceHeld = false
+        isHandPanning = false
+        window?.enableCursorRects()
+        window?.invalidateCursorRects(for: self)
+        NSCursor.arrow.set()
     }
 
     /// A scroll over a terminal that doesn't have the keyboard pans the canvas. Returns
@@ -714,7 +828,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     /// the view under the pointer. "direct" skips the queue and gives the event to the same
     /// decision the monitor makes, for when the system won't deliver to a window that is
     /// behind others.
-    func testScroll(cardID: String?, dy: Double, mode: String) -> String? {
+    func testScroll(cardID: String?, dy: Double, mode: String, withCommand: Bool = false) -> String? {
         guard let window, let controller else { return nil }
         let target: CGPoint
         if let cardID, let card = controller.flow.card(cardID) {
@@ -737,11 +851,13 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         guard let primary = NSScreen.screens.first,
               let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: Int32(dy), wheel2: 0, wheel3: 0) else { return nil }
         cg.location = CGPoint(x: onScreen.x, y: primary.frame.height - onScreen.y)
+        if withCommand { cg.flags = .maskCommand }
         if mode == "system" {
             cg.postToPid(getpid())
             return "system"
         }
         guard let event = NSEvent(cgEvent: cg) else { return nil }
+        if zoomWithWheel(event, atWindowPoint: inWindow) { return "zoom" }
         if !panInsteadOfScrolling(event, atWindowPoint: inWindow) {
             let under = window.contentView.flatMap { $0.hitTest($0.superview?.convert(inWindow, from: nil) ?? inWindow) }
             (under ?? scrollView).scrollWheel(with: event)
