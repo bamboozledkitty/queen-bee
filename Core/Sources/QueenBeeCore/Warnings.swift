@@ -43,6 +43,9 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
     case .script:
         if blank(card.command) { return "Write the command" }
         if nothing(on: "pass") { return "Nothing on Pass" }
+    case .flow:
+        if blank(card.flowRef) { return "Choose a flow" }
+        if nothing(on: "done") { return "Nothing on Done" }
     case .or, .prompt, .end:
         break
     }

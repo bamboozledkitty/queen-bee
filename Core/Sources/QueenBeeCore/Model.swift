@@ -10,6 +10,8 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
     case approval
     /// Runs a shell command and routes on whether it succeeded.
     case script
+    /// Runs another flow in the same project as one step of this one.
+    case flow
 
     public var label: String {
         switch self {
@@ -25,6 +27,7 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
         case .note: "Note"
         case .approval: "Approval"
         case .script: "Script"
+        case .flow: "Flow"
         }
     }
 }
@@ -72,6 +75,10 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     /// What starts a run from this card besides the Run button. Nil for only the button.
     public var trigger: Trigger?
 
+    // Flow
+    /// The id of the flow this card runs, in the same project.
+    public var flowRef: String?
+
     // If, Loop
     public var check: CheckKind?
     /// The text, pattern or plain-English statement the check tests.
@@ -112,7 +119,7 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
         case .note: c.text = ""; c.height = 120
         case .approval: c.text = ""
         case .script: c.command = ""
-        case .and, .or: break
+        case .and, .or, .flow: break
         }
         c.height = max(c.height, Card.minimumHeight(for: c))
         return c
@@ -153,6 +160,9 @@ public struct Flow: Codable, Identifiable, Equatable, Sendable {
     public var orchestratorSessionID: String?
     /// Post a notice to the orchestrator when a run finishes, stalls or hits a limit.
     public var notifyOrchestrator: Bool
+    /// Named sets of cards that are framed together and can be folded into one card. Nil in
+    /// a file from before groups.
+    public var groups: [CardGroup]?
 
     public init(id: String = Flow.newID(), name: String, cards: [Card] = [], links: [Link] = []) {
         self.version = Flow.currentVersion
@@ -173,6 +183,18 @@ public struct Flow: Codable, Identifiable, Equatable, Sendable {
     public func links(into id: String) -> [Link] { links.filter { $0.to == id } }
 }
 
+/// Several cards framed together under a name. Folded, they show as one card.
+public struct CardGroup: Codable, Identifiable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var cardIDs: [String]
+    public var isFolded: Bool
+
+    public init(id: String = Flow.newID(), name: String, cardIDs: [String], isFolded: Bool = false) {
+        self.id = id; self.name = name; self.cardIDs = cardIDs; self.isFolded = isFolded
+    }
+}
+
 /// A card's outputs, top to bottom.
 public func ports(of card: Card) -> [String] {
     switch card.kind {
@@ -181,6 +203,7 @@ public func ports(of card: Card) -> [String] {
     case .loop: ["done", "again"]
     case .approval: ["approved", "rejected"]
     case .script: ["pass", "fail"]
+    case .flow: ["done", "fail"]
     case .end, .note: []
     case .agent, .start, .and, .or, .prompt: ["out"]
     }
@@ -227,6 +250,7 @@ public struct CardPatch: Equatable, Sendable {
     public var template: String?
     public var saveTo: String?
     public var text: String?
+    public var flowRef: String?
 
     public init() {}
 }

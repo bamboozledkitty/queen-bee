@@ -139,6 +139,23 @@ enum TestHarness {
             controller.setTrigger(payload["minutes"]?.doubleValue.map { Trigger(kind: .interval, minutes: Int($0)) }
                                   ?? payload["path"]?.stringValue.map { Trigger(kind: .file, path: $0) }, onCard: cardID)
             return ["next": .array(controller.nextFires.values.map { .number($0.timeIntervalSinceNow) })]
+        case "pickMany":
+            let ids = (payload["cards"]?.arrayValue ?? []).compactMap { $0.stringValue }.compactMap { controller.flow.resolveCard($0)?.id }
+            controller.select(.of(Set(ids)))
+            return [:]
+        case "find":
+            AppServices.shared.showsFind = true
+            return [:]
+        case "tidy":
+            controller.tidy()
+            return [:]
+        case "group":
+            controller.groupSelection()
+            return [:]
+        case "fold":
+            guard let group = controller.selectedGroup else { return ["error": "no group is selected"] }
+            controller.setFolded(payload["folded"]?.boolValue ?? true, group: group.id)
+            return [:]
         case "selectAll":
             controller.selectAll()
             return [:]

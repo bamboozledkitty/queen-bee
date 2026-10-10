@@ -231,7 +231,7 @@ public actor Engine {
         if let card = flow.card(held.cardID) {
             var message = held.message
             if let text, !Self.isBlank(text) { message.text = text }
-            if card.kind == .script { message.fromName = card.name; message.fromStart = false }
+            if card.kind != .approval { message.fromName = card.name; message.fromStart = false }
             output.log.append("\(Self.title(card)) → \(portLabel(port))")
             output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: port))
             await send(message, from: card, port: port, in: flow, state: &state, output: &output)
@@ -426,7 +426,11 @@ public actor Engine {
             output.log.append("\(title) got the final answer from \(message.fromName)")
             return nil
 
-        case .approval, .script:
+        case .approval, .script, .flow:
+            if card.kind == .flow, Self.isBlank(card.flowRef ?? "") {
+                output.log.append("\(title) has no flow chosen, so it counts as Fail")
+                return ("fail", message)
+            }
             if card.kind == .script, Self.isBlank(card.command ?? "") {
                 output.log.append("\(title) has no command, so it counts as Fail")
                 return ("fail", message)
@@ -435,7 +439,8 @@ public actor Engine {
             state.held[hold.id] = (card.id, message)
             state.pending.insert(Self.holdKey(hold.id))
             output.holds.append(hold)
-            output.log.append(card.kind == .approval ? "\(title) is waiting for you" : "\(title) is running its command")
+            output.log.append(card.kind == .approval ? "\(title) is waiting for you"
+                              : card.kind == .script ? "\(title) is running its command" : "\(title) is running its flow")
             return nil
 
         case .note, .start:

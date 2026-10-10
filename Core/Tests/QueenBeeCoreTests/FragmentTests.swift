@@ -115,3 +115,87 @@ import Testing
         #expect(flow.insert(FlowFragment(cards: [card], links: []))[0].trigger == nil)
     }
 }
+
+@Suite struct GroupAndTidyTests {
+    private func loop() throws -> Flow {
+        var flow = Flow(name: "Loop")
+        var start = CardPatch()
+        start.command = "Go"
+        try flow.addCard(kind: .start, name: "Start", x: 900, y: 500, patch: start)
+        try flow.addCard(kind: .agent, name: "Writer", x: 0, y: 0)
+        try flow.addCard(kind: .agent, name: "Reviewer", x: 300, y: 900)
+        try flow.addCard(kind: .ifElse, name: "OK?", x: 50, y: 50)
+        try flow.addCard(kind: .end, name: "Done", x: 10, y: 400)
+        try flow.addLink(from: "Start", to: "Writer")
+        try flow.addLink(from: "Writer", to: "Reviewer")
+        try flow.addLink(from: "Reviewer", to: "OK?")
+        try flow.addLink(from: "OK?", port: "yes", to: "Done")
+        try flow.addLink(from: "OK?", port: "no", to: "Writer")
+        return flow
+    }
+
+    @Test func tidyPutsCardsInColumnsInTheOrderTheLinksRun() throws {
+        let flow = try loop()
+        let placed = Tidy.layout(flow)
+        func x(_ name: String) throws -> CGFloat {
+            let card = try #require(flow.resolveCard(name))
+            return try #require(placed[card.id]).x
+        }
+        // The link back from OK? to Writer is a loop and doesn't pull Writer to the right.
+        #expect(try x("Start") < x("Writer"))
+        #expect(try x("Writer") < x("Reviewer"))
+        #expect(try x("Reviewer") < x("OK?"))
+        #expect(try x("OK?") < x("Done"))
+    }
+
+    @Test func tidyLeavesNoTwoCardsOverlapping() throws {
+        var flow = try loop()
+        // A second branch out of the Writer shares the Reviewer's column.
+        try flow.addCard(kind: .agent, name: "Critic", x: 0, y: 0)
+        try flow.addLink(from: "Writer", to: "Critic")
+        let placed = Tidy.layout(flow)
+        let frames = flow.cards.compactMap { card in placed[card.id].map { CGRect(x: $0.x, y: $0.y, width: card.width, height: card.height) } }
+        for (i, a) in frames.enumerated() {
+            for b in frames[(i + 1)...] { #expect(!a.intersects(b)) }
+        }
+    }
+
+    @Test func tidyLeavesNotesAlone() throws {
+        var flow = try loop()
+        let note = try flow.addCard(kind: .note, name: "Note", x: 5, y: 5)
+        #expect(Tidy.layout(flow)[note.id] == nil)
+    }
+
+    @Test func aCardIsInOneGroupAtMostAndGroupsFollowDeletions() throws {
+        var flow = try loop()
+        let ids = flow.cards.map(\.id)
+        let first = try flow.addGroup(cardIDs: [ids[1], ids[2], ids[3]])
+        #expect(first.name == "Group 1")
+        let second = try flow.addGroup(name: "Review", cardIDs: [ids[2], ids[3]])
+        #expect(flow.group(containing: ids[2])?.id == second.id)
+        // The first group is left with one card, which is not a group.
+        #expect(flow.groups?.map(\.name) == ["Review"])
+        try flow.removeCard(ids[3])
+        #expect(flow.groups == nil)
+        #expect(throws: FlowError.self) { try flow.addGroup(cardIDs: [ids[0]]) }
+    }
+
+    @Test func aFlowCardHoldsUntilItsFlowIsDone() async throws {
+        var flow = Flow(name: "Outer")
+        var start = CardPatch()
+        start.command = "Go"
+        try flow.addCard(kind: .start, name: "Start", patch: start)
+        var sub = CardPatch()
+        sub.flowRef = "inner"
+        let card = try flow.addCard(kind: .flow, name: "Inner", patch: sub)
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "Start", to: "Inner")
+        try flow.addLink(from: "Inner", port: "done", to: "Done")
+        let engine = Engine(judge: ScriptedJudge())
+        let began = await engine.start(flow: flow, startCardID: nil, command: nil)
+        let hold = try #require(began.holds.first)
+        #expect(hold.kind == .flow && hold.cardID == card.id && !began.finished)
+        let out = await engine.holdResolved(flow: flow, holdID: hold.id, port: "done", text: "The inner answer")
+        #expect(out.results.map(\.text) == ["The inner answer"] && out.finished)
+    }
+}

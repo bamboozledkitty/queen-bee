@@ -96,6 +96,13 @@ private struct CardSettings: View {
                 } else {
                     note("A run stops here and waits for you. You can edit the message, then approve or reject it.")
                 }
+            case .flow:
+                row("Runs") {
+                    let others = controller.project.controllers.filter { $0 !== controller }
+                    MenuField(options: [(value: "", label: "Choose a flow")] + others.map { (value: $0.flow.id, label: $0.flow.name) },
+                              selection: card.flowRef ?? "") { v in patch { $0.flowRef = v } }
+                }
+                note("Runs another flow in this project as one step. The message becomes that flow's command, and what reaches its End cards comes out Done. If that flow stops or fails, the message goes out Fail.")
             case .script:
                 EditorField("Command", text: card.command ?? "", mono: true) { v in controller.setScriptCommand(card.id, v) }
                 note("Runs in the project folder. The message arrives on standard input and in $QB_MESSAGE. Exit code 0 goes out Pass, anything else Fail, and what the command printed is passed on.")
@@ -596,13 +603,30 @@ private struct SeveralSettings: View {
             .padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Space.s)
             .background(Theme.bar.ui)
-            note("Drag any of them to move them together, or use the arrow keys. Shift-click a card to add it or take it out.")
+            if let group = controller.selectedGroup {
+                GroupName(controller: controller, group: group)
+                    .id(group.id)
+                note(group.isFolded ? "Folded into one card. Its cards keep working, and links to them meet the group's edge."
+                     : "Drag the group by its name. Fold it to show its cards as one.")
+            } else {
+                note("Drag any of them to move them together, or use the arrow keys. Shift-click a card to add it or take it out.")
+            }
             HStack(spacing: Theme.Space.s) {
                 Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }
                     .buttonStyle(.panel(.quiet))
                 Spacer()
-                Button("Duplicate") { controller.duplicateSelection() }
-                    .buttonStyle(.panel())
+                if let group = controller.selectedGroup {
+                    Button("Ungroup") { controller.ungroupSelection() }
+                        .buttonStyle(.panel(.quiet))
+                    Button(group.isFolded ? "Unfold" : "Fold") { controller.setFolded(!group.isFolded, group: group.id) }
+                        .buttonStyle(.panel())
+                } else {
+                    Button("Duplicate") { controller.duplicateSelection() }
+                        .buttonStyle(.panel(.quiet))
+                    Button("Group") { controller.groupSelection() }
+                        .buttonStyle(.panel())
+                        .help("Frame these cards together under a name. A group can be folded into one card.")
+                }
             }
             .padding(.horizontal, Theme.Space.s)
             .padding(.vertical, 6)
@@ -610,6 +634,26 @@ private struct SeveralSettings: View {
             .overlay(alignment: .top) { rule }
         }
         .animation(Theme.Motion.quick, value: count)
+    }
+}
+
+/// A group's name, edited where it stands.
+private struct GroupName: View {
+    let controller: FlowController
+    let group: CardGroup
+    @State private var name = ""
+
+    var body: some View {
+        section {
+            field("Group") {
+                TextField("Name", text: $name)
+                    .textFieldStyle(.plain)
+                    .font(.dsMono(Theme.Size.body, .medium))
+                    .fieldBox()
+                    .onAppear { name = group.name }
+                    .onChange(of: name) { if name != group.name, !name.trimmingCharacters(in: .whitespaces).isEmpty { controller.rename(group: group.id, to: name) } }
+            }
+        }
     }
 }
 

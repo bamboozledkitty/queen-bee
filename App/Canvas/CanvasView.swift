@@ -92,6 +92,7 @@ final class CanvasDocumentView: NSView {
         }
         menu.addItem(.separator())
         menu.addItem(menuItem("Select All") { [weak controller] in controller?.selectAll() })
+        menu.addItem(menuItem("Tidy Up") { [weak controller] in controller?.tidy() })
         menu.addItem(menuItem("Zoom to Fit") { [weak canvas] in canvas?.zoomToFit() })
         return menu
     }
@@ -189,6 +190,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     private var marqueeStart: CGPoint?
     private var marqueeBase: Set<String> = []
     private var cardViews: [String: CardView] = [:]
+    private var groupViews: [String: GroupFrameView] = [:]
     private(set) weak var controller: FlowController?
     private var scrollMonitor: Any?
     private var responderObservation: NSKeyValueObservation?
@@ -248,11 +250,16 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     private func publishZoom() {
+        // The minimap draws where the window is looking, so panning is published as well as zooming.
+        if let controller, !controller.viewport.equalTo(scrollView.documentVisibleRect) { controller.viewport = scrollView.documentVisibleRect }
         let zoom = Double(scrollView.magnification)
         if let controller, abs(controller.zoom - zoom) > 0.004 {
             controller.zoom = zoom
             document.needsDisplay = true
             cardViews.values.forEach { $0.zoom = scrollView.magnification }
+            // A group's name strip grows as the canvas zooms out, which moves its frame.
+            if !groupViews.isEmpty { syncGroups(controller.flow, controller) }
+            if controller.viewport != scrollView.documentVisibleRect { controller.viewport = scrollView.documentVisibleRect }
         }
     }
 
@@ -301,9 +308,14 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.warning = warnings[card.id]
             context.inputCount = Set(flow.links(into: card.id).map(\.from)).count
             context.result = controller.results[card.id]
+            if card.kind == .flow, context.result == nil {
+                // What the card runs is another flow's name, which the card itself doesn't hold.
+                context.result = card.flowRef.flatMap { ref in controller.project.controllers.first { $0.flow.id == ref } }.map { "Runs \($0.flow.name)" }
+            }
             if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
                 context.isLive = true
                 context.waiting = hold.kind == .approval ? "Waiting for you to approve"
+                    : hold.kind == .flow ? "Running \(hold.command)…"
                     : hold.needsAllow ? "Waiting for you to allow its command" : "Running its command…"
             }
             context.mark = controller.marks[card.id] ?? RunMark()
@@ -323,7 +335,47 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             view.removeFromSuperview()
             cardViews[id] = nil
         }
+        syncGroups(flow, controller)
         didFirstSync = true
+    }
+
+    /// Frames for the flow's groups, and the folding away of cards that are inside a folded one.
+    private func syncGroups(_ flow: Flow, _ controller: FlowController) {
+        let groups = flow.groups ?? []
+        var folded: Set<String> = []
+        for group in groups {
+            guard let frame = GroupFrameView.frame(of: group, in: flow, zoom: scrollView.magnification) else { continue }
+            let view: GroupFrameView
+            if let existing = groupViews[group.id] {
+                view = existing
+            } else {
+                view = GroupFrameView(group: group)
+                view.canvas = self
+                groupViews[group.id] = view
+            }
+            // A frame sits behind its cards. Folded, the one card sits where cards do.
+            if view.superview == nil || view.group.isFolded != group.isFolded {
+                document.addSubview(view, positioned: group.isFolded ? .below : .above, relativeTo: group.isFolded ? overlay : linkLayer)
+            }
+            if group.isFolded { folded.formUnion(group.cardIDs) }
+            let members = flow.cards.filter { group.cardIDs.contains($0.id) }
+            let waiting = Set(controller.cardsNeedingYou.map(\.id))
+            let failed = members.contains { controller.marks[$0.id]?.failed == true }
+            let live = members.contains { card in
+                waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
+                    || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
+            }
+            let needs = members.filter { waiting.contains($0.id) }.count
+            let detail = needs > 0 ? "\(needs) need\(needs == 1 ? "s" : "") you" : live ? "working" : "\(members.count) cards"
+            view.zoom = scrollView.magnification
+            view.update(group: group, frame: frame, tone: failed ? .fail : live ? .live : .plain,
+                        isSelected: Set(group.cardIDs) == controller.selection.cardIDs, detail: detail)
+        }
+        for (id, view) in groupViews where !groups.contains(where: { $0.id == id }) {
+            view.removeFromSuperview()
+            groupViews[id] = nil
+        }
+        for (id, view) in cardViews where view.isHidden != folded.contains(id) { view.isHidden = folded.contains(id) }
     }
 
     private func viewClass(for card: Card) -> CardView.Type {
@@ -586,7 +638,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     private func card(at point: CGPoint) -> Card? {
-        controller?.flow.cards.last { CanvasGeometry.frame(of: $0).insetBy(dx: -CardView.gutter, dy: 0).contains(point) }
+        // A card folded away in a group can't be dropped on.
+        controller?.flow.cards.last { cardViews[$0.id]?.isHidden != true && CanvasGeometry.frame(of: $0).insetBy(dx: -CardView.gutter, dy: 0).contains(point) }
     }
 
     func finishLink(from cardID: String, port: String, at point: CGPoint) {
@@ -697,6 +750,13 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         let covered = AppServices.shared.canvasObstruction
         let zoom = max(scrollView.magnification, 0.01)
         return CGPoint(x: r.midX + (covered.left - covered.right) / 2 / zoom, y: r.midY)
+    }
+
+    /// Pans so `point` is in the middle of what the floating panels leave uncovered.
+    func center(on point: CGPoint) {
+        let visible = scrollView.documentVisibleRect
+        let middle = visibleCenter
+        document.scroll(CGPoint(x: visible.minX + point.x - middle.x, y: visible.minY + point.y - middle.y))
     }
 
     func zoom(by factor: CGFloat) {

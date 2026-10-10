@@ -72,12 +72,26 @@ struct WorkspaceView: View {
             }
             .padding(Self.gap)
 
+            if services.showsFind {
+                // Over everything, near the top, like a search field that came to you.
+                VStack {
+                    FindPanel { services.showsFind = false }
+                        .padding(.top, 90)
+                    Spacer()
+                }
+                .background {
+                    Color.clear.contentShape(Rectangle()).onTapGesture { services.showsFind = false }
+                }
+                .transition(.opacity.combined(with: .offset(y: -8)))
+            }
+
             if services.showsWelcome {
                 OnboardingView { services.closeWelcome() }
                     .transition(.opacity)
             }
         }
         .animation(Theme.Motion.standard, value: services.showsWelcome)
+        .animation(Theme.Motion.standard, value: services.showsFind)
         .animation(Theme.Motion.standard, value: showsSidebar)
         .animation(Theme.Motion.standard, value: showsPanel)
         .onChange(of: obstruction, initial: true) { services.canvasObstruction = obstruction }
@@ -214,6 +228,7 @@ struct CanvasControls: View {
     let showLog: () -> Void
     let showOrchestrator: () -> Void
     @Environment(\.orchestratorIsShowing) private var orchestratorIsShowing
+    @AppStorage("showsMinimap") private var showsMinimap = true
     private var services: AppServices { AppServices.shared }
 
     /// An empty flow points at the orchestrator until it is built in, or the note is closed.
@@ -242,6 +257,11 @@ struct CanvasControls: View {
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }
             .overlay(alignment: .bottomTrailing) {
                 VStack(alignment: .trailing, spacing: Theme.Space.s) {
+                    // A map earns its place once a flow is too big to take in at a glance.
+                    if showsMinimap, controller.flow.cards.count >= 5, !controller.showsCost {
+                        Minimap(controller: controller)
+                            .transition(.opacity)
+                    }
                     if controller.showsCost {
                         CostBreakdown(controller: controller) { controller.showsCost = false }
                             .transition(.opacity.combined(with: .offset(y: 6)))

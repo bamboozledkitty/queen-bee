@@ -164,6 +164,9 @@ enum CardHelp {
         case .script:
             ("Runs a command on your Mac and checks whether it worked. No AI is involved, so it is quick and certain.",
              "Run “npm test”. Pass goes to Done. Fail goes back to the Coder with the errors.")
+        case .flow:
+            ("Runs another of the project's flows as a single step. Build a piece once, then use it wherever you need it.",
+             "A “Review loop” flow of four cards becomes one card in three other flows.")
         case .end:
             ("Where a run's answer lands. It shows the final answer and can save it to a file.",
              "Save the approved slogan to slogan.txt.")
@@ -177,6 +180,7 @@ enum CardHelp {
 /// Zoom out, the zoom level, zoom in, and fit, pinned to the canvas's corner.
 struct ZoomPill: View {
     let controller: FlowController
+    @AppStorage("showsMinimap") private var showsMinimap = true
 
     var body: some View {
         HStack(spacing: 2) {
@@ -191,6 +195,7 @@ struct ZoomPill: View {
             button("plus", help: "Zoom in") { controller.canvas?.zoom(by: 1.25) }
             Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: 14).padding(.horizontal, 2)
             button("arrow.up.left.and.arrow.down.right", help: "Fit the whole flow") { controller.canvas?.zoomToFit() }
+            button(showsMinimap ? "map.fill" : "map", help: showsMinimap ? "Hide the map of the flow" : "Show a map of the whole flow") { showsMinimap.toggle() }
         }
         .foregroundStyle(Theme.ink.ui)
         .padding(.horizontal, 5)
@@ -207,6 +212,161 @@ struct ZoomPill: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// The whole flow in a corner: every card, what is live or waiting, and the part the window
+/// is showing. Click or drag in it to go there.
+struct Minimap: View {
+    static let size = CGSize(width: 190, height: 124)
+    let controller: FlowController
+
+    var body: some View {
+        let flow = controller.flow
+        let frames = flow.cards.map(CanvasGeometry.frame(of:))
+        // The map is of the flow, so the cards fill it. The window's view is drawn over them and
+        // runs off the map's edge when it takes in more than the flow.
+        let world = (frames.isEmpty ? controller.viewport : frames.reduce(CGRect.null) { $0.union($1) }).insetBy(dx: -80, dy: -80)
+        let scale = world.isNull || world.width <= 0 ? 1 : min(Self.size.width / world.width, Self.size.height / world.height)
+        // The flow is drawn in the middle of the map, whatever its shape.
+        let inset = CGSize(width: (Self.size.width - world.width * scale) / 2, height: (Self.size.height - world.height * scale) / 2)
+        let waiting = Set(controller.cardsNeedingYou.map(\.id))
+        let selected = controller.selection.cardIDs
+
+        Canvas { context, _ in
+            func place(_ rect: CGRect) -> CGRect {
+                CGRect(x: inset.width + (rect.minX - world.minX) * scale, y: inset.height + (rect.minY - world.minY) * scale,
+                       width: max(2, rect.width * scale), height: max(2, rect.height * scale))
+            }
+            for card in flow.cards {
+                let rect = place(CanvasGeometry.frame(of: card))
+                let failed = controller.marks[card.id]?.failed == true
+                let live = waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
+                    || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
+                let fill = failed ? Theme.failInk : live ? Theme.live : card.kind == .agent ? Theme.ink : Theme.inkSecondary
+                context.fill(Path(rect), with: .color(fill.ui.opacity(waiting.contains(card.id) || failed || live ? 1 : 0.55)))
+                if selected.contains(card.id) {
+                    context.stroke(Path(rect.insetBy(dx: -1.5, dy: -1.5)), with: .color(Theme.select.ui), lineWidth: 1.5)
+                }
+            }
+            if !controller.viewport.isEmpty {
+                context.stroke(Path(place(controller.viewport)), with: .color(Theme.select.ui), lineWidth: 1)
+            }
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+        .background(Theme.paper.ui)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .floatingPanel()
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+            guard scale > 0 else { return }
+            controller.canvas?.center(on: CGPoint(x: world.minX + (drag.location.x - inset.width) / scale,
+                                                  y: world.minY + (drag.location.y - inset.height) / scale))
+        })
+        .help("The whole flow. Click or drag to go to a part of it.")
+    }
+}
+
+/// Finds a card by name in any flow and goes to it.
+struct FindPanel: View {
+    let close: () -> Void
+    @State private var query = ""
+    @State private var picked = 0
+    @FocusState private var isFocused: Bool
+    private var services: AppServices { AppServices.shared }
+
+    private struct Match: Identifiable {
+        let controller: FlowController
+        let card: Card?
+        var id: String { controller.flow.id + "/" + (card?.id ?? "") }
+    }
+
+    private var matches: [Match] {
+        let wanted = query.trimmingCharacters(in: .whitespaces)
+        guard !wanted.isEmpty else { return [] }
+        var found: [Match] = []
+        // The flow on screen first, then the others.
+        let flows = services.allFlows.sorted { a, _ in a.flow.id == services.selectedFlowID }
+        for controller in flows {
+            if controller.flow.name.localizedCaseInsensitiveContains(wanted) { found.append(Match(controller: controller, card: nil)) }
+            for card in controller.flow.cards where card.name.localizedCaseInsensitiveContains(wanted)
+                || card.kind.label.localizedCaseInsensitiveContains(wanted) {
+                found.append(Match(controller: controller, card: card))
+            }
+        }
+        return Array(found.prefix(12))
+    }
+
+    var body: some View {
+        let found = matches
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Theme.Space.s) {
+                Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.inkSecondary.ui)
+                TextField("Find a card or a flow", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.dsSans(Theme.Size.heading))
+                    .focused($isFocused)
+                    .onSubmit { if found.indices.contains(picked) { go(to: found[picked]) } }
+                    .onKeyPress(.downArrow) { picked = min(picked + 1, max(found.count - 1, 0)); return .handled }
+                    .onKeyPress(.upArrow) { picked = max(picked - 1, 0); return .handled }
+                    .onKeyPress(.escape) { close(); return .handled }
+                    .onChange(of: query) { picked = 0 }
+            }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, 10)
+
+            if !found.isEmpty {
+                Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(found.enumerated()), id: \.element.id) { index, match in
+                        HStack(spacing: Theme.Space.s) {
+                            Image(systemName: match.card.map { CanvasGeometry.icon(for: $0.kind) } ?? "point.3.connected.trianglepath.dotted")
+                                .font(.system(size: 11, weight: .medium))
+                                .frame(width: 16)
+                            Text(match.card?.name ?? match.controller.flow.name)
+                                .font(.dsMono(Theme.Size.body, .medium))
+                                .lineLimit(1)
+                            Spacer(minLength: Theme.Space.s)
+                            Text(match.card == nil ? "flow in \(match.controller.project.name)" : match.controller.flow.name)
+                                .font(.dsMono(Theme.Size.caption))
+                                .foregroundStyle(Theme.inkSecondary.ui)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, Theme.Space.s)
+                        .padding(.vertical, 5)
+                        .background(index == picked ? Theme.barHover.ui : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+                        .contentShape(Rectangle())
+                        .onTapGesture { go(to: match) }
+                        .onHover { if $0 { picked = index } }
+                    }
+                }
+                .padding(Theme.Space.xs)
+            } else if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+                Text("No card or flow has that in its name.")
+                    .font(.dsSans(Theme.Size.body))
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                    .padding(Theme.Space.m)
+            }
+        }
+        .foregroundStyle(Theme.ink.ui)
+        .frame(width: 440)
+        .floatingPanel()
+        .onAppear { isFocused = true }
+    }
+
+    private func go(to match: Match) {
+        services.selectedFlowID = match.controller.flow.id
+        close()
+        guard let card = match.card else { return }
+        match.controller.select(.card(card.id))
+        // A flow that wasn't on screen needs a moment for its canvas to appear.
+        Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            // A card folded away in a group can't be shown until the group is unfolded.
+            if let group = match.controller.flow.group(containing: card.id), group.isFolded { match.controller.setFolded(false, group: group.id) }
+            match.controller.canvas?.zoom(toCard: card.id)
+        }
     }
 }
 

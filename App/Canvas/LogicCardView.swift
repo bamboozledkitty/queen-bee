@@ -138,6 +138,8 @@ enum CardSummary {
         case .approval:
             let ask = (card.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return ask.isEmpty ? "Waits for you to approve" : ask
+        case .flow:
+            return "Runs another flow"
         case .script:
             let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
             return first.isEmpty ? "Write the command" : first

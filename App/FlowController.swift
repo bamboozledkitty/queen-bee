@@ -167,6 +167,8 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var scriptTasks: [String: Task<Void, Never>] = [:]
     /// The canvas's zoom, published by the canvas for the zoom pill.
     var zoom: Double = 1
+    /// The part of the canvas the window is showing, published by the canvas for the minimap.
+    var viewport = CGRect.zero
 
     @ObservationIgnored weak var canvas: CanvasView?
     @ObservationIgnored private(set) var sessions: [String: TerminalSession] = [:]
@@ -1143,6 +1145,12 @@ final class FlowController: ToolHost {
             pending.command = card.command ?? ""
             pending.needsAllow = !ScriptRunner.isAllowed(pending.command, flowID: flow.id, cardID: card.id)
         }
+        if hold.kind == .flow {
+            let inner = card.flowRef.flatMap { ref in project.controllers.first { $0.flow.id == ref } }
+            pending.command = inner?.flow.name ?? ""
+            holds.append(pending)
+            return runInnerFlow(pending, inner)
+        }
         holds.append(pending)
         if pending.kind == .approval {
             Notifier.post(title: "\(card.name) needs your approval", body: String(hold.text.prefix(200)), flowID: flow.id, cardID: card.id)
@@ -1152,6 +1160,87 @@ final class FlowController: ToolHost {
         } else {
             runScript(pending)
         }
+    }
+
+    /// A Flow card: runs another flow of the project with the message as its command, and
+    /// passes that flow's final answer on.
+    private func runInnerFlow(_ hold: PendingHold, _ inner: FlowController?) {
+        guard let inner, inner !== self else {
+            return resolve(hold.id, port: "fail", text: "The flow this card runs is no longer in the project.")
+        }
+        // This also stops two flows that run each other from going round for ever.
+        guard !inner.isRunning else {
+            return resolve(hold.id, port: "fail", text: "\(inner.flow.name) was already running.")
+        }
+        scriptTasks[hold.id] = Task {
+            let answer = await withTaskCancellationHandler {
+                await inner.runToEnd(command: hold.text)
+            } onCancel: {
+                Task { @MainActor in await inner.stop() }
+            }
+            guard !Task.isCancelled else { return }
+            self.scriptTasks[hold.id] = nil
+            self.resolve(hold.id, port: answer.finished ? "done" : "fail", text: answer.text)
+        }
+    }
+
+    /// Runs the flow and waits for the run to end. The answer is what reached its End cards.
+    func runToEnd(command: String) async -> (finished: Bool, text: String) {
+        let before = runs.last?.id
+        let status = await run(command: command)
+        while isRunning { try? await Task.sleep(for: .milliseconds(300)) }
+        guard let record = runs.last, record.id != before else { return (false, status) }
+        let answers = flow.cards.filter { $0.kind == .end }.compactMap { record.results[$0.id] }
+        let text = answers.isEmpty ? record.log.last?.text ?? "" : answers.joined(separator: "\n\n")
+        return (record.outcome == .finished, text)
+    }
+
+    /// Lays the flow out left to right in the order its links run, then shows all of it.
+    func tidy() {
+        let changed = perform("Tidy Up") { flow in
+            for (id, point) in Tidy.layout(flow) {
+                guard let index = flow.cards.firstIndex(where: { $0.id == id }) else { continue }
+                flow.cards[index].x = point.x
+                flow.cards[index].y = point.y
+            }
+        }
+        if changed { canvas?.zoomToFit() }
+    }
+
+    // MARK: Groups
+
+    /// The group whose cards are exactly what is selected.
+    var selectedGroup: CardGroup? {
+        let ids = selection.cardIDs
+        return (flow.groups ?? []).first { Set($0.cardIDs) == ids }
+    }
+
+    func groupSelection() {
+        let ids = selection.cardIDs
+        guard ids.count >= 2 else { return }
+        perform("Group") { try $0.addGroup(cardIDs: Array(ids)) }
+    }
+
+    func ungroupSelection() {
+        guard let group = selectedGroup else { return }
+        perform("Ungroup") { $0.removeGroup(group.id) }
+    }
+
+    func rename(group id: String, to name: String) {
+        perform("Rename Group", key: "group:\(id)") { try $0.updateGroup(id, name: name) }
+    }
+
+    func setFolded(_ folded: Bool, group id: String) {
+        perform(folded ? "Fold Group" : "Unfold Group") { try $0.updateGroup(id, isFolded: folded) }
+    }
+
+    /// Selects a group's cards and says where each is, for a drag that moves the group.
+    func dragOrigins(forGroup id: String) -> [String: CGPoint] {
+        guard let group = (flow.groups ?? []).first(where: { $0.id == id }) else { return [:] }
+        selection = .of(Set(group.cardIDs))
+        var origins: [String: CGPoint] = [:]
+        for card in flow.cards where group.cardIDs.contains(card.id) { origins[card.id] = CGPoint(x: card.x, y: card.y) }
+        return origins
     }
 
     private func runScript(_ hold: PendingHold) {

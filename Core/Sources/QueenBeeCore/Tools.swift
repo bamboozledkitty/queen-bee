@@ -182,6 +182,8 @@ public enum Tools {
                 fields["save_to"] = text(card.saveTo)
             case .note, .approval:
                 fields["text"] = text(card.text)
+            case .flow:
+                fields["flow"] = text(card.flowRef)
             case .and, .or:
                 break
             }
@@ -229,6 +231,8 @@ public enum Tools {
             - note: text for people. Carries no messages and cannot be linked.
             - approval: holds the message until the person approves or rejects it. They can edit it first. \
             Outputs: approved, rejected. Put one before anything that can't be taken back, such as sending an email.
+            - flow: runs another flow in this project as one step, giving it the message as its command. \
+            Outputs: done (with that flow's final answer) and fail. The person chooses which flow in its settings.
             - script: runs a shell command in the project folder, with the message on its standard input and in \
             $QB_MESSAGE. Outputs: pass (it exited with 0) and fail. What it printed is passed on. The person is \
             asked to allow a command they did not type themselves the first time a run reaches it.

@@ -62,6 +62,8 @@ final class AppServices {
         saveRoles()
     }
 
+    /// The find panel is open.
+    var showsFind = false
     /// The first-run walk-through is on screen.
     var showsWelcome = false
     /// Blank flows whose pointer to the orchestrator has been closed.
