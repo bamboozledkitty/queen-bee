@@ -727,9 +727,11 @@ final class FlowController: ToolHost {
     /// Where each card a drag of `id` moves is now. Dragging one of several selected cards
     /// moves them all; dragging any other card selects it and moves it alone.
     func dragOrigins(for id: String) -> [String: CGPoint] {
-        if !selection.cardIDs.contains(id) { selection = .card(id) }
+        // Dragging is for moving. It doesn't select, so a card's settings don't open under the
+        // pointer on the way: those open on a click, which is a press and release with no drag.
+        let moving = selection.cardIDs.contains(id) ? selection.cardIDs : [id]
         var origins: [String: CGPoint] = [:]
-        for card in flow.cards where selection.cardIDs.contains(card.id) { origins[card.id] = CGPoint(x: card.x, y: card.y) }
+        for card in flow.cards where moving.contains(card.id) { origins[card.id] = CGPoint(x: card.x, y: card.y) }
         return origins
     }
 
@@ -1513,7 +1515,6 @@ final class FlowController: ToolHost {
     /// Selects a group's cards and says where each is, for a drag that moves the group.
     func dragOrigins(forGroup id: String) -> [String: CGPoint] {
         guard let group = (flow.groups ?? []).first(where: { $0.id == id }) else { return [:] }
-        selection = .of(Set(group.cardIDs))
         var origins: [String: CGPoint] = [:]
         for card in flow.cards where group.cardIDs.contains(card.id) { origins[card.id] = CGPoint(x: card.x, y: card.y) }
         return origins
@@ -1652,7 +1653,8 @@ final class FlowController: ToolHost {
         }
         return FlowSnapshot(flow: flow, agents: agents, isRunning: isRunning,
                             otherFlows: project.controllers.filter { $0 !== self && self.nestingProblem(placing: $0) == nil }.map(\.flow.name),
-                            subflowLevelsLeft: levelsLeft)
+                            subflowLevelsLeft: levelsLeft,
+                            subflows: subflows().map { (name: $0.controller.flow.name, depth: $0.depth) })
     }
 
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T {
@@ -1665,6 +1667,52 @@ final class FlowController: ToolHost {
         registerUndo(from: old, "Orchestrator's Changes", key: "orchestrator", within: 8)
         reconcile()
         return value
+    }
+
+    /// The orchestrator may work in the sub-flows below its own flow, and nowhere else.
+    func subflowHost(named ref: String) async throws -> any ToolHost {
+        let wanted = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        if wanted == flow.id || flow.name.caseInsensitiveCompare(wanted) == .orderedSame { return self }
+        let below = subflows().map(\.controller)
+        guard let found = below.first(where: { $0.flow.id == wanted }) ?? below.first(where: { $0.flow.name.caseInsensitiveCompare(wanted) == .orderedSame }) else {
+            let names = below.map(\.flow.name)
+            throw FlowError.notFound("No sub-flow below \(flow.name) is called \"\(wanted)\". "
+                + (names.isEmpty ? "It has none yet." : "Below it are: \(names.joined(separator: ", ")).")
+                + " You can only work in your own flow and the sub-flows below it, not the flows above or beside it.")
+        }
+        return found
+    }
+
+    /// Makes a sub-flow below this flow for the orchestrator: the flow, and the Flow card that runs it.
+    func createSubflow(name: String?, card: String?) async throws -> String {
+        if let problem = newSubflowProblem {
+            throw FlowError.invalid(problem + " Tell the person that no more sub-flows can be added at this level unless they raise that limit.")
+        }
+        var existing: Card?
+        if let card, !card.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let found = flow.resolveCard(card) else { throw FlowError.notFound("No card called \"\(card)\"") }
+            guard found.kind == .flow else { throw FlowError.invalid("\"\(found.name)\" is a \(found.kind.label) card, not a Flow card") }
+            guard innerFlow(of: found) == nil else { throw FlowError.invalid("\"\(found.name)\" already runs a flow") }
+            existing = found
+        }
+        guard let made = project.newSubflow(named: name ?? existing?.name ?? "Sub-flow") else {
+            throw FlowError.invalid("The sub-flow couldn't be saved")
+        }
+        let madeID = made.flow.id, madeName = made.flow.name, existingID = existing?.id
+        do {
+            let cardName = try await mutate { flow -> String in
+                var patch = CardPatch()
+                patch.flowRef = madeID
+                if let existingID { return try flow.updateCard(existingID, patch: patch).name }
+                return try flow.addCard(kind: .flow, name: flow.uniqueName(madeName), patch: patch, clearOfOthers: true).name
+            }
+            return "Made the sub-flow \"\(madeName)\" with an Input card and an Output card, and the Flow card \"\(cardName)\" here runs it. "
+                + "Build it by passing in_flow: \"\(madeName)\" to the other tools. It may go \(max(0, made.levelsLeft)) more \(made.levelsLeft == 1 ? "level" : "levels") down."
+        } catch {
+            // Nothing points at the new flow, so it would only be clutter.
+            project.delete(made)
+            throw error
+        }
     }
 
     /// Refuses an edit that would nest sub-flows deeper than the limit, or make a flow run itself.

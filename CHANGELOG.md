@@ -14,6 +14,8 @@ All notable changes to Queen Bee are listed here. The format follows
 - A sub-flow's canvas opens with all of it in view, shows the map and the note pointing at the orchestrator, and its Input no longer warns that it has no command. Its orchestrator is told it is building a sub-flow.
 - Sub-flows only nest as deep as the flow at the top allows: three levels unless you change it in that flow's settings. Edits, the orchestrator's tools and runs are all held to it, and a flow can't be made to run itself.
 - Flow settings, from the sliders button in the toolbar: the flow's name, its sub-flow limit, and whether its orchestrator is told when a run ends.
+- The orchestrator can make sub-flows below its own flow and build inside them, however far down the limit allows. It can't reach the flows above or beside it, and when the limit is reached it is told to say so.
+- Dragging a card or a group no longer selects it, so its settings only open on a click.
 - The hand closes as soon as you press on a card's title bar or a group's name, before you move.
 - Mouse navigation: Command or Control with the scroll wheel zooms about the pointer, and holding Space or the middle button drags the canvas.
 - With several Start cards, Run starts from the selected one, the Run button offers a choice, and each Start card has its own Run.

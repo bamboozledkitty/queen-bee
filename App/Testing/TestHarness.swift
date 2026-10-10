@@ -160,6 +160,14 @@ enum TestHarness {
             controller.select(.none)
             controller.showsFlowSettings = true
             return [:]
+        case "drag":
+            // The calls a drag of a card's title bar makes, in order.
+            guard let cardID else { return ["error": "drag needs card"] }
+            controller.beginGesture()
+            let origins = controller.dragOrigins(for: cardID)
+            controller.moveCards(from: origins, by: CGSize(width: payload["dx"]?.doubleValue ?? 0, height: payload["dy"]?.doubleValue ?? 0))
+            controller.endGesture("Move")
+            return ["moved": .number(Double(origins.count))]
         case "tool":
             // Calls one of the orchestrator's tools, as its session would.
             guard let name = payload["name"]?.stringValue else { return ["error": "tool needs name"] }

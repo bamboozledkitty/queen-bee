@@ -29,6 +29,8 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
 - **Sub-flows have a depth limit.** A Flow card runs another flow of the same project. How deep that can nest is
   set on the flow at the top, three levels unless changed and never more than ten, and a run stops at the limit, so
   flows can't be chained without end.
+- **An orchestrator works downward only.** A flow's orchestrator can edit its own flow and the sub-flows below it,
+  and can make new sub-flows there. It cannot edit the flows above or beside its own.
 - **The orchestrator can edit and run the flow without asking.** Its tools are pre-approved. Text an agent reads
   from the web or a file can end up in front of the orchestrator, so the usual prompt-injection caution applies.
 - **The app's socket is local.** The helper talks to the app over a unix socket in

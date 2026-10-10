@@ -587,6 +587,30 @@ def scenario_subflow(app):
     s = app.wait(fid, lambda s: not s["isRunning"] and s["results"], 30, "the outer run to end")
     check("an inner flow that never reaches its Output comes out Fail", list(s["results"]) == ["Failed"], str(s["results"]))
 
+    r = app.op(fid, "tool", name="create_subflow", arguments={"name": "Made"})
+    s = app.state(fid)
+    check("the orchestrator can make a sub-flow below its flow", not r["isError"] and "Made" in s["flows"] and "Made" in [c["name"] for c in s["cards"]], str(r))
+    r = app.op(fid, "tool", name="add_card", arguments={"in_flow": "Made", "kind": "script", "name": "Step", "command": "echo hi"})
+    check("and build inside it", not r["isError"], str(r))
+    r = app.op(fid, "tool", name="get_flow", arguments={"in_flow": "Made"})
+    check("its cards are the sub-flow's", not r["isError"] and '"Step"' in r["text"] and '"Input"' in r["text"], r["text"][:200])
+    r = app.op(fid, "tool", name="create_subflow", arguments={"in_flow": "Made", "name": "Deeper"})
+    check("and make a sub-flow a level further down", not r["isError"] and "Deeper" in app.state(fid)["flows"], str(r))
+    r = app.op(fid, "tool", name="get_flow", arguments={})
+    check("it is told what sits below it", '"Deeper"' in r["text"] and '"levels_down":2' in r["text"].replace(" ", ""), r["text"][-300:])
+    r = app.op(inner, "tool", name="add_card", arguments={"in_flow": "Outer", "kind": "note"})
+    check("a sub-flow's orchestrator can't reach the flow above it", r["isError"] and "above or beside" in r["text"], str(r))
+    r = app.op(inner, "tool", name="get_flow", arguments={"in_flow": "Made"})
+    check("or a flow beside it", r["isError"], str(r))
+
+    app.op(fid, "pick")
+    moved_from = [c for c in app.state(fid)["cards"] if c["name"] == "Done"][0]
+    app.op(fid, "drag", card="Done", dx=120, dy=96)
+    s = app.state(fid)
+    moved_to = [c for c in s["cards"] if c["name"] == "Done"][0]
+    check("dragging a card moves it", (moved_to["x"], moved_to["y"]) != (moved_from["x"], moved_from["y"]), f"{moved_from} {moved_to}")
+    check("without selecting it, so its settings stay shut", s["selected"] == [] and s["undo"] == "Move", f"{s['selected']} {s['undo']}")
+
     r = app.op(fid, "openSub", card="Shouter")
     check("opening a Flow card goes into its flow", r == {"now": "Inner", "trail": 2}, str(r))
     r = app.op(inner, "back")
@@ -669,6 +693,9 @@ def scenario_deep(app):
     check("a sub-flow run by itself is held to the top flow's limit too", not s["results"], str(s["results"]))
     app.op(ids[0], "limit", levels=3)
 
+    r = app.op(ids[4], "tool", name="create_subflow", arguments={"name": "Too far"})
+    check("at the limit the orchestrator is told no more sub-flows can be added", r["isError"] and "no more sub-flows can be added" in r["text"]
+          and "Too far" not in app.state(ids[4])["flows"], str(r))
     r = app.op(ids[4], "tool", name="add_card", arguments={"kind": "flow", "name": "Deeper"})
     check("the orchestrator can't add a Flow card below the limit", r["isError"] and "deeper" in r["text"], str(r))
     r = app.op(ids[3], "tool", name="update_card", arguments={"card": "Next", "flow": "Level0"})

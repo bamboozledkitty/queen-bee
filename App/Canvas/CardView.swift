@@ -562,7 +562,6 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         case .began:
             dragSize = CGSize(width: card.width, height: card.height)
             beginDrag(g, in: canvas) { [weak self] in self?.resizeToPointer() }
-            canvas.controller?.select(.card(card.id))
             canvas.controller?.beginGesture()
         case .changed, .ended:
             resizeToPointer()

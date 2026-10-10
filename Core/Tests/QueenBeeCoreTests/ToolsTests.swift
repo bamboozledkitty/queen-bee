@@ -65,7 +65,7 @@ actor FakeHost: ToolHost {
     @Test func everyToolIsDefinedWithAnObjectSchema() {
         #expect(Tools.definitions.map(\.name) == [
             "get_flow", "add_card", "update_card", "remove_card", "add_link", "remove_link",
-            "run_flow", "stop_flow", "read_agent", "get_run_log",
+            "run_flow", "stop_flow", "read_agent", "create_subflow", "get_run_log",
         ])
         for tool in Tools.definitions {
             #expect(!tool.description.isEmpty)
