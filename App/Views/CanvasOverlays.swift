@@ -476,7 +476,7 @@ struct CostBreakdown: View {
                 .overlay(alignment: .top) { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
             }
 
-            Text("An estimate of what this work would cost if you paid Anthropic by usage, as Claude Code works it out. On a Claude subscription you don't pay this, so read it as a measure of how much the flow uses. A run's figure leaves out the orchestrator.")
+            Text("An estimate of what this work would cost if you paid Anthropic by usage. On a Claude subscription you don't pay this, so read it as a measure of how much the flow uses. It updates each time an agent finishes a reply. A run's figure leaves out the orchestrator.")
                 .font(.dsSans(Theme.Size.caption))
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
