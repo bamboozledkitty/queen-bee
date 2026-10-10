@@ -98,11 +98,16 @@ final class CanvasDocumentView: NSView {
 
     // MARK: Cards dropped from the palette
 
-    private func kind(in info: NSDraggingInfo) -> CardKind? {
+    /// The kind of card being dragged from the palette, and the saved role when it is one:
+    /// a role travels as "agent@" and its id.
+    private func kind(in info: NSDraggingInfo) -> (kind: CardKind, role: AgentRole?)? {
         let board = info.draggingPasteboard
-        let raw = board.string(forType: Self.cardKindType)
-            ?? board.data(forType: Self.cardKindType).flatMap { String(data: $0, encoding: .utf8) }
-        return raw.flatMap(CardKind.init(rawValue:))
+        guard let raw = board.string(forType: Self.cardKindType)
+            ?? board.data(forType: Self.cardKindType).flatMap({ String(data: $0, encoding: .utf8) }) else { return nil }
+        let parts = raw.split(separator: "@", maxSplits: 1).map(String.init)
+        guard let kind = parts.first.flatMap(CardKind.init(rawValue:)) else { return nil }
+        let role = parts.count > 1 ? AppServices.shared.roles.first { $0.id == parts[1] } : nil
+        return (kind, role)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -125,8 +130,8 @@ final class CanvasDocumentView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         canvas?.endEdgePan()
-        guard let kind = kind(in: sender) else { return false }
-        canvas?.controller?.addCard(kind, at: convert(sender.draggingLocation, from: nil))
+        guard let dropped = kind(in: sender) else { return false }
+        canvas?.controller?.addCard(dropped.kind, at: convert(sender.draggingLocation, from: nil), role: dropped.role)
         return true
     }
 }

@@ -27,6 +27,41 @@ final class AppServices {
     }
     /// How much of the canvas the floating panels cover, published by the window for the canvas.
     @ObservationIgnored var canvasObstruction = CanvasObstruction(left: 400, right: 450)
+    /// Saved agent roles, shared by every flow.
+    private(set) var roles: [AgentRole] = []
+    private var rolesURL: URL { supportDirectory.appendingPathComponent("roles.json") }
+
+    private func loadRoles() {
+        guard let data = try? Data(contentsOf: rolesURL), let saved = try? JSONDecoder().decode([AgentRole].self, from: data) else { return }
+        roles = saved
+    }
+
+    private func saveRoles() {
+        guard let data = try? JSONEncoder().encode(roles) else { return }
+        try? data.write(to: rolesURL, options: .atomic)
+    }
+
+    /// Saves a role, replacing the one with the same id, or with the same name when it is new.
+    @discardableResult
+    func save(_ role: AgentRole) -> AgentRole {
+        var role = role
+        if let index = roles.firstIndex(where: { $0.id == role.id }) {
+            roles[index] = role
+        } else if let index = roles.firstIndex(where: { $0.name.caseInsensitiveCompare(role.name) == .orderedSame }) {
+            role.id = roles[index].id
+            roles[index] = role
+        } else {
+            roles.append(role)
+        }
+        saveRoles()
+        return role
+    }
+
+    func deleteRole(_ id: String) {
+        roles.removeAll { $0.id == id }
+        saveRoles()
+    }
+
     /// The first-run walk-through is on screen.
     var showsWelcome = false
     /// Blank flows whose pointer to the orchestrator has been closed.
@@ -79,6 +114,7 @@ final class AppServices {
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: supportDirectory.path)
         installPlugin()
         startServer()
+        loadRoles()
         restoreProjects()
         // A test run isn't a first run, unless it asks to see the walk-through.
         showsWelcome = remembersProjects ? !UserDefaults.standard.bool(forKey: OnboardingView.seenKey) : LaunchArguments.welcome

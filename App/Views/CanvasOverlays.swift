@@ -7,12 +7,20 @@ import UniformTypeIdentifiers
 struct PaletteView: View {
     static let width: CGFloat = 132
     let controller: FlowController
+    private var services: AppServices { AppServices.shared }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(CardKindMenu.kinds, id: \.self) { kind in
                 PaletteRow(kind: kind) { controller.addCard(kind) }
                 if kind == .agent {
+                    // Saved roles sit under Agent: each makes an agent that is already set up.
+                    ForEach(services.roles) { role in
+                        PaletteRow(kind: .agent, role: role) { controller.addCard(.agent, role: role) }
+                            .contextMenu {
+                                Button("Delete Role", role: .destructive) { services.deleteRole(role.id) }
+                            }
+                    }
                     Rectangle().fill(Theme.hairline.ui).frame(height: 1).padding(.vertical, 3)
                 }
             }
@@ -25,6 +33,8 @@ struct PaletteView: View {
 
 private struct PaletteRow: View {
     let kind: CardKind
+    /// A saved role, when the row stands for one and not for the plain kind.
+    var role: AgentRole?
     let add: () -> Void
     @State private var isHovered = false
     /// The pointer has rested on the row long enough to want to know what the card is.
@@ -32,11 +42,12 @@ private struct PaletteRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            Image(systemName: CanvasGeometry.icon(for: kind))
+            Image(systemName: role == nil ? CanvasGeometry.icon(for: kind) : "person.crop.square")
                 .font(.system(size: 11, weight: .medium))
                 .frame(width: 16)
-            Text(kind.label)
-                .font(.dsMono(Theme.Size.caption, .medium))
+            Text(role?.name ?? kind.label)
+                .font(.dsMono(Theme.Size.caption, role == nil ? .medium : .regular))
+                .lineLimit(1)
             Spacer(minLength: 0)
         }
         .foregroundStyle(Theme.ink.ui)
@@ -53,7 +64,7 @@ private struct PaletteRow: View {
         // Beside the palette, level with the row, and never in the pointer's way.
         .overlay(alignment: .topLeading) {
             if showsHelp {
-                CardHelpView(kind: kind)
+                CardHelpView(kind: kind, role: role)
                     .offset(x: PaletteView.width + Theme.Space.xs)
                     .allowsHitTesting(false)
                     .transition(.opacity.combined(with: .offset(x: -6)))
@@ -67,7 +78,7 @@ private struct PaletteRow: View {
             let provider = NSItemProvider()
             let type = CanvasDocumentView.cardKindType.rawValue
             provider.registerDataRepresentation(forTypeIdentifier: type, visibility: .ownProcess) { done in
-                done(Data(kind.rawValue.utf8), nil)
+                done(Data((role.map { "\(kind.rawValue)@\($0.id)" } ?? kind.rawValue).utf8), nil)
                 return nil
             }
             return provider
@@ -79,19 +90,20 @@ private struct PaletteRow: View {
 /// What a kind of card does, in a sentence anyone can follow, and one small example.
 struct CardHelpView: View {
     let kind: CardKind
+    var role: AgentRole?
 
     var body: some View {
-        let help = CardHelp.text(for: kind)
+        let help = role.map(CardHelp.text(for:)) ?? CardHelp.text(for: kind)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: CanvasGeometry.icon(for: kind)).font(.system(size: 11, weight: .medium))
-                Text(kind.label).font(.dsMono(Theme.Size.body, .medium))
+                Image(systemName: role == nil ? CanvasGeometry.icon(for: kind) : "person.crop.square").font(.system(size: 11, weight: .medium))
+                Text(role?.name ?? kind.label).font(.dsMono(Theme.Size.body, .medium))
             }
             Text(help.what)
                 .font(.dsSans(Theme.Size.body))
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("For example").font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                Text(role == nil ? "For example" : "Its instructions").font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                 Text(help.example)
                     .font(.dsSans(Theme.Size.caption))
                     .fixedSize(horizontal: false, vertical: true)
@@ -111,6 +123,15 @@ struct CardHelpView: View {
 }
 
 enum CardHelp {
+    /// A saved role: what it is, and the start of what it tells its agent.
+    static func text(for role: AgentRole) -> (what: String, example: String) {
+        let settings = [role.model.isEmpty ? nil : role.model.capitalized, role.effort.isEmpty ? nil : "\(role.effort) effort",
+                        role.permissionMode.isEmpty ? nil : role.permissionMode].compactMap { $0 }.joined(separator: ", ")
+        let brief = role.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ("A saved role. It adds an agent that is already set up\(settings.isEmpty ? "" : ": \(settings)"). Right-click to delete the role.",
+                brief.isEmpty ? "No instructions." : String(brief.prefix(220)) + (brief.count > 220 ? "…" : ""))
+    }
+
     static func text(for kind: CardKind) -> (what: String, example: String) {
         switch kind {
         case .agent:

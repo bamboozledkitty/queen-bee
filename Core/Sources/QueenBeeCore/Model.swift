@@ -63,6 +63,8 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     public var cwd: String?
     /// The Claude Code session behind the card, set the first time it starts.
     public var sessionID: String?
+    /// The saved role the agent was made from, if any: an id from the app's own list of roles.
+    public var role: String?
 
     // Start
     /// The command a run begins with.

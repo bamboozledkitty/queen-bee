@@ -213,6 +213,7 @@ private struct CardSettings: View {
 
     @ViewBuilder private var agent: some View {
         EditorField("Instructions", text: card.instructions ?? "") { v in patch { $0.instructions = v } }
+        roleRow
         row("Model") {
             let known = ["fable", "opus", "sonnet", "haiku"]
             let custom = (card.model ?? "").isEmpty || known.contains(card.model ?? "") ? [] : [(value: card.model ?? "", label: card.model ?? "")]
@@ -235,6 +236,52 @@ private struct CardSettings: View {
             MenuField(options: [(value: "", label: "Your default"), (value: "manual", label: "Ask each time"),
                                 (value: "acceptEdits", label: "Accept edits"), (value: "plan", label: "Plan only"), (value: "auto", label: "Auto")],
                       selection: card.permissionMode ?? "") { v in patch { $0.permissionMode = v } }
+        }
+    }
+
+    /// The saved role the agent comes from. A card that has drifted from its role can go back
+    /// to it, or the role can be brought up to date from the card.
+    @ViewBuilder private var roleRow: some View {
+        let roles = AppServices.shared.roles
+        let current = controller.role(of: card)
+        row("Role") {
+            Menu {
+                Toggle("None", isOn: Binding(get: { current == nil }, set: { _ in controller.applyRole(nil, toCard: card.id) }))
+                ForEach(roles) { role in
+                    Toggle(role.name, isOn: Binding(get: { current?.id == role.id }, set: { _ in controller.applyRole(role, toCard: card.id) }))
+                }
+                Divider()
+                Button(current == nil ? "Save as a New Role" : "Update “\(current?.name ?? "")” from This Card") { controller.saveRole(fromCard: card.id) }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(current?.name ?? "None").lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui)
+                }
+                .font(.dsMono(Theme.Size.caption, .medium))
+                .foregroundStyle(Theme.ink.ui)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("A role is this agent's instructions, model, effort and permissions saved under a name, to reuse in any flow")
+        }
+        if let current, !current.matches(card) {
+            HStack(spacing: Theme.Space.s) {
+                Text("Changed since the role was saved.")
+                    .font(.dsSans(Theme.Size.caption))
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                Spacer()
+                Button("Reset") { controller.applyRole(current, toCard: card.id) }
+                    .buttonStyle(.panel(.quiet))
+                    .help("Put this card back to what the role holds")
+                Button("Update role") { controller.saveRole(fromCard: card.id) }
+                    .buttonStyle(.panel())
+                    .help("Save this card's settings into the role. Other cards with the role can then take them with Reset.")
+            }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.bottom, 6)
         }
     }
 

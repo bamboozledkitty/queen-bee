@@ -569,6 +569,42 @@ final class FlowController: ToolHost {
         perform("Change \(flow.card(id)?.name ?? "Card")", key: "edit:\(id)", undoable: !isTextUndo) { try $0.updateCard(id, patch: patch) }
     }
 
+    // MARK: Roles
+
+    /// The saved role an agent card was made from, if it still exists.
+    func role(of card: Card) -> AgentRole? {
+        card.role.flatMap { id in services.roles.first { $0.id == id } }
+    }
+
+    /// Saves a card's settings as a role under the card's name, and ties the card to it.
+    func saveRole(fromCard id: String) {
+        guard let card = flow.card(id), card.kind == .agent else { return }
+        var role = AgentRole(from: card)
+        // Saving from a card that already has a role updates that role.
+        if let existing = self.role(of: card) {
+            role.id = existing.id
+            role.name = existing.name
+        }
+        let saved = services.save(role)
+        setRole(saved.id, onCard: id, name: "Save Role")
+    }
+
+    /// Gives a card a role's settings and ties it to the role, or cuts the tie with nil.
+    func applyRole(_ role: AgentRole?, toCard id: String) {
+        guard let role else { return setRole(nil, onCard: id, name: "Remove Role") }
+        perform("Apply \(role.name)") {
+            try $0.updateCard(id, patch: role.patch)
+            if let index = $0.cards.firstIndex(where: { $0.id == id }) { $0.cards[index].role = role.id }
+        }
+    }
+
+    private func setRole(_ roleID: String?, onCard id: String, name: String) {
+        perform(name) {
+            guard let index = $0.cards.firstIndex(where: { $0.id == id }) else { return }
+            $0.cards[index].role = roleID
+        }
+    }
+
     // MARK: Copying
 
     /// What Copy puts on the pasteboard and Paste reads back: only this app writes or reads it.
@@ -609,7 +645,7 @@ final class FlowController: ToolHost {
 
     /// Adds a card. With a point, as when one is dropped from the palette, the card is centred
     /// there. Without, it goes to the middle of what is on screen, stepped clear of other cards.
-    func addCard(_ kind: CardKind, at point: CGPoint? = nil) {
+    func addCard(_ kind: CardKind, at point: CGPoint? = nil, role: AgentRole? = nil) {
         var made: Card?
         let size = Card.make(kind: kind, name: "x", x: 0, y: 0)
         var spot: CGRect
@@ -630,7 +666,11 @@ final class FlowController: ToolHost {
         }
         var patch = CardPatch()
         if kind == .agent, let model = UserDefaults.standard.string(forKey: "defaultModel"), !model.isEmpty { patch.model = model }
-        perform("Add \(kind.label)") { made = try $0.addCard(kind: kind, x: spot.minX, y: spot.minY, patch: patch) }
+        if let role { patch = role.patch }
+        perform("Add \(role?.name ?? kind.label)") {
+            made = try $0.addCard(kind: kind, name: role.map { [flow] in flow.uniqueName($0.name) }, x: spot.minX, y: spot.minY, patch: patch)
+            if let role, let made, let index = $0.cards.firstIndex(where: { $0.id == made.id }) { $0.cards[index].role = role.id }
+        }
         if let made { selection = .card(made.id) }
     }
 

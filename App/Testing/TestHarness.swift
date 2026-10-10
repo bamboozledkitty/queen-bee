@@ -125,6 +125,14 @@ enum TestHarness {
         case "showCost":
             controller.showsCost = true
             return [:]
+        case "saveRole":
+            guard let cardID else { return ["error": "saveRole needs card"] }
+            controller.saveRole(fromCard: cardID)
+            return ["roles": .array(AppServices.shared.roles.map { .string($0.name) })]
+        case "addRole":
+            guard let role = AppServices.shared.roles.first(where: { $0.name == payload["role"]?.stringValue }) else { return ["error": "no such role"] }
+            controller.addCard(.agent, role: role)
+            return [:]
         case "selectAll":
             controller.selectAll()
             return [:]
