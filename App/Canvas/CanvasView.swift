@@ -226,7 +226,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.allowsMagnification = true
-        scrollView.minMagnification = 0.2
+        scrollView.minMagnification = Self.minZoom
         scrollView.maxMagnification = 3
         scrollView.autoresizingMask = [.width, .height]
         scrollView.frame = bounds
@@ -255,7 +255,18 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         observe()
     }
 
+    /// As far out as a pinch, the wheel or the zoom buttons go.
+    private static let minZoom: CGFloat = 0.2
+    /// As far out as fitting a flow goes, so a wide one still fits whole.
+    private static let fitFloor: CGFloat = 0.05
+    /// True while a fit is animating, when the zoom may be on its way below `minZoom`.
+    private var isFitting = false
+
     private func publishZoom() {
+        // A fit may have gone below the usual floor. Once the zoom is back above it, the floor returns.
+        if !isFitting, scrollView.minMagnification < Self.minZoom, scrollView.magnification >= Self.minZoom {
+            scrollView.minMagnification = Self.minZoom
+        }
         // The minimap draws where the window is looking, so panning is published as well as zooming.
         if let controller, !controller.viewport.equalTo(scrollView.documentVisibleRect) { controller.viewport = scrollView.documentVisibleRect }
         let zoom = Double(scrollView.magnification)
@@ -829,8 +840,11 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
 
     var testViewState: JSONValue {
         let r = scrollView.documentVisibleRect
-        return ["magnification": .number(Double(scrollView.magnification)), "x": .number(Double(r.minX)), "y": .number(Double(r.minY)),
-                "width": .number(Double(r.width)), "height": .number(Double(r.height))]
+        let covered = AppServices.shared.canvasObstruction, zoom = scrollView.magnification
+        return ["magnification": .number(Double(zoom)), "x": .number(Double(r.minX)), "y": .number(Double(r.minY)),
+                "width": .number(Double(r.width)), "height": .number(Double(r.height)),
+                // The part of the canvas the floating panels leave in view, left to right.
+                "clearFrom": .number(Double(r.minX + covered.left / zoom)), "clearTo": .number(Double(r.maxX - covered.right / zoom))]
     }
 
     /// Scrolls the wheel over a card's terminal, or over bare canvas. "system" hands a real
@@ -946,8 +960,13 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         let top = CanvasView.titleBarHeight, foot: CGFloat = 50
         let screen = scrollView.contentView.frame.size
         let room = CGSize(width: max(80, screen.width - covered.left - covered.right), height: max(80, screen.height - top - foot))
-        let zoom = min(atMost ?? scrollView.maxMagnification, scrollView.maxMagnification,
-                       max(scrollView.minMagnification, min(room.width / box.width, room.height / box.height)))
+        let needed = min(room.width / box.width, room.height / box.height)
+        // Fitting is the one zoom allowed below the usual floor: all of a wide flow matters more
+        // here than its cards staying readable, and below 40% they show only a name and a state anyway.
+        let floor = min(Self.minZoom, max(Self.fitFloor, needed))
+        scrollView.minMagnification = floor
+        isFitting = true
+        let zoom = min(atMost ?? scrollView.maxMagnification, scrollView.maxMagnification, max(floor, needed))
         // Held below a full fit, the box is shown in the middle of the room with space round it.
         let shown = CGSize(width: max(box.width, room.width / zoom), height: max(box.height, room.height / zoom))
         let centred = CGRect(x: box.midX - shown.width / 2, y: box.midY - shown.height / 2, width: shown.width, height: shown.height)
@@ -959,6 +978,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             scrollView.animator().magnify(toFit: inClip(wanted))
         } then: { [weak self] in
             Task { @MainActor in
+                self?.isFitting = false
                 self?.publishZoom()
                 self?.document.needsDisplay = true
             }

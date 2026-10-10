@@ -371,6 +371,16 @@ def scenario_pan(app):
     app.op(fid, "edgeLink", card="Far", to="Far", edge="top")
     top = app.state(fid)["canvas"]["y"]
     check("panning stops at the canvas's limit", abs(top + 3000) < 1, str(top))
+    # The two cards are further apart than the usual 20% floor can show between the panels.
+    app.op(fid, "fit")
+    time.sleep(1.5)
+    c = app.state(fid)["canvas"]
+    check("zoom to fit shows a wide flow whole, clear of the panels", c["clearFrom"] <= 300 and c["clearTo"] >= 4240, str(c))
+    app.op(fid, "zoom", to=1.0)
+    time.sleep(0.3)
+    app.op(fid, "zoom", to=0.05)
+    time.sleep(0.3)
+    check("zooming by hand still stops at 20%", abs(app.state(fid)["canvas"]["magnification"] - 0.2) < 0.01, str(app.state(fid)["canvas"]))
 
 
 def scenario_fanout(app):
