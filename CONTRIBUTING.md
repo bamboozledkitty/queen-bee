@@ -63,6 +63,10 @@ The unit tests run on every pull request, and so does a build of the iPad and iP
 Claude Code. Run it, or the scenarios near your change (`./scripts/e2e.py guard loop`), when you touch sessions,
 hand-offs, the canvas or the engine, and say in the pull request which ones you ran.
 
+## Coding agents
+
+[AGENTS.md](AGENTS.md) holds the instructions for coding agents working in this repo. Claude Code reads it through `CLAUDE.md`.
+
 ## Where things live
 
 The README's [How it works](README.md#how-it-works) section maps the five parts: `Core/`, `App/`, `Helper/`,
