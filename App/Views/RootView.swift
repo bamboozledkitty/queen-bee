@@ -299,10 +299,6 @@ private struct TitlePlate: View {
     }
 }
 
-/// What floats over the canvas between the two panels: the palette, the selected card's
-/// settings, a banner, the status line, the zoom control, and an empty flow's pointer to the
-/// orchestrator. Its empty
-/// areas let clicks through to the canvas underneath.
 /// Restarts the flow's agents together: all of them, the ones selected on the canvas, or the ones waiting to
 /// use new settings. Each keeps its conversation so far.
 private struct RestartMenu: View {
@@ -331,6 +327,10 @@ private struct RestartMenu: View {
     }
 }
 
+/// What floats over the canvas between the two panels: the palette, the selected card's
+/// settings, a banner, the status line, the zoom control, and an empty flow's pointer to the
+/// orchestrator. Its empty
+/// areas let clicks through to the canvas underneath.
 struct CanvasControls: View {
     let controller: FlowController
     let showLog: () -> Void

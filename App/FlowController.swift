@@ -803,11 +803,15 @@ final class FlowController: ToolHost {
         card.kind == .agent && [.working, .needsYou].contains(sessions[card.id]?.state ?? .notStarted)
     }
 
+    /// "A", "A and B", "A, B and C".
+    private static func namesList(_ names: [String]) -> String {
+        names.count <= 1 ? names.first ?? "" : names.dropLast().joined(separator: ", ") + " and " + names.last!
+    }
+
     /// Asks before something stops agents in the middle of their work. True to go ahead.
     private func mayStop(_ agents: [Card], doing action: String) -> Bool {
         guard !agents.isEmpty, !TestHarness.isEnabled else { return true }
-        let names = agents.map(\.name)
-        let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names.last!
+        let list = Self.namesList(agents.map(\.name))
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "\(action) and stop \(list)?"
@@ -1326,7 +1330,10 @@ final class FlowController: ToolHost {
     /// The agents with settings waiting to be used, and the orchestrator if the flow's details changed under it.
     func restartAgentsAwaitingRestart() {
         let agents = agentsAwaitingRestart
-        restart(agents, orchestrator: orchestratorNeedsRestart, saying: "Restarted the agents with new settings")
+        let orchestrator = orchestratorNeedsRestart
+        let line = agents.isEmpty ? "Restarted the orchestrator with the flow's new details"
+            : agents.count == 1 ? "Restarted \(agents[0].name) with its new settings" : "Restarted \(agents.count) agents with their new settings"
+        restart(agents, orchestrator: orchestrator, saying: orchestrator && !agents.isEmpty ? line + ", and the orchestrator" : line)
     }
 
     /// Restarts `agents`, and the orchestrator too when asked, each keeping its conversation so far. Asks first
@@ -1336,12 +1343,12 @@ final class FlowController: ToolHost {
         var busy = agents.filter(isBusy).map(\.name)
         if orchestrator, [.working, .needsYou].contains(self.orchestrator.state) { busy.append("the orchestrator") }
         if !busy.isEmpty, !TestHarness.isEnabled {
-            let list = busy.count == 1 ? busy[0] : busy.dropLast().joined(separator: ", ") + " and " + busy.last!
+            let list = Self.namesList(busy)
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "Restart while \(list) \(busy.count == 1 ? "is" : "are") busy?"
             alert.informativeText = "Restarting cuts short what \(busy.count == 1 ? "it is" : "they are") doing now, or a question \(busy.count == 1 ? "it is" : "they are") waiting on you to answer. "
-                + (isRunning ? "A run waiting on \(busy.count == 1 ? "it" : "them") stops. " : "")
+                + (isRunning ? "If the run is waiting on \(busy.count == 1 ? "it" : "one of them"), the run stops. " : "")
                 + "Every agent keeps its conversation so far."
             alert.addButton(withTitle: "Restart")
             alert.addButton(withTitle: "Cancel")
