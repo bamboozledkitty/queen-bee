@@ -9,7 +9,7 @@ Claude Code sessions on Haiku, and checks what the app did.
     ./scripts/e2e.py guard loop                        # some of them
 
 Scenarios: guard, settings, remote, scroll, pan, fanout, switch, loop, exit, apifail, ask, gates, unasked, subflow, timed, features, deep, browser,
-nobrowser, noclaude.
+nobrowser, noclaude, filekeys.
 `mirror` is run only when named: it checks the copy of a terminal that a paired device is sent.
 `mobile` is run only when named: it runs the iPad app in the iOS Simulator against the test copy. Build it
 first with ./scripts/build-mobile.sh. Its screenshots go to the folder named by QB_E2E_SHOTS, or a new one.
@@ -44,6 +44,7 @@ import plistlib
 import queue
 import shutil
 import socket
+import stat
 import struct
 import subprocess
 import sys
@@ -182,6 +183,18 @@ def alive(pid):
     except PermissionError:
         pass
     return True
+
+
+def quit_strays(before):
+    """macOS has been seen to start a normal copy of this build, with none of a test copy's settings, seconds after a
+    test copy goes away. What starts it isn't known. It would listen for devices and use the real Dev folder, so a
+    copy of this build that wasn't running before this run, and isn't a test copy, is quit when the run ends."""
+    time.sleep(5)
+    for pid in set(pids()) - before:
+        command = subprocess.run(["ps", "eww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+        if command.startswith(APP) and "QB_SUPPORT_DIR=" not in command:
+            print(f"quitting a normal copy of the app that started during the run ({pid})", flush=True)
+            subprocess.run(["kill", "-TERM", str(pid)])
 
 
 def sweep():
@@ -6084,11 +6097,34 @@ def scenario_noclaude(project):
         app.quit()
 
 
+def scenario_filekeys(project):
+    print("filekeys: a build from source keeps a device's key in its own file, not the Keychain", flush=True)
+    support = SUPPORT + "-fk"
+    app = App(project, support=support, env={"QB_FILE_KEYS": "1"})
+    try:
+        app.op("app", "remote-on")
+        offer = app.op("app", "remote-pair")
+        device = Device("--code", offer["code"], "--pair-port", str(int(offer["port"])), "--flow", GUARD["id"], "--seconds", "60")
+        try:
+            paired = device.until("paired")
+            check("a device pairs", paired is not None, str(device.seen))
+            keys = os.path.join(support, "device-keys.json")
+            check("its key is in the file", paired is not None and f"device-{paired['device']}" in json.load(open(keys)))
+            check("which only this account can read", stat.S_IMODE(os.stat(keys).st_mode) == 0o600, oct(os.stat(keys).st_mode))
+            app.op("app", "remote-remove", device=paired["device"])
+            check("removing the device deletes the key", json.load(open(keys)) == {})
+        finally:
+            device.stop()
+    finally:
+        app.quit()
+
+
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "remote", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "unasked", "subflow", "timed", "features", "deep", "browser", "nobrowser", "noclaude"]
+    wanted = sys.argv[1:] or ["guard", "settings", "remote", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "unasked", "subflow", "timed", "features", "deep", "browser", "nobrowser", "noclaude", "filekeys"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     sweep()
+    atexit.register(quit_strays, set(pids()))
     project = tempfile.mkdtemp(prefix="qb-e2e-")
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
     for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "inner", "subflow", "timed"]
@@ -6098,7 +6134,7 @@ def main():
     print(f"project: {project}", flush=True)
 
     wanted = [w.replace("-", "_") if w in ("browser-remote", "browser-mobile") else w for w in wanted]
-    in_app = [w for w in wanted if w not in ("noclaude", "nobrowser", "terminals", "panels", "controls", "typing", "editing", "settings-edit", "parity",
+    in_app = [w for w in wanted if w not in ("noclaude", "nobrowser", "filekeys", "terminals", "panels", "controls", "typing", "editing", "settings-edit", "parity",
                                              "browser-canned")]
     if in_app:
         app = App(project)
@@ -6170,6 +6206,11 @@ def main():
             scenario_noclaude(project)
         except Exception as e:
             check("noclaude ran to the end", False, f"{type(e).__name__}: {e}"[:500])
+    if "filekeys" in wanted:
+        try:
+            scenario_filekeys(project)
+        except Exception as e:
+            check("filekeys ran to the end", False, f"{type(e).__name__}: {e}"[:500])
 
     failed = [r for r in results if not r[1]]
     passed = len(results) - len(failed)

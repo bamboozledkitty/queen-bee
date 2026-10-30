@@ -102,9 +102,10 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   earlier version kept in the login keychain are moved there the first time each is read, and deleted from the
   login keychain only once they have been read back from the new place. A copy of the app built from source without
   the entitlement that keychain needs goes on using the login keychain. A Debug build from source ("Queen Bee Dev")
-  keeps its keys in a file only your account can read, `device-keys.json` in its own data folder, because each
-  build is signed afresh and the login keychain would ask for your password again after every one; never pair a
-  device you rely on with a Debug build. Removing a device in Settings deletes its
+  keeps its keys in a file only your account can read, `device-keys.json` in its own data folder and left out of
+  backups, because each build is signed afresh and the login keychain would ask for your password again after every
+  one. Any program running as you can read that file, agents included, so never pair a device you rely on with a
+  Debug build. Removing a device in Settings deletes its
   key and closes its connection at once. Queen Bee does not connect to any server for this, and nothing is reachable
   from outside your network unless your network makes it so. The Mac holds at most 24 connections at once that
   haven't yet shown a key, and 6 from any one address, and closes any more the moment they arrive.

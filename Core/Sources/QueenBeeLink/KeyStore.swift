@@ -118,54 +118,93 @@ public final class MemoryKeyStore: KeyStore, @unchecked Sendable {
 /// Keys in one file that only this account can read, for a copy of the app built from source. Such a copy is
 /// signed afresh by every build, and the login keychain asks again each time whether the "new" app may read what
 /// the last one kept. A file asks nobody.
+///
+/// Several such copies can share the file, so changes take a lock other processes see too, and the file is always
+/// replaced whole: reading it needs no lock. It is left out of backups, as a key in the Keychain would be.
 public final class FileKeyStore: KeyStore, @unchecked Sendable {
     public let url: URL
+    /// Where a file that can't be read is moved when a key has to be written.
+    public var damagedURL: URL { url.deletingPathExtension().appendingPathExtension("unreadable.json") }
     private let lock = NSLock()
+    /// What the file held when it last changed, so a file that hasn't changed isn't decoded again.
+    private var loaded: (stamp: [FileAttributeKey: AnyHashable], keys: [String: Data])?
 
     public init(url: URL) { self.url = url }
 
     public func lookUp(_ account: String) -> StoredKey {
-        lock.withLock {
-            guard let keys = load() else { return .unreadable(errSecIO) }
-            return keys[account].map(StoredKey.found) ?? .missing
-        }
+        guard let keys = load() else { return .unreadable(errSecIO) }
+        return keys[account].map(StoredKey.found) ?? .missing
     }
 
     public func write(_ data: Data, _ account: String) -> OSStatus {
-        lock.withLock {
-            guard var keys = load() else { return errSecIO }
-            keys[account] = data
-            return save(keys)
+        changing {
+            var kept = load()
+            // Nothing can be read from it, and a device can't be paired while it is in the way. It is kept aside.
+            if kept == nil {
+                guard FileManager.default.fileExists(atPath: damagedURL.path) ? unlink(damagedURL.path) == 0 : true,
+                      rename(url.path, damagedURL.path) == 0 else { return errSecIO }
+                kept = [:]
+            }
+            kept?[account] = data
+            return kept.map(save) ?? errSecIO
         }
     }
 
     @discardableResult public func delete(_ account: String) -> OSStatus {
-        lock.withLock {
+        changing {
             guard var keys = load() else { return errSecIO }
             guard keys.removeValue(forKey: account) != nil else { return errSecItemNotFound }
             return save(keys)
         }
     }
 
-    public func accounts() -> [String] { lock.withLock { load().map { Array($0.keys).sorted() } ?? [] } }
+    public func accounts() -> [String] { load().map { Array($0.keys).sorted() } ?? [] }
+
+    /// One change at a time, across every copy of the app using this file.
+    private func changing(_ change: () -> OSStatus) -> OSStatus {
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch {
+            return errSecIO
+        }
+        let held = open(url.path + ".lock", O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        guard held >= 0 else { return errSecIO }
+        defer { close(held) }
+        guard flock(held, LOCK_EX) == 0 else { return errSecIO }
+        return change()
+    }
 
     /// Every key kept, or nil when the file is there but can't be read: a key in it isn't known to be gone.
     private func load() -> [String: Data]? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return FileManager.default.fileExists(atPath: url.path) ? nil : [:]
+        }
+        // Every save makes a new file, so its number and time change together.
+        let stamp = attributes.filter { $0.key == .systemFileNumber || $0.key == .modificationDate || $0.key == .size }
+            .compactMapValues { $0 as? AnyHashable }
+        if let kept = lock.withLock({ loaded }), kept.stamp == stamp { return kept.keys }
         guard let data = try? Data(contentsOf: url), let keys = try? JSONDecoder().decode([String: Data].self, from: data) else { return nil }
+        lock.withLock { loaded = (stamp, keys) }
         return keys
     }
 
     private func save(_ keys: [String: Data]) -> OSStatus {
         guard let data = try? JSONEncoder().encode(keys) else { return errSecIO }
+        // A name of its own, and made unreadable to anyone else before the keys go in. Replaced whole, so a crash
+        // leaves the old file.
+        let next = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
+        let file = open(next.path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
+        guard file >= 0 else { return errSecIO }
         do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            // Made unreadable to anyone else before the keys go in, and replaced whole so a crash leaves the old file.
-            let next = url.appendingPathExtension("new")
-            FileManager.default.createFile(atPath: next.path, contents: nil, attributes: [.posixPermissions: 0o600])
-            try data.write(to: next)
-            return rename(next.path, url.path) == 0 ? errSecSuccess : errSecIO
+            try FileHandle(fileDescriptor: file, closeOnDealloc: true).write(contentsOf: data)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var named = next
+            try named.setResourceValues(values)
+            guard rename(next.path, url.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+            return errSecSuccess
         } catch {
+            unlink(next.path)
             return errSecIO
         }
     }
