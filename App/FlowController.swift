@@ -804,11 +804,15 @@ final class FlowController: ToolHost {
         card.kind == .agent && [.working, .needsYou].contains(sessions[card.id]?.state ?? .notStarted)
     }
 
+    /// "A", "A and B", "A, B and C".
+    private static func namesList(_ names: [String]) -> String {
+        names.count <= 1 ? names.first ?? "" : names.dropLast().joined(separator: ", ") + " and " + names.last!
+    }
+
     /// Asks before something stops agents in the middle of their work. True to go ahead.
     private func mayStop(_ agents: [Card], doing action: String) -> Bool {
         guard !agents.isEmpty, !TestHarness.isEnabled else { return true }
-        let names = agents.map(\.name)
-        let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names.last!
+        let list = Self.namesList(agents.map(\.name))
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "\(action) and stop \(list)?"
@@ -1247,11 +1251,13 @@ final class FlowController: ToolHost {
         // The id ends up on the command line and in a file name, so one from a flow file has to be a real id.
         if flow.cards[index].sessionID.flatMap(UUID.init(uuidString:)) == nil { flow.cards[index].sessionID = UUID().uuidString.lowercased() }
         let folder = ClaudeLauncher.folder(for: flow.cards[index], projectRoot: project.root, workRoot: workRoot)
-        let start = ClaudeLauncher.transcriptStart(for: flow.cards[index].sessionID!, in: folder)
+        var start = ClaudeLauncher.transcriptStart(for: flow.cards[index].sessionID!, in: folder)
+        // Claude Code only carries a conversation on in the folder it began in, so one had in another folder,
+        // or carried on in another since, is brought along.
+        if start != .fresh, ClaudeLauncher.carryOver(id: flow.cards[index].sessionID!, to: folder) { start = .resume }
         if start == .freshWithNewID {
-            // Its conversation was had in another folder, and Claude Code only carries one on in the folder it began in.
             flow.cards[index].sessionID = UUID().uuidString.lowercased()
-            append("\(flow.cards[index].name) now works in a different folder, so it starts a new conversation there")
+            append("\(flow.cards[index].name) now works in a different folder, and its conversation couldn't be brought along, so it starts a new one there")
         }
         let card = flow.cards[index]
         // A session with no transcript yet starts with today's instructions, and keeps them for good.
@@ -1270,11 +1276,12 @@ final class FlowController: ToolHost {
     func startOrchestrator() {
         guard let environment = services.environment else { return }
         if flow.orchestratorSessionID.flatMap(UUID.init(uuidString:)) == nil { flow.orchestratorSessionID = UUID().uuidString.lowercased() }
-        let start = ClaudeLauncher.transcriptStart(for: flow.orchestratorSessionID!, in: workRoot.path)
+        var start = ClaudeLauncher.transcriptStart(for: flow.orchestratorSessionID!, in: workRoot.path)
+        // The project folder may have moved since the conversation began, or moved back: bring the latest along.
+        if start != .fresh, ClaudeLauncher.carryOver(id: flow.orchestratorSessionID!, to: workRoot.path) { start = .resume }
         if start == .freshWithNewID {
-            // The project folder moved since the orchestrator's conversation began, so it begins a new one here.
             flow.orchestratorSessionID = UUID().uuidString.lowercased()
-            append("The orchestrator's earlier conversation was in another folder, so it starts a new one")
+            append("The orchestrator's earlier conversation was in another folder and couldn't be brought along, so it starts a new one")
         }
         if start != .resume {
             services.noteBorn(session: flow.orchestratorSessionID!, instructions: ClaudeLauncher.orchestratorPrompt(flow: flow))
@@ -1293,6 +1300,67 @@ final class FlowController: ToolHost {
     var orchestratorNeedsRestart: Bool {
         guard let session = sessions[Self.orchestratorKey], session.isLive, let launched = session.launchedInstructions else { return false }
         return launched != ClaudeLauncher.orchestratorPrompt(flow: flow)
+    }
+
+    // MARK: Restarting agents
+
+    /// The agent cards in the selection. Other cards picked with them are left out.
+    var selectedAgents: [Card] {
+        let ids = selection.cardIDs
+        return flow.cards.filter { $0.kind == .agent && ids.contains($0.id) }
+    }
+
+    /// The agents running with settings changed since they started.
+    var agentsAwaitingRestart: [Card] {
+        flow.cards.filter { $0.kind == .agent && !settingsAwaitingRestart(forCard: $0.id).isEmpty }
+    }
+
+    /// Whether the toolbar's Restart can do anything: the flow's sessions are up, not waiting on where it works.
+    var canRestartAgents: Bool { isOpen && services.environment != nil && !asksForWorkplace }
+
+    /// Every agent, and the orchestrator unless it is left out. A new agent that hasn't been started yet is left
+    /// waiting, as it was.
+    func restartAllAgents(withOrchestrator: Bool = true) {
+        restart(flow.cards.filter { $0.kind == .agent && !(heldBack.contains($0.id) && session(forCard: $0.id).state == .notStarted) },
+                orchestrator: withOrchestrator,
+                saying: withOrchestrator ? "Restarted every agent and the orchestrator" : "Restarted every agent, leaving the orchestrator as it was")
+    }
+
+    func restartSelectedAgents() {
+        let agents = selectedAgents
+        restart(agents, orchestrator: false, saying: agents.count == 1 ? "Restarted \(agents[0].name)" : "Restarted \(agents.count) agents")
+    }
+
+    /// The agents with settings waiting to be used, and the orchestrator if the flow's details changed under it.
+    func restartAgentsAwaitingRestart() {
+        let agents = agentsAwaitingRestart
+        let orchestrator = orchestratorNeedsRestart
+        let line = agents.isEmpty ? "Restarted the orchestrator with the flow's new details"
+            : agents.count == 1 ? "Restarted \(agents[0].name) with its new settings" : "Restarted \(agents.count) agents with their new settings"
+        restart(agents, orchestrator: orchestrator, saying: orchestrator && !agents.isEmpty ? line + ", and the orchestrator" : line)
+    }
+
+    /// Restarts `agents`, and the orchestrator too when asked, each keeping its conversation so far. Asks first
+    /// when one of them is in the middle of a task, since a restart cuts that task short.
+    private func restart(_ agents: [Card], orchestrator: Bool, saying line: String) {
+        guard canRestartAgents, !agents.isEmpty || orchestrator else { return }
+        var busy = agents.filter(isBusy).map(\.name)
+        if orchestrator, [.working, .needsYou].contains(self.orchestrator.state) { busy.append("the orchestrator") }
+        if !busy.isEmpty, !TestHarness.isEnabled {
+            let list = Self.namesList(busy)
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Restart while \(list) \(busy.count == 1 ? "is" : "are") busy?"
+            alert.informativeText = "Restarting cuts short what \(busy.count == 1 ? "it is" : "they are") doing now, or a question \(busy.count == 1 ? "it is" : "they are") waiting on you to answer. "
+                + (isRunning ? "If the run is waiting on \(busy.count == 1 ? "it" : "one of them"), the run stops. " : "")
+                + "Every agent keeps its conversation so far."
+            alert.addButton(withTitle: "Restart")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        for card in agents { startSession(forCard: card.id) }
+        if orchestrator { startOrchestrator() }
+        append(line)
     }
 
     /// A terminal that has run a process doesn't take a second one, so a restart gets a new terminal.

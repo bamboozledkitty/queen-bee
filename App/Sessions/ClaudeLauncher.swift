@@ -132,8 +132,8 @@ enum ClaudeLauncher {
     }
 
     /// The session behind a card or orchestrator: resumed when Claude Code has its transcript for the folder it
-    /// starts in, started fresh under the same id when it doesn't. The caller gives a session whose transcript is
-    /// only in another folder a new id first: see `transcriptStart`.
+    /// starts in, started fresh under the same id when it doesn't. The caller first brings along a newer transcript
+    /// from another folder, or failing that gives a session whose transcript is elsewhere a new id: see `carryOver`.
     private static func sessionArguments(id: String, directory: String) -> [String] {
         transcriptStart(for: id, in: directory) == .resume ? ["--resume", id] : ["--session-id", id]
     }
@@ -150,6 +150,51 @@ enum ClaudeLauncher {
         let names = Set([directory, realpath(directory, nil).map { resolved in defer { free(resolved) }; return String(cString: resolved) } ?? directory])
         let inFolder = holding.contains { folder in names.contains { Transcripts.isFolder(folder.lastPathComponent, for: $0) } }
         return Transcripts.start(inFolder: inFolder, elsewhere: !holding.isEmpty)
+    }
+
+    /// Makes the transcript of session `id` that Claude Code finds for `directory` the latest one there is. A
+    /// conversation had in another folder since, as after the project folder was moved, or moved back after use
+    /// elsewhere, is copied over, with the folder of files Claude Code keeps beside it, replacing an older copy.
+    /// The originals stay where they were. True when the folder for `directory` now holds the latest transcript.
+    static func carryOver(id: String, to directory: String) -> Bool {
+        let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+        let resolved = realpath(directory, nil).map { path in defer { free(path) }; return String(cString: path) } ?? directory
+        guard let name = Transcripts.exactFolderName(for: resolved), let source = Transcripts.copies(of: id, in: projects).first else { return false }
+        let target = projects.appendingPathComponent(name, isDirectory: true)
+        let transcript = target.appendingPathComponent("\(id).jsonl")
+        // A copy here as long as the latest is that same conversation: nothing to bring.
+        let size = { (url: URL) in (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1 }
+        if source.standardizedFileURL == transcript.standardizedFileURL || size(transcript) >= size(source) { return true }
+        let files = source.deletingPathExtension()
+        do {
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            // The files beside the transcript go first: a transcript on its own already counts as resumable.
+            if FileManager.default.fileExists(atPath: files.path) {
+                try replace(target.appendingPathComponent(id, isDirectory: true), with: files)
+            }
+            try replace(transcript, with: source)
+        } catch {
+            return false
+        }
+        // Usage was being added up from the copy that was left behind.
+        UsageReader.forget(sessionID: id)
+        return true
+    }
+
+    /// Puts a copy of `source` at `destination`, in place of what was there only once the copy is whole.
+    private static func replace(_ destination: URL, with source: URL) throws {
+        guard FileManager.default.fileExists(atPath: destination.path) else {
+            try FileManager.default.copyItem(at: source, to: destination)
+            return
+        }
+        let staged = destination.deletingLastPathComponent().appendingPathComponent(".\(destination.lastPathComponent).\(UUID().uuidString)")
+        do {
+            try FileManager.default.copyItem(at: source, to: staged)
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: staged)
+        } catch {
+            try? FileManager.default.removeItem(at: staged)
+            throw error
+        }
     }
 
     private static func settingsJSON(helper: String) -> String {
