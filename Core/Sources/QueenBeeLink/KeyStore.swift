@@ -115,6 +115,62 @@ public final class MemoryKeyStore: KeyStore, @unchecked Sendable {
     public var stored: [String: Data] { lock.withLock { keys } }
 }
 
+/// Keys in one file that only this account can read, for a copy of the app built from source. Such a copy is
+/// signed afresh by every build, and the login keychain asks again each time whether the "new" app may read what
+/// the last one kept. A file asks nobody.
+public final class FileKeyStore: KeyStore, @unchecked Sendable {
+    public let url: URL
+    private let lock = NSLock()
+
+    public init(url: URL) { self.url = url }
+
+    public func lookUp(_ account: String) -> StoredKey {
+        lock.withLock {
+            guard let keys = load() else { return .unreadable(errSecIO) }
+            return keys[account].map(StoredKey.found) ?? .missing
+        }
+    }
+
+    public func write(_ data: Data, _ account: String) -> OSStatus {
+        lock.withLock {
+            guard var keys = load() else { return errSecIO }
+            keys[account] = data
+            return save(keys)
+        }
+    }
+
+    @discardableResult public func delete(_ account: String) -> OSStatus {
+        lock.withLock {
+            guard var keys = load() else { return errSecIO }
+            guard keys.removeValue(forKey: account) != nil else { return errSecItemNotFound }
+            return save(keys)
+        }
+    }
+
+    public func accounts() -> [String] { lock.withLock { load().map { Array($0.keys).sorted() } ?? [] } }
+
+    /// Every key kept, or nil when the file is there but can't be read: a key in it isn't known to be gone.
+    private func load() -> [String: Data]? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        guard let data = try? Data(contentsOf: url), let keys = try? JSONDecoder().decode([String: Data].self, from: data) else { return nil }
+        return keys
+    }
+
+    private func save(_ keys: [String: Data]) -> OSStatus {
+        guard let data = try? JSONEncoder().encode(keys) else { return errSecIO }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Made unreadable to anyone else before the keys go in, and replaced whole so a crash leaves the old file.
+            let next = url.appendingPathExtension("new")
+            FileManager.default.createFile(atPath: next.path, contents: nil, attributes: [.posixPermissions: 0o600])
+            try data.write(to: next)
+            return rename(next.path, url.path) == 0 ? errSecSuccess : errSecIO
+        } catch {
+            return errSecIO
+        }
+    }
+}
+
 /// How the Mac names each paired device's key: `device-` and the device's id.
 public enum DeviceKeys {
     public static let prefix = "device-"

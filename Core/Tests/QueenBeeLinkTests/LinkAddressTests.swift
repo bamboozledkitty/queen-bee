@@ -174,6 +174,40 @@ import Testing
         #expect(store.lookUp("device-a").keepsDevice)
     }
 
+    /// A source build's keys, in a file only this account can read, kept from one launch to the next.
+    @Test func aFileKeepsKeysForTheNextLaunch() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("device-keys.json")
+        let store = FileKeyStore(url: url)
+        #expect(store.lookUp("device-a") == .missing)
+        #expect(store.accounts().isEmpty)
+        #expect(store.write(key, "device-a") == errSecSuccess)
+        #expect(store.write(Data(repeating: 1, count: 32), "device-b") == errSecSuccess)
+        let permissions = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        #expect(permissions == 0o600)
+
+        let later = FileKeyStore(url: url)
+        #expect(later.lookUp("device-a") == .found(key))
+        #expect(later.accounts() == ["device-a", "device-b"])
+        #expect(later.delete("device-a") == errSecSuccess)
+        #expect(later.lookUp("device-a") == .missing)
+        #expect(MigratingKeyStore.gone(later.delete("device-a")))
+    }
+
+    /// A file that can't be read says nothing about the keys in it, so no device is dropped over it.
+    @Test func aDamagedFileNeverMakesAKeyMissing() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("device-keys.json")
+        try Data("not json".utf8).write(to: url)
+        let store = FileKeyStore(url: url)
+        #expect(store.lookUp("device-a").keepsDevice)
+        #expect(store.write(key, "device-a") != errSecSuccess)
+        #expect(try Data(contentsOf: url) == Data("not json".utf8))
+    }
+
     @Test func writingAndDeletingTouchBothPlaces() {
         let modern = MemoryKeyStore(), legacy = MemoryKeyStore(["device-a": Data(repeating: 1, count: 32)])
         let store = MigratingKeyStore(modern: modern, legacy: legacy)

@@ -68,14 +68,22 @@ private struct KeychainStore: KeyStore {
 /// Where keys are kept: the data protection keychain, which asks nobody and is tied to this app, with keys an
 /// earlier version kept in the login keychain moved there the first time each is read. A copy of the app
 /// built without the entitlement the data protection keychain needs goes on using the login keychain. A test
-/// copy keeps keys in memory, so a test never touches the real Keychain.
+/// copy keeps keys in memory, so a test never touches the real Keychain. A Debug build keeps them in a file in
+/// its own support folder: it is signed afresh by every build, and the login keychain would ask again each time.
 enum KeyVault {
     private static let memory = MemoryKeyStore()
     private static var service: String { (Bundle.main.bundleIdentifier ?? "dev.queenbee.app") + ".remote" }
+    #if DEBUG
+    private static let file = FileKeyStore(url: AppServices.shared.supportDirectory.appendingPathComponent("device-keys.json"))
+    #endif
     private static var store: any KeyStore {
         if TestHarness.isEnabled { return memory }
+        #if DEBUG
+        return file
+        #else
         return MigratingKeyStore(modern: KeychainStore(service: service, dataProtection: true),
                                  legacy: KeychainStore(service: service, dataProtection: false))
+        #endif
     }
 
     static func read(_ account: String) -> Data? { lookUp(account).key }
@@ -99,7 +107,7 @@ enum KeyVault {
     static func accounts() -> [String] { store.accounts() }
 }
 
-/// The devices paired with this Mac. Their names are in a file; their keys are only ever in the Keychain.
+/// The devices paired with this Mac. Their names are in a file; their keys are in the Keychain (see `KeyVault`).
 @Observable
 final class RemoteDevices {
     private struct Saved: Codable {
