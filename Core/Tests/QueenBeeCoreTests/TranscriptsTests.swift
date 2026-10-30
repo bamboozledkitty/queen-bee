@@ -23,6 +23,27 @@ import Testing
         #expect(Transcripts.exactFolderName(for: "/" + String(repeating: "a", count: 250)) == nil)
     }
 
+    @Test func theLongestCopyIsTheLatestWhateverItsDate() throws {
+        let projects = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: projects) }
+        let id = UUID().uuidString.lowercased()
+        func write(_ folder: String, _ text: String, at date: Date) throws {
+            let dir = projects.appendingPathComponent(folder)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("\(id).jsonl")
+            try Data(text.utf8).write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+        // The copy left behind was touched later, but the one in use is longer.
+        try write("-new", "a\nb\nc\n", at: Date(timeIntervalSince1970: 1_000))
+        try write("-old", "a\n", at: Date(timeIntervalSince1970: 2_000))
+        try FileManager.default.createDirectory(at: projects.appendingPathComponent("-none"), withIntermediateDirectories: true)
+        #expect(Transcripts.copies(of: id, in: projects).map { $0.deletingLastPathComponent().lastPathComponent } == ["-new", "-old"])
+        // Of two the same length, the later one.
+        try write("-same", "a\nb\nc\n", at: Date(timeIntervalSince1970: 3_000))
+        #expect(Transcripts.copies(of: id, in: projects).first?.deletingLastPathComponent().lastPathComponent == "-same")
+    }
+
     @Test func aTranscriptLeftInAnotherFolderStartsANewConversation() {
         #expect(Transcripts.start(inFolder: true, elsewhere: true) == .resume)
         #expect(Transcripts.start(inFolder: true, elsewhere: false) == .resume)

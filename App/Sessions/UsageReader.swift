@@ -145,15 +145,10 @@ enum UsageReader {
     }
 
     /// The session's transcript. One carried over to another folder leaves the old copy behind, so the
-    /// newest is the one being written to.
+    /// latest is the one being written to.
     private nonisolated static func transcript(for sessionID: String) -> URL? {
         // A session id is a UUID. Anything else is not used to build a path.
         guard UUID(uuidString: sessionID) != nil else { return nil }
-        let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
-        let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
-        let modified = { (url: URL) in (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
-        return folders.map { $0.appendingPathComponent("\(sessionID).jsonl") }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
-            .max { modified($0) < modified($1) }
+        return Transcripts.copies(of: sessionID, in: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")).first
     }
 }

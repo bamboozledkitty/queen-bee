@@ -152,31 +152,25 @@ enum ClaudeLauncher {
         return Transcripts.start(inFolder: inFolder, elsewhere: !holding.isEmpty)
     }
 
-    /// Makes the transcript of session `id` that Claude Code finds for `directory` the newest one there is. A
+    /// Makes the transcript of session `id` that Claude Code finds for `directory` the latest one there is. A
     /// conversation had in another folder since, as after the project folder was moved, or moved back after use
     /// elsewhere, is copied over, with the folder of files Claude Code keeps beside it, replacing an older copy.
-    /// The originals stay where they were. True when the folder for `directory` now holds the newest transcript.
+    /// The originals stay where they were. True when the folder for `directory` now holds the latest transcript.
     static func carryOver(id: String, to directory: String) -> Bool {
         let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
         let resolved = realpath(directory, nil).map { path in defer { free(path) }; return String(cString: path) } ?? directory
-        guard let name = Transcripts.exactFolderName(for: resolved),
-              let folders = try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil) else { return false }
-        let modified = { (url: URL) in (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
+        guard let name = Transcripts.exactFolderName(for: resolved), let source = Transcripts.copies(of: id, in: projects).first else { return false }
         let target = projects.appendingPathComponent(name, isDirectory: true)
         let transcript = target.appendingPathComponent("\(id).jsonl")
-        let here = FileManager.default.fileExists(atPath: transcript.path) ? transcript : nil
-        let newest = folders.map { $0.appendingPathComponent("\(id).jsonl") }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
-            .max { modified($0) < modified($1) }
-        guard let source = newest else { return false }
-        if let here, modified(here) >= modified(source) { return true }
+        // A copy here as long as the latest is that same conversation: nothing to bring.
+        let size = { (url: URL) in (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1 }
+        if source.standardizedFileURL == transcript.standardizedFileURL || size(transcript) >= size(source) { return true }
         let files = source.deletingPathExtension()
-        let filesHere = target.appendingPathComponent(id, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
             // The files beside the transcript go first: a transcript on its own already counts as resumable.
             if FileManager.default.fileExists(atPath: files.path) {
-                try replace(filesHere, with: files)
+                try replace(target.appendingPathComponent(id, isDirectory: true), with: files)
             }
             try replace(transcript, with: source)
         } catch {
@@ -184,7 +178,7 @@ enum ClaudeLauncher {
         }
         // Usage was being added up from the copy that was left behind.
         UsageReader.forget(sessionID: id)
-        return transcriptStart(for: id, in: directory) == .resume
+        return true
     }
 
     /// Puts a copy of `source` at `destination`, in place of what was there only once the copy is whole.
@@ -194,8 +188,13 @@ enum ClaudeLauncher {
             return
         }
         let staged = destination.deletingLastPathComponent().appendingPathComponent(".\(destination.lastPathComponent).\(UUID().uuidString)")
-        try FileManager.default.copyItem(at: source, to: staged)
-        _ = try FileManager.default.replaceItemAt(destination, withItemAt: staged)
+        do {
+            try FileManager.default.copyItem(at: source, to: staged)
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: staged)
+        } catch {
+            try? FileManager.default.removeItem(at: staged)
+            throw error
+        }
     }
 
     private static func settingsJSON(helper: String) -> String {
