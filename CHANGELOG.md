@@ -6,6 +6,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Agents and the orchestrator keep their conversations when the project folder is moved or renamed. Before, Queen Bee found each conversation in the old folder, gave up on it and started a new, empty one. Now it copies the conversation into the new folder and carries on with it; the original stays where it was.
+
 ## [0.7.1] - 2026-10-26
 
 ### Fixed

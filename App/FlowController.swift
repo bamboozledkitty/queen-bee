@@ -1246,11 +1246,13 @@ final class FlowController: ToolHost {
         // The id ends up on the command line and in a file name, so one from a flow file has to be a real id.
         if flow.cards[index].sessionID.flatMap(UUID.init(uuidString:)) == nil { flow.cards[index].sessionID = UUID().uuidString.lowercased() }
         let folder = ClaudeLauncher.folder(for: flow.cards[index], projectRoot: project.root, workRoot: workRoot)
-        let start = ClaudeLauncher.transcriptStart(for: flow.cards[index].sessionID!, in: folder)
+        var start = ClaudeLauncher.transcriptStart(for: flow.cards[index].sessionID!, in: folder)
+        // Claude Code only carries a conversation on in the folder it began in, so one had in another folder,
+        // or carried on in another since, is brought along.
+        if start != .fresh, ClaudeLauncher.carryOver(id: flow.cards[index].sessionID!, to: folder) { start = .resume }
         if start == .freshWithNewID {
-            // Its conversation was had in another folder, and Claude Code only carries one on in the folder it began in.
             flow.cards[index].sessionID = UUID().uuidString.lowercased()
-            append("\(flow.cards[index].name) now works in a different folder, so it starts a new conversation there")
+            append("\(flow.cards[index].name) now works in a different folder, and its conversation couldn't be brought along, so it starts a new one there")
         }
         let card = flow.cards[index]
         // A session with no transcript yet starts with today's instructions, and keeps them for good.
@@ -1269,11 +1271,12 @@ final class FlowController: ToolHost {
     func startOrchestrator() {
         guard let environment = services.environment else { return }
         if flow.orchestratorSessionID.flatMap(UUID.init(uuidString:)) == nil { flow.orchestratorSessionID = UUID().uuidString.lowercased() }
-        let start = ClaudeLauncher.transcriptStart(for: flow.orchestratorSessionID!, in: workRoot.path)
+        var start = ClaudeLauncher.transcriptStart(for: flow.orchestratorSessionID!, in: workRoot.path)
+        // The project folder may have moved since the conversation began, or moved back: bring the latest along.
+        if start != .fresh, ClaudeLauncher.carryOver(id: flow.orchestratorSessionID!, to: workRoot.path) { start = .resume }
         if start == .freshWithNewID {
-            // The project folder moved since the orchestrator's conversation began, so it begins a new one here.
             flow.orchestratorSessionID = UUID().uuidString.lowercased()
-            append("The orchestrator's earlier conversation was in another folder, so it starts a new one")
+            append("The orchestrator's earlier conversation was in another folder and couldn't be brought along, so it starts a new one")
         }
         if start != .resume {
             services.noteBorn(session: flow.orchestratorSessionID!, instructions: ClaudeLauncher.orchestratorPrompt(flow: flow))

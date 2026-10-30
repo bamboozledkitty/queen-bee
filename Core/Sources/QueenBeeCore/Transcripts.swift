@@ -21,6 +21,27 @@ public enum Transcripts {
         })
     }
 
+    /// The folder Claude Code uses for `directory`, or nil when the name is long enough to end in a hash this
+    /// can't work out.
+    public static func exactFolderName(for directory: String) -> String? {
+        let full = folderName(for: directory)
+        return full.count > longestFolderName ? nil : full
+    }
+
+    /// Every copy of session `id`'s transcript in the folders under `projects`, the latest first. A copy carried
+    /// to another folder starts as the whole conversation and only grows, so the longest is the latest, and the
+    /// later file breaks a tie. A file's date alone can't be trusted: other tools touch transcripts they don't change.
+    public static func copies(of id: String, in projects: URL) -> [URL] {
+        let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        let found = folders.compactMap { folder -> (url: URL, size: Int, date: Date)? in
+            let url = folder.appendingPathComponent("\(id).jsonl")
+            guard let values = try? url.resourceValues(forKeys: keys), let size = values.fileSize else { return nil }
+            return (url, size, values.contentModificationDate ?? .distantPast)
+        }
+        return found.sorted { ($0.size, $0.date) > ($1.size, $1.date) }.map(\.url)
+    }
+
     /// Whether `name`, a folder under `~/.claude/projects`, is the one Claude Code uses for `directory`. A long
     /// path's folder ends in a hash this can't work out, so only the part before it is compared.
     public static func isFolder(_ name: String, for directory: String) -> Bool {
@@ -35,8 +56,9 @@ public enum Transcripts {
         case resume
         /// There is no transcript anywhere: start a new conversation under the same id.
         case fresh
-        /// The transcript is in another folder, as after the card's folder was changed. It can't be resumed from
-        /// here, and its id is taken, so the session starts a new conversation under a new id.
+        /// The transcript is in another folder, as after the project folder was moved or the card's folder was
+        /// changed. It can't be resumed from there, so it is copied here first; if that fails, the session starts
+        /// a new conversation under a new id, since its id is taken.
         case freshWithNewID
     }
 
