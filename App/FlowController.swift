@@ -1334,13 +1334,13 @@ final class FlowController: ToolHost {
     private func restart(_ agents: [Card], orchestrator: Bool, saying line: String) {
         guard canRestartAgents, !agents.isEmpty || orchestrator else { return }
         var busy = agents.filter(isBusy).map(\.name)
-        if orchestrator, self.orchestrator.state == .working { busy.append("the orchestrator") }
+        if orchestrator, [.working, .needsYou].contains(self.orchestrator.state) { busy.append("the orchestrator") }
         if !busy.isEmpty, !TestHarness.isEnabled {
             let list = busy.count == 1 ? busy[0] : busy.dropLast().joined(separator: ", ") + " and " + busy.last!
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = "Restart while \(list) \(busy.count == 1 ? "is" : "are") at work?"
-            alert.informativeText = "Restarting cuts short what \(busy.count == 1 ? "it is" : "they are") doing now. "
+            alert.messageText = "Restart while \(list) \(busy.count == 1 ? "is" : "are") busy?"
+            alert.informativeText = "Restarting cuts short what \(busy.count == 1 ? "it is" : "they are") doing now, or a question \(busy.count == 1 ? "it is" : "they are") waiting on you to answer. "
                 + (isRunning ? "A run waiting on \(busy.count == 1 ? "it" : "them") stops. " : "")
                 + "Every agent keeps its conversation so far."
             alert.addButton(withTitle: "Restart")
