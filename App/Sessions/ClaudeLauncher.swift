@@ -132,8 +132,8 @@ enum ClaudeLauncher {
     }
 
     /// The session behind a card or orchestrator: resumed when Claude Code has its transcript for the folder it
-    /// starts in, started fresh under the same id when it doesn't. The caller first copies a transcript that is
-    /// only in another folder, or failing that gives the session a new id: see `carryOver`.
+    /// starts in, started fresh under the same id when it doesn't. The caller first brings along a newer transcript
+    /// from another folder, or failing that gives a session whose transcript is elsewhere a new id: see `carryOver`.
     private static func sessionArguments(id: String, directory: String) -> [String] {
         transcriptStart(for: id, in: directory) == .resume ? ["--resume", id] : ["--session-id", id]
     }
@@ -152,33 +152,50 @@ enum ClaudeLauncher {
         return Transcripts.start(inFolder: inFolder, elsewhere: !holding.isEmpty)
     }
 
-    /// Copies the newest transcript of session `id` from another folder into the one Claude Code uses for
-    /// `directory`, with the folder of files Claude Code keeps beside it, so the conversation carries on there.
-    /// The originals stay where they were. False when there is nothing to copy or the copy didn't work.
+    /// Makes the transcript of session `id` that Claude Code finds for `directory` the newest one there is. A
+    /// conversation had in another folder since, as after the project folder was moved, or moved back after use
+    /// elsewhere, is copied over, with the folder of files Claude Code keeps beside it, replacing an older copy.
+    /// The originals stay where they were. True when the folder for `directory` now holds the newest transcript.
     static func carryOver(id: String, to directory: String) -> Bool {
         let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
         let resolved = realpath(directory, nil).map { path in defer { free(path) }; return String(cString: path) } ?? directory
         guard let name = Transcripts.exactFolderName(for: resolved),
               let folders = try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil) else { return false }
         let modified = { (url: URL) in (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
+        let target = projects.appendingPathComponent(name, isDirectory: true)
+        let transcript = target.appendingPathComponent("\(id).jsonl")
+        let here = FileManager.default.fileExists(atPath: transcript.path) ? transcript : nil
         let newest = folders.map { $0.appendingPathComponent("\(id).jsonl") }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
             .max { modified($0) < modified($1) }
         guard let source = newest else { return false }
-        let target = projects.appendingPathComponent(name, isDirectory: true)
-        let transcript = target.appendingPathComponent("\(id).jsonl")
+        if let here, modified(here) >= modified(source) { return true }
         let files = source.deletingPathExtension()
+        let filesHere = target.appendingPathComponent(id, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
             // The files beside the transcript go first: a transcript on its own already counts as resumable.
-            if FileManager.default.fileExists(atPath: files.path), !FileManager.default.fileExists(atPath: target.appendingPathComponent(id).path) {
-                try FileManager.default.copyItem(at: files, to: target.appendingPathComponent(id, isDirectory: true))
+            if FileManager.default.fileExists(atPath: files.path) {
+                try replace(filesHere, with: files)
             }
-            try FileManager.default.copyItem(at: source, to: transcript)
+            try replace(transcript, with: source)
         } catch {
             return false
         }
+        // Usage was being added up from the copy that was left behind.
+        UsageReader.forget(sessionID: id)
         return transcriptStart(for: id, in: directory) == .resume
+    }
+
+    /// Puts a copy of `source` at `destination`, in place of what was there only once the copy is whole.
+    private static func replace(_ destination: URL, with source: URL) throws {
+        guard FileManager.default.fileExists(atPath: destination.path) else {
+            try FileManager.default.copyItem(at: source, to: destination)
+            return
+        }
+        let staged = destination.deletingLastPathComponent().appendingPathComponent(".\(destination.lastPathComponent).\(UUID().uuidString)")
+        try FileManager.default.copyItem(at: source, to: staged)
+        _ = try FileManager.default.replaceItemAt(destination, withItemAt: staged)
     }
 
     private static func settingsJSON(helper: String) -> String {
