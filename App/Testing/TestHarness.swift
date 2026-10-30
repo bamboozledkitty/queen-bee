@@ -167,6 +167,15 @@ enum TestHarness {
             guard let cardID else { return ["error": "restart needs card"] }
             controller.startSession(forCard: cardID)
             return [:]
+        case "restartAll":
+            controller.restartAllAgents(withOrchestrator: payload["orchestrator"]?.boolValue ?? true)
+            return [:]
+        case "restartSelected":
+            // Selects the named cards as a drag round them would, then restarts the agents among them.
+            let names = Set((payload["cards"]?.arrayValue ?? []).compactMap(\.stringValue))
+            controller.select(.of(Set(controller.flow.cards.filter { names.contains($0.name) }.map(\.id))))
+            controller.restartSelectedAgents()
+            return [:]
         case "edit":
             // Changes a card's settings the way the settings panel does.
             guard let cardID else { return ["error": "edit needs card"] }
