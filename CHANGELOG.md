@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-30
+
 ### Added
 
 - A Restart menu beside Run restarts the flow's agents together: every agent with or without the orchestrator, or only the agents selected on the canvas, leaving out any other cards picked with them. When agents are waiting to use settings changed while they ran, it can restart just those. Each agent keeps its conversation so far, and Queen Bee asks first if one is in the middle of a task. The same commands are in the Flow menu, and a canvas selection's right-click menu offers to restart the agents in it.
@@ -279,7 +281,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.5.0...v0.6.0
