@@ -18,6 +18,11 @@ import Testing
         #expect(!Transcripts.isFolder("-tmp-x-y", for: "/tmp/x"))
     }
 
+    @Test func onlyAShortFolderNameIsKnownExactly() {
+        #expect(Transcripts.exactFolderName(for: "/tmp/x") == "-tmp-x")
+        #expect(Transcripts.exactFolderName(for: "/" + String(repeating: "a", count: 250)) == nil)
+    }
+
     @Test func aTranscriptLeftInAnotherFolderStartsANewConversation() {
         #expect(Transcripts.start(inFolder: true, elsewhere: true) == .resume)
         #expect(Transcripts.start(inFolder: true, elsewhere: false) == .resume)
