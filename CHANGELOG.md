@@ -10,6 +10,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 - A Restart menu beside Run restarts the flow's agents together: every agent with or without the orchestrator, or only the agents selected on the canvas, leaving out any other cards picked with them. When agents are waiting to use settings changed while they ran, it can restart just those. Each agent keeps its conversation so far, and Queen Bee asks first if one is in the middle of a task. The same commands are in the Flow menu, and a canvas selection's right-click menu offers to restart the agents in it.
 
+### Fixed
+
+- Agents and the orchestrator keep their conversations when the project folder is moved or renamed. Before, Queen Bee found each conversation in the old folder, gave up on it and started a new, empty one. Now it copies the conversation into the new folder and carries on with it; the original stays where it was.
+
 ## [0.7.1] - 2026-10-26
 
 ### Fixed

@@ -136,11 +136,19 @@ enum UsageReader {
         state.since[id] = reply
     }
 
+    /// Forgets how far the session's transcript has been read, as when a newer copy of it was brought into
+    /// another folder: the next read starts again from the newest one.
+    nonisolated static func forget(sessionID: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        progress[sessionID] = nil
+    }
+
+    /// The session's transcript. One carried over to another folder leaves the old copy behind, so the
+    /// latest is the one being written to.
     private nonisolated static func transcript(for sessionID: String) -> URL? {
         // A session id is a UUID. Anything else is not used to build a path.
         guard UUID(uuidString: sessionID) != nil else { return nil }
-        let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
-        let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
-        return folders.map { $0.appendingPathComponent("\(sessionID).jsonl") }.first { FileManager.default.fileExists(atPath: $0.path) }
+        return Transcripts.copies(of: sessionID, in: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")).first
     }
 }
