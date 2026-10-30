@@ -1294,6 +1294,64 @@ final class FlowController: ToolHost {
         return launched != ClaudeLauncher.orchestratorPrompt(flow: flow)
     }
 
+    // MARK: Restarting agents
+
+    /// The agent cards in the selection. Other cards picked with them are left out.
+    var selectedAgents: [Card] {
+        let ids = selection.cardIDs
+        return flow.cards.filter { $0.kind == .agent && ids.contains($0.id) }
+    }
+
+    /// The agents running with settings changed since they started.
+    var agentsAwaitingRestart: [Card] {
+        flow.cards.filter { $0.kind == .agent && !settingsAwaitingRestart(forCard: $0.id).isEmpty }
+    }
+
+    /// Whether the toolbar's Restart can do anything: the flow's sessions are up, not waiting on where it works.
+    var canRestartAgents: Bool { isOpen && services.environment != nil && !asksForWorkplace }
+
+    /// Every agent, and the orchestrator unless it is left out. A new agent that hasn't been started yet is left
+    /// waiting, as it was.
+    func restartAllAgents(withOrchestrator: Bool = true) {
+        restart(flow.cards.filter { $0.kind == .agent && !(heldBack.contains($0.id) && session(forCard: $0.id).state == .notStarted) },
+                orchestrator: withOrchestrator,
+                saying: withOrchestrator ? "Restarted every agent and the orchestrator" : "Restarted every agent, leaving the orchestrator as it was")
+    }
+
+    func restartSelectedAgents() {
+        let agents = selectedAgents
+        restart(agents, orchestrator: false, saying: agents.count == 1 ? "Restarted \(agents[0].name)" : "Restarted \(agents.count) agents")
+    }
+
+    /// The agents with settings waiting to be used, and the orchestrator if the flow's details changed under it.
+    func restartAgentsAwaitingRestart() {
+        let agents = agentsAwaitingRestart
+        restart(agents, orchestrator: orchestratorNeedsRestart, saying: "Restarted the agents with new settings")
+    }
+
+    /// Restarts `agents`, and the orchestrator too when asked, each keeping its conversation so far. Asks first
+    /// when one of them is in the middle of a task, since a restart cuts that task short.
+    private func restart(_ agents: [Card], orchestrator: Bool, saying line: String) {
+        guard canRestartAgents, !agents.isEmpty || orchestrator else { return }
+        var busy = agents.filter(isBusy).map(\.name)
+        if orchestrator, self.orchestrator.state == .working { busy.append("the orchestrator") }
+        if !busy.isEmpty, !TestHarness.isEnabled {
+            let list = busy.count == 1 ? busy[0] : busy.dropLast().joined(separator: ", ") + " and " + busy.last!
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Restart while \(list) \(busy.count == 1 ? "is" : "are") at work?"
+            alert.informativeText = "Restarting cuts short what \(busy.count == 1 ? "it is" : "they are") doing now. "
+                + (isRunning ? "A run waiting on \(busy.count == 1 ? "it" : "them") stops. " : "")
+                + "Every agent keeps its conversation so far."
+            alert.addButton(withTitle: "Restart")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        for card in agents { startSession(forCard: card.id) }
+        if orchestrator { startOrchestrator() }
+        append(line)
+    }
+
     /// A terminal that has run a process doesn't take a second one, so a restart gets a new terminal.
     private func freshSession(for id: String) -> TerminalSession {
         if let old = sessions[id], old.state != .notStarted {

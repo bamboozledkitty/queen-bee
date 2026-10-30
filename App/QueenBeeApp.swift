@@ -39,6 +39,12 @@ struct QueenBeeApp: App {
                 Button("Stop") { if let c = services.current { Task { await c.stop() } } }
                     .keyboardShortcut(".")
                     .disabled(services.current?.isRunning != true)
+                Button("Restart All Agents") { services.current?.restartAllAgents() }
+                    .disabled(services.current?.canRestartAgents != true)
+                Button("Restart All Agents Except the Orchestrator") { services.current?.restartAllAgents(withOrchestrator: false) }
+                    .disabled(services.current?.canRestartAgents != true)
+                Button("Restart Selected Agents") { services.current?.restartSelectedAgents() }
+                    .disabled(services.current?.canRestartAgents != true || services.current?.selectedAgents.isEmpty != false)
                 Divider()
                 Button("Tidy Up") { services.current?.tidy() }
                     .keyboardShortcut("l", modifiers: [.command, .shift])

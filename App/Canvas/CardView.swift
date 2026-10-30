@@ -480,6 +480,10 @@ class CardView: NSView, NSGestureRecognizerDelegate {
             })
             menu.addItem(.separator())
         }
+        if several, case let agents = controller.selectedAgents.count, agents > 0 {
+            menu.addItem(menuItem(agents == 1 ? "Restart Agent" : "Restart \(agents) Agents") { [weak controller] in controller?.restartSelectedAgents() })
+            menu.addItem(.separator())
+        }
         menu.addItem(menuItem("Duplicate") { [weak controller] in controller?.duplicateSelection() })
         menu.addItem(menuItem("Copy") { [weak controller] in controller?.copySelection() })
         menu.addItem(.separator())

@@ -202,6 +202,7 @@ struct WorkspaceView: View {
                               ? "To try this sub-flow by itself, give its Input something to start with and link it to a card"
                               : "Nothing to run yet: give the Start card something to start with and link it to a card")
                 }
+                RestartMenu(controller: controller)
                 Button {
                     controller.select(.none)
                     controller.showsFlowSettings.toggle()
@@ -302,6 +303,34 @@ private struct TitlePlate: View {
 /// settings, a banner, the status line, the zoom control, and an empty flow's pointer to the
 /// orchestrator. Its empty
 /// areas let clicks through to the canvas underneath.
+/// Restarts the flow's agents together: all of them, the ones selected on the canvas, or the ones waiting to
+/// use new settings. Each keeps its conversation so far.
+private struct RestartMenu: View {
+    let controller: FlowController
+
+    var body: some View {
+        let selected = controller.selectedAgents.count
+        let awaiting = controller.agentsAwaitingRestart.count + (controller.orchestratorNeedsRestart ? 1 : 0)
+        Menu {
+            Button("Restart All Agents") { controller.restartAllAgents() }
+            Button("Restart All Agents Except the Orchestrator") { controller.restartAllAgents(withOrchestrator: false) }
+            Button(selected <= 1 ? "Restart Selected Agent" : "Restart \(selected) Selected Agents") { controller.restartSelectedAgents() }
+                .disabled(selected == 0)
+            if awaiting > 0 {
+                Divider()
+                Button(awaiting == 1 ? "Restart the One with New Settings" : "Restart the \(awaiting) with New Settings") {
+                    controller.restartAgentsAwaitingRestart()
+                }
+            }
+        } label: {
+            Label("Restart", systemImage: "arrow.clockwise").labelStyle(.titleAndIcon)
+        }
+        .menuIndicator(.visible)
+        .disabled(!controller.canRestartAgents)
+        .help("Restart every agent, with or without the orchestrator, or only the agents selected on the canvas. Each keeps its conversation so far.")
+    }
+}
+
 struct CanvasControls: View {
     let controller: FlowController
     let showLog: () -> Void
