@@ -2,7 +2,7 @@
 
 A Mac app for building and running flows of Claude Code agents on a canvas. Each agent is a live `claude` session in a terminal on a card. Logic cards route each agent's reply to the next cards, and an orchestrator session beside the canvas can edit and run the flow. A companion iPad and iPhone app pairs with the Mac to watch and edit flows.
 
-These are the instructions for any coding agent working in this repo. `README.md` and `CONTRIBUTING.md` say more for people.
+These are the instructions for any coding agent working in this repo. `README.md` and `CONTRIBUTING.md` say more for people. `CONTRIBUTING.md` holds the full details on building and testing, so read it there rather than in a copy here. If this file and `CONTRIBUTING.md` disagree, `CONTRIBUTING.md` is right: fix this file.
 
 ## What you need
 
@@ -30,13 +30,13 @@ open build/Build/Products/Debug/QueenBee.app  # run it
 ./scripts/build-mobile.sh                     # the iPad and iPhone app, for the Simulator
 cd Core && swift test                         # unit tests, under a second
 ./scripts/check-clean.sh                      # fails if anything private is tracked
-./scripts/e2e.py [scenario ...]               # end-to-end tests, about seven minutes
+./scripts/e2e.py [scenario ...]               # end-to-end tests, about nine minutes
 ```
 
 - `build.sh` regenerates the Xcode project, prints only errors and the result, and exits non-zero when the build fails. Trust its exit code.
 - A build from source is called Queen Bee Dev. It keeps its own settings and support folder, so it runs beside an installed copy.
-- Launch flags: `--open <folder>` opens a project folder, `--float` keeps the window above others, `--testing` turns on the test harness and lets a second copy run, `--welcome` shows the first-run walk-through. `--testing`, `--welcome` and `QB_SUPPORT_DIR` only work in a Debug build.
-- CI runs `swift test`, builds Core and the iPad and iPhone app for the Simulator, and runs `check-clean.sh`. It doesn't build the Mac app. Run `swift test` before you call any change done.
+- The launch flags (`--open`, `--float`, `--testing`, `--welcome`) are listed under Launch flags in `CONTRIBUTING.md`. `--testing`, `--welcome` and `QB_SUPPORT_DIR` only work in a Debug build.
+- CI runs `swift test`, builds Core and the iPad and iPhone app for the Simulator, builds the Mac app in Debug and Release and checks that the Release build has no test harness, and runs `check-clean.sh` and a secrets check. It doesn't run the end-to-end tests. Run `swift test` before you call any change done.
 - The repo is public. Run `./scripts/check-clean.sh` before every commit: it fails if a signing file, `Mobile/Local.xcconfig`, an Apple team id, a private key or a home folder path is tracked.
 - `e2e.py` starts real Claude Code sessions on Haiku, which uses the person's account. **Ask before running it.** Name scenarios to run only the ones near your change; they are listed at the top of `scripts/e2e.py`. It needs a Debug build first.
 
@@ -75,7 +75,7 @@ Don't describe a capability anywhere else: not in the orchestrator's prompt in `
 - There are no unit tests here. A change is checked by a build, and in the running app by the end-to-end tests, which drive it through `App/Testing/TestHarness.swift`. That harness only exists when the app is launched with `--testing`.
 - The canvas is an `NSScrollView` with magnification (`App/Canvas/`); each terminal is a SwiftTerm view inside a card.
 - `App/Browser/` runs a hidden Chromium per project and controls it over the Chrome DevTools Protocol.
-- `App/Remote/` is the Mac's end of the link to the iPad and iPhone app: it decides what a paired device may see and ask for. After a change there, the end-to-end scenario to run is `remote`.
+- `App/Remote/` is the Mac's end of the link to the iPad and iPhone app: it decides what a paired device may see and ask for. After a change there, the end-to-end scenario to run is `remote`. After a change to how the Mac sends a card's page to a device or takes a device's input in it, run `browser-remote` too; it starts a heavy browser, so run it on its own. `mirror` checks the copy of a terminal a device is sent.
 
 ## The iPad and iPhone app (`Mobile/`)
 
