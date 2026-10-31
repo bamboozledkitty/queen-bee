@@ -68,15 +68,28 @@ private struct KeychainStore: KeyStore {
 /// Where keys are kept: the data protection keychain, which asks nobody and is tied to this app, with keys an
 /// earlier version kept in the login keychain moved there the first time each is read. A copy of the app
 /// built without the entitlement the data protection keychain needs goes on using the login keychain. A test
-/// copy keeps keys in memory, so a test never touches the real Keychain.
+/// copy keeps keys in memory, so a test never touches the real Keychain. A Debug build keeps them in a file in
+/// its own support folder: it is signed afresh by every build, and the login keychain would ask again each time.
+/// A test copy told to with QB_FILE_KEYS uses that file too, so the file can be tested.
 enum KeyVault {
     private static let memory = MemoryKeyStore()
     private static var service: String { (Bundle.main.bundleIdentifier ?? "dev.queenbee.app") + ".remote" }
+    #if DEBUG
+    private static let file = FileKeyStore(url: AppServices.shared.supportDirectory.appendingPathComponent("device-keys.json"))
+    #endif
     private static var store: any KeyStore {
+        #if DEBUG
+        if TestHarness.isEnabled, ProcessInfo.processInfo.environment["QB_FILE_KEYS"] == nil { return memory }
+        return file
+        #else
         if TestHarness.isEnabled { return memory }
         return MigratingKeyStore(modern: KeychainStore(service: service, dataProtection: true),
                                  legacy: KeychainStore(service: service, dataProtection: false))
+        #endif
     }
+
+    /// What to call where keys are kept, in what the person is told.
+    static var place: String { store is FileKeyStore ? "this copy's key file" : "your Keychain" }
 
     static func read(_ account: String) -> Data? { lookUp(account).key }
 
@@ -99,7 +112,7 @@ enum KeyVault {
     static func accounts() -> [String] { store.accounts() }
 }
 
-/// The devices paired with this Mac. Their names are in a file; their keys are only ever in the Keychain.
+/// The devices paired with this Mac. Their names are in a file; their keys are wherever `KeyVault` keeps them.
 @Observable
 final class RemoteDevices {
     private struct Saved: Codable {
@@ -155,6 +168,12 @@ final class RemoteDevices {
         // read, as when the Keychain is locked or its prompt was turned down, is kept: dropped here, the next save
         // would write it out of the file for good. Its listener waits until the key can be read.
         devices = read.filter { storedKey(for: $0.id).keepsDevice }
+        #if DEBUG
+        // Keys an earlier Debug build kept in the Keychain aren't read: reading them is what would ask for a password.
+        if devices.count < read.count, problem == nil {
+            problem = "\(read.count - devices.count) paired device(s) have no key in this copy's key file, so they were taken off the list. Pair them again."
+        }
+        #endif
     }
 
     /// The list is there and can't be read. It is copied aside, the devices are found again from their keys,
@@ -271,7 +290,7 @@ final class RemoteDevices {
         if !MigratingKeyStore.gone(status) {
             // The device is unpaired all the same: it is off the list, nothing listens for it, and it stays off.
             Self.log.error("Couldn't delete the key of removed device \(id, privacy: .public): \(status)")
-            problem = "Queen Bee removed the device but couldn't delete its key from your Keychain (\(status)). The device can't connect with it."
+            problem = "Queen Bee removed the device but couldn't delete its key from \(KeyVault.place) (\(status)). The device can't connect with it."
         }
         devices.removeAll { $0.id == id }
         save()
