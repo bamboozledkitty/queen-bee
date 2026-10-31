@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The Mac's projects and their flows. Each flow's row says what it needs from you, in the Mac's words.
@@ -70,7 +71,7 @@ struct FlowList: View {
     private func heading(_ title: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             Text(title)
-                .dsMono(Theme.Touch.caption, .medium)
+                .dsSans(Theme.Touch.caption, .medium)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .accessibilityAddTraits(.isHeader)
             Hairline()
@@ -84,7 +85,7 @@ struct FlowList: View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             HStack(spacing: Theme.Space.xs) {
                 Text(project.name)
-                    .dsMono(Theme.Touch.caption, .medium)
+                    .dsSans(Theme.Touch.caption, .medium)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
@@ -147,7 +148,7 @@ struct FlowList: View {
 
     private func note(_ title: String, _ text: String) -> some View {
         VStack(spacing: Theme.Space.s) {
-            Text(title).dsMono(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
+            Text(title).dsSans(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
             if !text.isEmpty { Text(text).dsSans(Theme.Touch.body).foregroundStyle(Theme.inkSecondary.ui) }
         }
         .multilineTextAlignment(.center)
@@ -155,7 +156,7 @@ struct FlowList: View {
     }
 }
 
-/// One flow in the list: tinted under the finger, marked with an ink rule when it is the one on the canvas.
+/// One flow in the list: a dot for its state, tinted under the finger, and filled when it is the one on the canvas.
 /// A tap opens it. A finger held on it brings out its menu, under it.
 private struct FlowRow: View {
     let flow: RemoteFlowSummary
@@ -168,18 +169,17 @@ private struct FlowRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            Rectangle()
-                .fill(isOpen ? Theme.ink.ui : .clear)
-                .frame(width: 2, height: 18)
-                .padding(.trailing, CGFloat(max(0, depth - 1)) * 14)
             if flow.isSubflow {
                 Image(systemName: "arrow.turn.down.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.inkSecondary.ui)
+                    .padding(.leading, CGFloat(max(0, depth - 1)) * 14)
+            } else {
+                StatusDot(flow.activity.tone, size: 9).frame(width: 16)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(flow.name)
-                    .dsMono(Theme.Touch.body, isOpen ? .medium : .regular)
+                    .dsSans(Theme.Touch.body, isOpen ? .medium : .regular)
                     .foregroundStyle((flow.isSubflow && !isOpen ? Theme.inkSecondary : Theme.ink).ui)
                     .lineLimit(1)
                 // The Mac opens and changes neither of two flows with one id, so the row says why it won't open.
@@ -199,8 +199,9 @@ private struct FlowRow: View {
         }
         .padding(.horizontal, Theme.Space.s)
         .frame(maxWidth: .infinity, minHeight: Theme.Touch.target, alignment: .leading)
-        .background(isOpen ? Theme.bar.ui : isPressed || isMenuOut ? Theme.barHover.ui : .clear,
-                    in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+        .background(isOpen ? Palette.selected.color : isPressed || isMenuOut ? Palette.hover.color : .clear,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
+        .accessibilityAddTraits(isOpen ? .isSelected : [])
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
         .onLongPressGesture(minimumDuration: 0.4, perform: hold) { isPressed = $0 }
@@ -225,7 +226,7 @@ private struct FlowRowMenu: View {
                             .font(.system(size: 14, weight: .medium))
                             .frame(width: 24)
                             .accessibilityHidden(true)
-                        Text(item.title).dsMono(Theme.Touch.body, .medium).lineLimit(1)
+                        Text(item.title).dsSans(Theme.Touch.body, .medium).lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle((item.kind == .delete || item.kind == .stopAgents ? Theme.failInk : Theme.ink).ui)
@@ -324,7 +325,7 @@ private struct FindList: View {
 
     private func title(_ text: String) -> some View {
         Text(text)
-            .dsMono(Theme.Touch.caption, .medium)
+            .dsSans(Theme.Touch.caption, .medium)
             .foregroundStyle(Theme.inkSecondary.ui)
             .padding(.leading, Theme.Space.s)
             .padding(.top, Theme.Space.l)
@@ -336,9 +337,9 @@ private struct FindList: View {
         Button { client.go(to: hit) } label: {
             HStack(spacing: Theme.Space.s) {
                 Image(systemName: icon).font(.system(size: 12, weight: .medium)).frame(width: 18).accessibilityHidden(true)
-                Text(name).dsMono(Theme.Touch.body, .medium).lineLimit(1)
+                Text(name).dsSans(Theme.Touch.body, .medium).lineLimit(1)
                 Spacer(minLength: Theme.Space.s)
-                Text(place).dsMono(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui).lineLimit(1)
+                Text(place).dsSans(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui).lineLimit(1)
             }
             .foregroundStyle(Theme.ink.ui)
             .padding(.horizontal, Theme.Space.s)

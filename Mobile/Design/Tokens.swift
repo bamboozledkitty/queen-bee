@@ -1,46 +1,43 @@
+import QueenBeeDesign
 import SwiftUI
 import UIKit
 
-/// The Flight plan design system, as the iPad and iPhone app uses it. These mirror `App/Design/Tokens.swift`
-/// value for value, so a flow looks the same on the device as it does on the Mac: drafting paper, ink
-/// lines, and one signal colour for whatever is live. Change a value there and change it here.
+/// The iPad and iPhone app's names for the design system in `QueenBeeDesign`, which the Mac app shares, so a
+/// flow looks the same on the device as it does on the Mac. Colours come from there and nowhere else.
 ///
 /// Colour carries meaning and nothing else. Ink is structure. Orange is live. Green is "the run passed
 /// through". Red is "it stopped here". Cobalt is selected or focused.
 nonisolated enum Theme {
     // MARK: Colour, as light and dark pairs
+    // The app's long-standing names for the roles in `Palette`, the same as the Mac's. New code can take `Palette` directly.
 
-    static let paper = pair(0xE3EAF1, 0x0F1B2B)
-    static let surface = pair(0xFFFFFF, 0x16263A)
-    static let bar = pair(0xF3F6FA, 0x1B2E46)
+    /// Behind a screen's content, and the canvas.
+    static let paper = Palette.panel.platform
+    /// A panel, a sheet, a list.
+    static let surface = Palette.overlay.platform
+    /// A strip or a row set off from what it sits on: a header, a field, a card.
+    static let bar = Palette.raised.platform
     /// Under a finger, where the Mac has the pointer over it.
-    static let barHover = pair(0xE7EDF4, 0x223955)
-    static let ink = pair(0x1F3A5F, 0xCFE0F5)
-    static let inkSecondary = pair(0x5A7190, 0x8AA3C2)
-    static let hairline = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.22, 0.2)
+    static let barHover = Palette.hover.platform
+    static let ink = Palette.text.platform
+    static let inkSecondary = Palette.textMuted.platform
+    static let hairline = Palette.hairline.platform
+    /// A line that has to be seen: around a control or a card.
+    static let outline = Palette.hairlineStrong.platform
     /// The canvas's dot matrix.
-    static let dot = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.26, 0.2)
+    static let dot = Palette.canvasDot.platform
 
-    static let live = pair(0xFF6B2C, 0xFF8A4C)
-    static let liveTint = pair(0xFFE4D6, 0x4A2413)
-    static let liveInk = pair(0x8A3410, 0xFFC7A8)
-    static let passTint = pair(0xDDF3E4, 0x143524)
-    static let passInk = pair(0x17603A, 0x7FD6A0)
-    static let failTint = pair(0xFBE3E3, 0x4A1B1B)
-    static let failInk = pair(0xA32D2D, 0xF09595)
-    static let select = pair(0x2F6FED, 0x6EA0FF)
+    static let live = Palette.live.platform
+    static let liveTint = Palette.liveTint.platform
+    static let liveInk = Palette.liveText.platform
+    static let passTint = Palette.passTint.platform
+    static let passInk = Palette.passText.platform
+    static let failTint = Palette.failTint.platform
+    static let failInk = Palette.failText.platform
+    static let select = Palette.accent.platform
 
-    static let terminal = pair(0x10243D, 0x0A1420)
-    static let terminalInk = pair(0xCFE0F5, 0xCFE0F5)
-
-    private static func pair(_ light: Int, _ dark: Int, alpha lightAlpha: CGFloat = 1, _ darkAlpha: CGFloat = 1) -> UIColor {
-        UIColor { $0.userInterfaceStyle == .dark ? rgb(dark, darkAlpha) : rgb(light, lightAlpha) }
-    }
-
-    private static func rgb(_ hex: Int, _ alpha: CGFloat) -> UIColor {
-        UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
-    }
+    static let terminal = Palette.terminal.platform
+    static let terminalInk = Palette.terminalText.platform
 
     // MARK: Type
 
@@ -85,8 +82,8 @@ nonisolated enum Theme {
     }
 
     enum Radius {
-        static let card: CGFloat = 3
-        static let badge: CGFloat = 2
+        static let card: CGFloat = DS.Radius.m
+        static let badge: CGFloat = DS.Radius.xs
     }
 
     enum Stroke {

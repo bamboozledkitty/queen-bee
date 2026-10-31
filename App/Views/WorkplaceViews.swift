@@ -1,7 +1,8 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
-/// The chip after the project's name in the title bar: the branch the flow works on, and "worktree" when it
+/// The branch chip in the flow's header: the branch the flow works on, and "worktree" when it
 /// works in one. Clicking it shows where the flow works, and changes it.
 struct WorkplaceChip: View {
     let controller: FlowController
@@ -10,23 +11,17 @@ struct WorkplaceChip: View {
 
     var body: some View {
         Button { showsForm.toggle() } label: {
-            HStack(spacing: 3) {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 9, weight: .semibold))
-                // A long branch name is cut short in the middle rather than taking over the title bar.
-                Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 260)
-                Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold))
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.textMuted.color)
+                // A long branch name is cut short in the middle rather than taking over the header.
+                Text(text).textRole(.mono).lineLimit(1).truncationMode(.middle).frame(maxWidth: 260)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Palette.textFaint.color)
             }
-            .font(.dsMono(Theme.Size.caption, .medium))
-            .foregroundStyle(Theme.select.ui)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(Theme.select.ui.opacity(0.12), in: Capsule())
-            .contentShape(Capsule())
-            // Its whole width, always: the title bar measures its item once, and would otherwise cut the
-            // branch short when the chip's words change after the flow opens.
             .fixedSize()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.ds(.ghost))
         .help("Where this flow works. Click to check or change it.")
         .popover(isPresented: $showsForm, arrowEdge: .bottom) {
             WorkplaceForm(controller: controller, isFirstRun: false) { showsForm = false }
@@ -38,20 +33,18 @@ struct WorkplaceChip: View {
 }
 
 /// Where a flow works: the project folder on a branch, or a worktree on a branch of its own. The same form
-/// asks the first time a flow opens, and opens from the title bar's chip after that.
+/// asks the first time a flow opens, and opens from the header's branch chip after that.
 struct WorkplaceForm: View {
     let controller: FlowController
     /// The question asked when the flow first opens, rather than the chip's popover.
     let isFirstRun: Bool
     let done: () -> Void
 
-    @State private var kind = Workplace.Kind.folder
-    /// The branch the project folder is switched to. Nil to leave it as it is.
-    @State private var folderBranch: String?
-    @State private var worktreeBranch = ""
-    @State private var base = ""
+    /// What the form shows and decides. Nil until the repository has been read.
+    @State private var model: WorkplaceChoice?
     @State private var isApplying = false
-    @State private var isReady = false
+    /// Why Apply stopped after the repository was read again, until the person changes something.
+    @State private var staleProblem: String?
 
     var body: some View {
         let setting = controller.workplaceSetting
@@ -103,59 +96,74 @@ struct WorkplaceForm: View {
 
     @ViewBuilder
     private func choices(_ git: Git.Info) -> some View {
-        Picker("", selection: $kind) {
-            Text("This folder").tag(Workplace.Kind.folder)
-            Text("A worktree").tag(Workplace.Kind.worktree)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        if let model {
+            let isFolder = model.mode == .folder
+            Picker("", selection: Binding(get: { model.kind }, set: { self.model?.kind = $0 })) {
+                Text("This folder").tag(Workplace.Kind.folder)
+                Text("A worktree").tag(Workplace.Kind.worktree)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel("Where the flow works")
 
-        switch kind {
-        case .folder:
-            row("Branch") {
-                MenuField(options: folderOptions(git), selection: folderBranch, shortensToFit: true) { folderBranch = $0 }
+            if !isFolder {
+                Picker("", selection: Binding(get: { model.mode }, set: { self.model?.mode = $0 })) {
+                    Text("New branch").tag(WorkplaceChoice.Mode.newBranch)
+                    Text("Existing branch").tag(WorkplaceChoice.Mode.existingBranch)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("Worktree branch")
             }
-            note("Agents work in \(controller.project.name) itself"
-                 + (folderBranch.map { ", switched to \($0)." } ?? ", on whatever branch it is on" + (git.current.map { " (now \($0))." } ?? "."))
-                 + " Your own edits there show up for them too.")
-            if let notListed = Workplace.notListedNote(openElsewhere(git)) {
-                note(notListed)
-            }
-        case .worktree:
-            row("Branch") {
-                TextField("qb/my-flow", text: $worktreeBranch)
-                    .textFieldStyle(.plain)
-                    .font(.dsMono(Theme.Size.body, .medium))
-                    .fieldBox()
-            }
-            if !git.branches.contains(trimmed(worktreeBranch)) {
-                row("Made from") {
-                    MenuField(options: git.branches.map { (value: $0, label: $0) }, selection: base, shortensToFit: true) { base = $0 }
+
+            switch model.mode {
+            case .folder:
+                EmptyView()
+            case .newBranch:
+                row("New branch") {
+                    TextField("qb/my-flow", text: Binding(get: { model.newName }, set: { self.model?.newName = $0 }))
+                        .textFieldStyle(.plain)
+                        .font(.dsSans(Theme.Size.body, .medium))
+                        .fieldBox()
+                }
+                row("Starting from") {
+                    SearchPicker(model.baseChoices.map { SearchPickerItem(id: $0.branch, title: $0.branch, isPinned: $0.isPinned) },
+                                 selection: model.base, placeholder: "Choose a branch", prompt: "Search local branches", accessibilityLabel: "Starting from") {
+                        self.model?.base = $0
+                    }
+                }
+            case .existingBranch:
+                row("Branch") {
+                    SearchPicker(model.existingChoices.map {
+                        SearchPickerItem(id: $0.branch, title: $0.branch, note: $0.note, disabledReason: $0.disabledReason, isPinned: $0.isPinned)
+                    }, selection: model.existing, placeholder: "Choose a local branch", prompt: "Search local branches", accessibilityLabel: "Branch") {
+                        self.model?.existing = $0
+                    }
                 }
             }
-            note(worktreeNote(git))
-        }
-        if let problem {
-            Text(problem)
-                .font(.dsSans(Theme.Size.caption))
-                .foregroundStyle(Theme.failInk.ui)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        if controller.isRunning && !isFirstRun {
-            note("Stop the run to change where the flow works.")
-        }
-        HStack(spacing: Theme.Space.s) {
-            Spacer()
-            Button(isFirstRun ? "Not now" : "Cancel") {
-                if isFirstRun { Task { await controller.answerWorkplaceQuestion(nil) } }
-                done()
+            ForEach(model.notes, id: \.self) { note($0) }
+            if let problem = model.problem ?? staleProblem {
+                Text(problem)
+                    .font(.dsSans(Theme.Size.caption))
+                    .foregroundStyle(Theme.failInk.ui)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.panel(.quiet))
-            .keyboardShortcut(.cancelAction)
-            Button(isFirstRun ? "Use this" : "Apply") { apply() }
-                .buttonStyle(.panel(.filled))
-                .keyboardShortcut(.defaultAction)
-                .disabled(!isReady || problem != nil || isApplying || (!isFirstRun && (controller.isRunning || controller.isStartingRun)))
+            if controller.isRunning && !isFirstRun {
+                note("Stop the run to change where the flow works.")
+            }
+            HStack(spacing: Theme.Space.s) {
+                Spacer()
+                Button(isFirstRun ? "Not now" : "Cancel") {
+                    if isFirstRun { Task { await controller.answerWorkplaceQuestion(nil) } }
+                    done()
+                }
+                .buttonStyle(.panel(.quiet))
+                .keyboardShortcut(.cancelAction)
+                Button(isFirstRun ? "Use this" : "Apply") { apply(model) }
+                    .buttonStyle(.panel(.filled))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!model.canApply || isApplying || (!isFirstRun && (controller.isRunning || controller.isStartingRun)))
+            }
         }
     }
 
@@ -163,7 +171,7 @@ struct WorkplaceForm: View {
         HStack(spacing: Theme.Space.s) {
             Text(title)
                 .font(.dsSans(Theme.Size.body, .medium))
-                .frame(width: 76, alignment: .leading)
+                .frame(width: 88, alignment: .leading)
             content()
             Spacer(minLength: 0)
         }
@@ -176,59 +184,35 @@ struct WorkplaceForm: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func folderOptions(_ git: Git.Info) -> [(value: String?, label: String)] {
-        // The branch it is on now is named in the note below, where a long name has room.
-        let asItIs: [(value: String?, label: String)] = [(value: nil, label: "Leave as it is")]
-        let elsewhere = openElsewhere(git)
-        return asItIs + git.branches.filter { !elsewhere.contains($0) }.map { (value: Optional($0), label: $0) }
-    }
-
-    /// Branches the project folder can't be switched to, because a worktree has them open.
-    private func openElsewhere(_ git: Git.Info) -> [String] {
-        Workplace.branchesOpenElsewhere(worktrees: git.worktrees, projectRoot: controller.project.root).filter { git.branches.contains($0) }
-    }
-
-    private func worktreeNote(_ git: Git.Info) -> String {
-        let name = trimmed(worktreeBranch)
-        if git.worktrees.contains(where: { $0.branch == name }) {
-            return "A worktree on \(name) is already there, so the flow works in it."
-        }
-        if git.branches.contains(name) {
-            return "A separate copy of \(controller.project.name) on \(name). Your folder stays as it is."
-        }
-        return "A separate copy of \(controller.project.name) on a new branch, \(name.isEmpty ? "named above" : name), made from \(base). Your folder stays as it is."
-    }
-
-    private func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    private var problem: String? {
-        guard isReady, kind == .worktree else { return nil }
-        return Workplace.problem(branchName: trimmed(worktreeBranch))
-    }
-
     /// Starts from what the flow is set to now, else from the project folder as it is.
     private func fill() {
-        let git = controller.git
-        let now = controller.workplaceSetting.workplace
-        kind = now?.kind ?? .folder
-        folderBranch = now?.kind == .folder ? now?.branch : nil
-        // A branch a worktree has opened since can't be offered, so the form starts from the folder as it is.
-        if let branch = folderBranch, let git, openElsewhere(git).contains(branch) { folderBranch = nil }
-        worktreeBranch = now?.kind == .worktree ? (now?.branch ?? "") : Workplace.suggestedBranch(forFlowNamed: controller.flow.name, id: controller.flow.id)
-        base = now?.base ?? git?.defaultBranch ?? "main"
-        isReady = true
+        guard let git = controller.git else { return }
+        model = WorkplaceChoice(saved: controller.workplaceSetting.workplace, current: git.current, branches: git.branches,
+                                defaultBranch: git.defaultBranch, worktrees: git.worktrees, projectRoot: controller.project.root,
+                                projectName: controller.project.name, flowName: controller.flow.name, flowID: controller.flow.id)
     }
 
-    private func apply() {
-        let chosen: Workplace = kind == .folder
-            ? .folder(on: folderBranch)
-            : .worktree(trimmed(worktreeBranch), from: base)
+    private func apply(_ chosen: WorkplaceChoice) {
         isApplying = true
+        staleProblem = nil
         Task {
+            // The repository may have changed since the form was read: check the choices against it once more.
+            await controller.refreshGit()
+            var ready = chosen
+            if let git = controller.git {
+                ready = chosen.revalidated(current: git.current, branches: git.branches, defaultBranch: git.defaultBranch, worktrees: git.worktrees)
+                model = ready
+            }
+            if let problem = ready.problem {
+                staleProblem = problem
+                isApplying = false
+                return
+            }
+            let setting = ready.workplace
             if isFirstRun {
-                await controller.answerWorkplaceQuestion(chosen)
+                await controller.answerWorkplaceQuestion(setting)
             } else {
-                await controller.setWorkplace(chosen)
+                await controller.setWorkplace(setting)
             }
             isApplying = false
             done()

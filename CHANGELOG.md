@@ -6,6 +6,17 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- In "Where this flow works", This folder no longer switches your folder's branch: agents work on whatever branch it has checked out. Flows set before keep working until you apply the form again. A worktree can be made on a new branch, started from any local branch, or on an existing local branch. The branch lists are searchable, and two branches whose names differ only by a slash or a dash (feature/foo and feature-foo) no longer share a worktree folder.
+- A new look, after Linear's apps, in Queen Bee's own colours, on the Mac and on the iPhone and iPad. On the Mac the sidebar sits on the window's colour and the flow in a rounded panel, with its header and Canvas and Settings tabs along the top; cards, panels, buttons and the ⌘K menu are redrawn to match. On the iPhone a floating bar at the foot of the first screen holds Needs you, Flows and a menu with your Mac, Settings and pinned flows. Light and dark both follow it. Agents and the orchestrator are still live Claude Code sessions.
+- Both apps now share one design system, so a colour or a size is set in one place for both.
+
+### Added
+
+- Needs you, Runs, Schedules and Devices at the top of the Mac's sidebar: what waits on you, every flow's runs with each one's log, every schedule with Turn on and Turn off, and your paired devices.
+- Runs are numbered (#12), and a run keeps its number after older runs are let go.
+
 ## [0.8.0] - 2026-10-30
 
 ### Added

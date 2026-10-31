@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -49,7 +50,7 @@ private struct PaletteRow: View {
                 .font(.system(size: 11, weight: .medium))
                 .frame(width: 16)
             Text(role?.name ?? kind.label)
-                .font(.dsMono(Theme.Size.caption, role == nil ? .medium : .regular))
+                .font(.dsSans(Theme.Size.caption, role == nil ? .medium : .regular))
                 .lineLimit(1)
             Spacer(minLength: 0)
             // A role a paired device saved or changed, which the Mac asks about before it is first used.
@@ -108,7 +109,7 @@ struct CardHelpView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: role == nil ? CanvasGeometry.icon(for: kind) : "person.crop.square").font(.system(size: 11, weight: .medium))
-                Text(role?.name ?? kind.label).font(.dsMono(Theme.Size.body, .medium))
+                Text(role?.name ?? kind.label).font(.dsSans(Theme.Size.body, .medium))
             }
             Text(help.what)
                 .font(.dsSans(Theme.Size.body))
@@ -120,7 +121,7 @@ struct CardHelpView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(role == nil ? "For example" : "Its instructions").font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                Text(role == nil ? "For example" : "Its instructions").font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                 Text(help.example)
                     .font(.dsSans(Theme.Size.caption))
                     .fixedSize(horizontal: false, vertical: true)
@@ -207,31 +208,29 @@ struct ZoomPill: View {
             button("minus", help: "Zoom out") { controller.canvas?.zoom(by: 0.8) }
             Button { controller.canvas?.zoomToActualSize() } label: {
                 Text("\(Int((controller.zoom * 100).rounded()))%")
-                    .font(.dsMono(Theme.Size.caption, .medium))
+                    .textRole(.monoCaption)
+                    .foregroundStyle(Palette.textMuted.color)
                     .frame(width: 40)
             }
             .buttonStyle(.plain)
             .help("Back to 100%")
             button("plus", help: "Zoom in") { controller.canvas?.zoom(by: 1.25) }
-            Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: 14).padding(.horizontal, 2)
+            DSDivider(vertical: true).frame(height: 14).padding(.horizontal, 2)
             button("arrow.up.left.and.arrow.down.right", help: "Fit the whole flow") { controller.canvas?.zoomToFit() }
             button(showsMinimap ? "map.fill" : "map", help: showsMinimap ? "Hide the map of the flow" : "Show a map of the whole flow") { showsMinimap.toggle() }
         }
-        .foregroundStyle(Theme.ink.ui)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
+        .padding(.horizontal, 3)
+        .frame(height: 30)
         .floatingPanel()
     }
 
     private func button(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 20, height: 18)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
+        Button(action: action) { Image(systemName: symbol) }
+            .buttonStyle(.dsIcon)
+            .controlSize(.small)
+            .frame(width: 24, height: 24)
+            .accessibilityLabel(help)
+            .help(help)
     }
 }
 
@@ -263,19 +262,18 @@ struct Minimap: View {
                 let failed = controller.marks[card.id]?.failed == true
                 let live = waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
                     || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
-                let fill = failed ? Theme.failInk : live ? Theme.live : card.kind == .agent ? Theme.ink : Theme.inkSecondary
-                context.fill(Path(rect), with: .color(fill.ui.opacity(waiting.contains(card.id) || failed || live ? 1 : 0.55)))
+                let fill = failed ? Palette.fail : live ? Palette.live : card.kind == .agent ? Palette.textMuted : Palette.textFaint
+                context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(fill.color.opacity(waiting.contains(card.id) || failed || live ? 1 : 0.55)))
                 if selected.contains(card.id) {
-                    context.stroke(Path(rect.insetBy(dx: -1.5, dy: -1.5)), with: .color(Theme.select.ui), lineWidth: 1.5)
+                    context.stroke(Path(rect.insetBy(dx: -1.5, dy: -1.5)), with: .color(Palette.accent.color), lineWidth: 1.5)
                 }
             }
             if !controller.viewport.isEmpty {
-                context.stroke(Path(place(controller.viewport)), with: .color(Theme.select.ui), lineWidth: 1)
+                context.stroke(Path(roundedRect: place(controller.viewport), cornerRadius: 3), with: .color(Palette.accent.color), lineWidth: 1)
             }
         }
         .frame(width: Self.size.width, height: Self.size.height)
-        .background(Theme.paper.ui)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .background(Palette.panel.color)
         .floatingPanel()
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
@@ -345,11 +343,11 @@ struct FindPanel: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .frame(width: 16)
                             Text(match.card?.name ?? match.controller.flow.name)
-                                .font(.dsMono(Theme.Size.body, .medium))
+                                .font(.dsSans(Theme.Size.body, .medium))
                                 .lineLimit(1)
                             Spacer(minLength: Theme.Space.s)
                             Text(match.card == nil ? "flow in \(match.controller.project.name)" : match.controller.flow.name)
-                                .font(.dsMono(Theme.Size.caption))
+                                .font(.dsSans(Theme.Size.caption))
                                 .foregroundStyle(Theme.inkSecondary.ui)
                                 .lineLimit(1)
                         }
@@ -402,15 +400,13 @@ struct CostPill: View {
         Button { showsBreakdown.toggle() } label: {
             HStack(spacing: 5) {
                 Text(total.price)
-                    .font(.dsMono(Theme.Size.caption, .medium))
+                    .textRole(.monoCaption)
                     .contentTransition(.numericText())
-                if controller.isRunning {
-                    Circle().fill(Theme.live.ui).frame(width: 5, height: 5)
-                }
+                if controller.isRunning { StatusDot(.live, size: 5) }
             }
-            .foregroundStyle((total.isZero ? Theme.inkSecondary : Theme.ink).ui)
-            .padding(.horizontal, Theme.Space.s)
-            .frame(height: 24)
+            .foregroundStyle((total.isZero ? Palette.textMuted : Palette.text).color)
+            .padding(.horizontal, DS.Space.m)
+            .frame(height: 30)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -444,7 +440,7 @@ struct CostBreakdown: View {
         let whole = max(total.cost, 0.000001)
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Cost of \(controller.flow.name)").font(.dsMono(Theme.Size.title, .medium)).lineLimit(1)
+                Text("Cost of \(controller.flow.name)").font(.dsSans(Theme.Size.title, .medium)).lineLimit(1)
                 Spacer()
                 Text(total.price).font(.dsMono(Theme.Size.title, .medium))
                 Button(action: close) {
@@ -491,7 +487,7 @@ struct CostBreakdown: View {
                 part("Recent runs", trailing: nil) {
                     ForEach(Array(costed)) { run in
                         HStack {
-                            Text("\(RunPicker.label(for: run.started)) · \(run.summary)").font(.dsMono(Theme.Size.caption))
+                            Text("\(RunPicker.label(for: run.started)) · \(run.summary)").font(.dsSans(Theme.Size.caption))
                             Spacer()
                             Text(run.cost.price).font(.dsMono(Theme.Size.caption, .medium))
                         }
@@ -504,7 +500,7 @@ struct CostBreakdown: View {
                 Button { services.goBack(to: outer.flow.id) } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.turn.left.up").font(.system(size: 10, weight: .medium)).frame(width: 14)
-                        Text("Part of \(outer.flow.name)").font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
+                        Text("Part of \(outer.flow.name)").font(.dsSans(Theme.Size.caption, .medium)).lineLimit(1)
                         Spacer(minLength: Theme.Space.s)
                         Text("\(outer.usageWithSubflows.price) in all").font(.dsMono(Theme.Size.caption))
                     }
@@ -541,7 +537,7 @@ struct CostBreakdown: View {
                 HStack {
                     Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
                     Spacer()
-                    if let trailing { Text(trailing).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui) }
+                    if let trailing { Text(trailing).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui) }
                 }
             }
             rows()
@@ -555,7 +551,7 @@ struct CostBreakdown: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 10, weight: .medium)).frame(width: 14)
-                Text(name).font(.dsMono(Theme.Size.caption, .medium)).lineLimit(1)
+                Text(name).font(.dsSans(Theme.Size.caption, .medium)).lineLimit(1)
                 if opens { Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui) }
                 Spacer(minLength: Theme.Space.s)
                 Text(usage.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
@@ -588,22 +584,20 @@ struct StatusStrip: View {
         if let last = controller.log.last {
             Button(action: showLog) {
                 HStack(spacing: Theme.Space.s) {
-                    Circle()
-                        .fill((controller.isRunning ? Theme.live : Theme.inkSecondary).ui)
-                        .frame(width: 6, height: 6)
+                    StatusDot(controller.isRunning ? .live : .neutral, size: 6)
                     Text(last.text)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if controller.handOffs > 0 {
                         Text("\(controller.handOffs) \(controller.handOffs == 1 ? "hand-off" : "hand-offs")")
-                            .foregroundStyle(Theme.inkSecondary.ui)
+                            .foregroundStyle(Palette.textMuted.color)
                             .contentTransition(.numericText())
                     }
                 }
-                .font(.dsMono(Theme.Size.caption))
-                .foregroundStyle(Theme.ink.ui)
-                .padding(.horizontal, Theme.Space.s)
-                .padding(.vertical, 5)
+                .textRole(.caption)
+                .foregroundStyle(Palette.text.color)
+                .padding(.horizontal, DS.Space.m)
+                .frame(height: 30)
                 .frame(maxWidth: 460, alignment: .leading)
                 .fixedSize(horizontal: true, vertical: false)
             }
@@ -622,12 +616,12 @@ struct BannerView: View {
 
     var body: some View {
         Text(text)
-            .font(.dsSans(Theme.Size.body))
-            .foregroundStyle(Theme.failInk.ui)
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, 6)
-            .background(Theme.failTint.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.failInk.ui, lineWidth: Theme.Stroke.card))
+            .textRole(.body)
+            .foregroundStyle(Palette.failText.color)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.s)
+            .background(Palette.failTint.color, in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(Palette.fail.opacity(0.4).color, lineWidth: DS.Stroke.hairline))
             .frame(maxWidth: 520)
             .onTapGesture(perform: dismiss)
             .help("Click to dismiss")
@@ -651,7 +645,7 @@ struct OrchestratorCallout: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Describe the flow you want")
-                        .font(.dsMono(Theme.Size.body, .medium))
+                        .font(.dsSans(Theme.Size.body, .medium))
                     Spacer(minLength: Theme.Space.s)
                     Button { AppServices.shared.dismissHint(forFlow: controller.flow.id) } label: {
                         Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))

@@ -1,44 +1,77 @@
 import AppKit
+import QueenBeeDesign
 import SwiftUI
 
-/// The Flight plan design system. The canvas reads as an engineering drawing: drafting
-/// paper, ink lines, and one signal colour for whatever is live. Every view takes its
-/// colours, type, spacing and timing from here, so the look changes in one place.
+/// The Mac's names for the design system in `QueenBeeDesign`, which the iPhone and iPad app shares. Every
+/// view takes its colours, type, spacing and timing from here or from that module, so the look changes in
+/// one place for both apps.
 ///
 /// Colour carries meaning and nothing else. Ink is structure. Orange is live. Green is
 /// "the run passed through". Red is "it stopped here". Cobalt is selected or focused.
 enum Theme {
     // MARK: Colour, as light and dark pairs
+    // The Mac's long-standing names for the roles in `Palette`. New code can take `Palette` directly.
 
-    static let paper = pair(0xE3EAF1, 0x0F1B2B)
-    static let surface = pair(0xFFFFFF, 0x16263A)
-    static let bar = pair(0xF3F6FA, 0x1B2E46)
-    static let barHover = pair(0xE7EDF4, 0x223955)
-    static let ink = pair(0x1F3A5F, 0xCFE0F5)
-    static let inkSecondary = pair(0x5A7190, 0x8AA3C2)
-    static let hairline = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.22, 0.2)
-    /// The canvas's dot matrix.
-    static let dot = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.26, 0.2)
+    /// Behind a panel's content.
+    static let paper = Palette.panel.platform
+    /// A panel, a popover, a sheet.
+    static let surface = Palette.overlay.platform
+    /// A strip or a row set off from the panel: a header, a field.
+    static let bar = Palette.raised.platform
+    static let barHover = Palette.hover.platform
+    static let ink = Palette.text.platform
+    static let inkSecondary = Palette.textMuted.platform
+    static let hairline = Palette.hairline.platform
+    static let dot = Palette.canvasDot.platform
 
-    static let live = pair(0xFF6B2C, 0xFF8A4C)
-    static let liveTint = pair(0xFFE4D6, 0x4A2413)
-    static let liveInk = pair(0x8A3410, 0xFFC7A8)
-    static let passTint = pair(0xDDF3E4, 0x143524)
-    static let passInk = pair(0x17603A, 0x7FD6A0)
-    static let failTint = pair(0xFBE3E3, 0x4A1B1B)
-    static let failInk = pair(0xA32D2D, 0xF09595)
-    static let select = pair(0x2F6FED, 0x6EA0FF)
+    static let live = Palette.live.platform
+    static let liveTint = Palette.liveTint.platform
+    static let liveInk = Palette.liveText.platform
+    static let passTint = Palette.passTint.platform
+    static let passInk = Palette.passText.platform
+    static let failTint = Palette.failTint.platform
+    static let failInk = Palette.failText.platform
+    static let select = Palette.accent.platform
 
-    static let terminal = pair(0x10243D, 0x0A1420)
-    static let terminalInk = pair(0xCFE0F5, 0xCFE0F5)
+    static let terminal = Palette.terminal.platform
+    static let terminalInk = Palette.terminalText.platform
 
-    private static func pair(_ light: Int, _ dark: Int, alpha lightAlpha: CGFloat = 1, _ darkAlpha: CGFloat = 1) -> NSColor {
-        NSColor(name: nil) { $0.isDark ? rgb(dark, darkAlpha) : rgb(light, lightAlpha) }
-    }
+    /// The canvas, its cards and links, and the terminals in them, in the redesign's colours. AppKit views draw
+    /// with these; SwiftUI views take `Palette` directly.
+    enum Canvas {
+        static let paper = Palette.panel.platform
+        static let dot = Palette.canvasDot.platform
+        static let card = Palette.raised.platform
+        static let cardHover = Palette.hover.platform
+        static let outline = Palette.hairlineStrong.platform
+        static let rule = Palette.hairline.platform
+        /// A group's wash behind its cards.
+        static let groupFill = Palette.text.opacity(0.035).platform
 
-    private static func rgb(_ hex: Int, _ alpha: CGFloat) -> NSColor {
-        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+        static let text = Palette.text.platform
+        static let textMuted = Palette.textMuted.platform
+        static let textFaint = Palette.textFaint.platform
+        static let accent = Palette.accent.platform
+
+        static let live = Palette.live.platform
+        static let liveTint = Palette.liveTint.platform
+        static let liveText = Palette.liveText.platform
+        static let pass = Palette.pass.platform
+        static let passTint = Palette.passTint.platform
+        static let passText = Palette.passText.platform
+        static let fail = Palette.fail.platform
+        static let failTint = Palette.failTint.platform
+        static let failText = Palette.failText.platform
+
+        static let terminal = Palette.terminal.platform
+        static let terminalText = Palette.terminalText.platform
+
+        /// A card's name in its title bar.
+        static func name(_ size: CGFloat = 13) -> NSFont { .systemFont(ofSize: size, weight: .semibold) }
+        /// A word on a card: a state, a port, a summary.
+        static func label(_ size: CGFloat = 11.5, _ weight: NSFont.Weight = .medium) -> NSFont { .systemFont(ofSize: size, weight: weight) }
+        /// A figure on a card: a cost, a count.
+        static func figure(_ size: CGFloat = 11) -> NSFont { .monospacedDigitSystemFont(ofSize: size, weight: .medium) }
     }
 
     // MARK: Type
@@ -54,10 +87,10 @@ enum Theme {
     }
 
     enum Size {
-        static let caption: CGFloat = 11
-        static let body: CGFloat = 12
-        static let title: CGFloat = 13
-        static let heading: CGFloat = 15
+        static let caption: CGFloat = 11.5
+        static let body: CGFloat = 12.5
+        static let title: CGFloat = 13.5
+        static let heading: CGFloat = 16
     }
 
     // MARK: Shape
@@ -71,8 +104,8 @@ enum Theme {
     }
 
     enum Radius {
-        static let card: CGFloat = 3
-        static let badge: CGFloat = 2
+        static let card: CGFloat = DS.Radius.m
+        static let badge: CGFloat = DS.Radius.xs
     }
 
     enum Stroke {
@@ -191,13 +224,16 @@ extension Font {
 }
 
 /// The look shared by the controls that float over the canvas: the palette, the settings
-/// panel, the zoom pill, the status strip. Drawn like a card: a surface and an ink outline,
-/// with no shadow.
+/// panel, the zoom pill, the status strip. Raised off the canvas by a hairline and a soft shadow,
+/// with rounded corners that clip whatever is inside.
 struct FloatingPanel: ViewModifier {
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous)
         content
-            .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.ink.ui, lineWidth: Theme.Stroke.card))
+            .background(Palette.overlay.color, in: shape)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.hairline))
+            .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
     }
 }
 
@@ -217,11 +253,11 @@ struct Badge: View {
             if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)) }
             if !text.isEmpty { Text(text) }
         }
-        .font(.dsMono(Theme.Size.caption, .medium))
+        .font(.dsSans(Theme.Size.caption, .medium))
         .foregroundStyle(foreground.ui)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 1)
-        .background(background.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+        .padding(.horizontal, tone == .plain ? 6 : 8)
+        .frame(minHeight: 20)
+        .background(background.ui, in: Capsule())
     }
 
     private var foreground: NSColor {

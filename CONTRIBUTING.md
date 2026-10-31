@@ -97,14 +97,17 @@ hand-offs, the canvas or the engine, and say in the pull request which ones you 
   tool server all run it, and it talks to the app over a unix socket in `~/Library/Application Support/QueenBee/`.
 - `Mobile/` is the iPad and iPhone app. It links the same `Core/` package, draws the canvas with UIKit and the panels
   with SwiftUI, and feeds each terminal the output the Mac sends.
+- `Core/Sources/QueenBeeDesign/` is the design system both apps share: the colours as light and dark pairs, the type,
+  spacing, corner and motion scales, and the parts screens are built from. Each app's `Theme` names its roles.
 - `Plugin/qb-link/` is the plugin the app loads into every session. When an agent's turn ends it asks the app where
   the reply goes and sends it there as a Claude Code session message.
 
 A few habits the code already follows:
 
 - Anything that can be decided without a window goes in `Core/` and gets a test there.
-- Every colour, type size, spacing step and timing comes from `App/Design/Tokens.swift`. `Mobile/Design/Tokens.swift`
-  mirrors it, so change a value in both.
+- Every colour, type size, spacing step and timing comes from the shared design system in `Core/Sources/QueenBeeDesign`,
+  which both apps use, along with its parts (buttons, status pills, rows, tabs). Screens arrange those and set no
+  colour or size of their own. `swift test` checks that every text colour is readable on every surface, in light and dark.
 - Words people read are plain, with no jargon. Claude Code's own option names (effort, permission modes, model)
   stay exactly as Claude Code writes them.
 - Anything that lets a flow file or the orchestrator do something on the person's Mac without asking needs a
