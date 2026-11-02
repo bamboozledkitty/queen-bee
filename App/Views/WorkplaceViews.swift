@@ -16,8 +16,7 @@ struct WorkplaceChip: View {
                     .foregroundStyle(Palette.textMuted.color)
                 // A long branch name is cut short in the middle rather than taking over the header.
                 Text(text).textRole(.mono).lineLimit(1).truncationMode(.middle).frame(maxWidth: 260)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Palette.textFaint.color)
+                MenuCardArrow()
             }
             .fixedSize()
         }

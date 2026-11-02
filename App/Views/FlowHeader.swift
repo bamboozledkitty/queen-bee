@@ -11,6 +11,7 @@ struct FlowHeader: View {
     @State private var isRenaming = false
     @State private var draft = ""
     @FocusState private var isFocused: Bool
+    @State private var showsRunFrom = false
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
@@ -156,18 +157,14 @@ struct FlowHeader: View {
                     .help(runHelp(controller))
                 if controller.startCards.count > 1 {
                     // Several Start cards: say which one. A plain click on Run uses the selected one, or the first.
-                    Menu {
-                        ForEach(controller.startCards) { start in
-                            Button("Run from \(start.name)") { Task { await controller.run(startCardID: start.id) } }
-                        }
-                    } label: { Image(systemName: "chevron.down") }
-                        .menuStyle(.button)
-                        .menuIndicator(.hidden)
+                    Button { showsRunFrom.toggle() } label: { MenuCardArrow() }
                         .buttonStyle(.dsIcon)
-                        .fixedSize()
                         .disabled(!controller.canRun)
                         .accessibilityLabel("Run from…")
                         .help("This flow has \(controller.startCards.count) Start cards. Choose which one to run from.")
+                        .menuCard(isPresented: $showsRunFrom, sections: [controller.startCards.map { start in
+                            MenuCardItem("Run from \(start.name)") { Task { await controller.run(startCardID: start.id) } }
+                        }])
                 }
             }
         }
@@ -186,28 +183,29 @@ struct FlowHeader: View {
 /// use new settings. Each keeps its conversation so far.
 private struct RestartMenu: View {
     let controller: FlowController
+    @State private var isOpen = false
 
     var body: some View {
         let selected = controller.selectedAgents.count
         let awaiting = controller.agentsAwaitingRestart.count + (controller.orchestratorNeedsRestart ? 1 : 0)
-        Menu {
-            Button("Restart All Agents") { controller.restartAllAgents() }
-            Button("Restart All Agents Except the Orchestrator") { controller.restartAllAgents(withOrchestrator: false) }
-            Button(selected <= 1 ? "Restart Selected Agent" : "Restart \(selected) Selected Agents") { controller.restartSelectedAgents() }
-                .disabled(selected == 0)
-            if awaiting > 0 {
-                Divider()
-                Button(awaiting == 1 ? "Restart the One with New Settings" : "Restart the \(awaiting) with New Settings") {
-                    controller.restartAgentsAwaitingRestart()
-                }
-            }
-        } label: { Label("Restart", systemImage: "arrow.clockwise") }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .buttonStyle(.ds(.secondary))
-            .fixedSize()
+        Button { isOpen.toggle() } label: { MenuCardLabel("Restart", systemImage: "arrow.clockwise") }
+            .buttonStyle(.ds(.ghost))
             .disabled(!controller.canRestartAgents)
             .help("Restart every agent, with or without the orchestrator, or only the agents selected on the canvas. Each keeps its conversation so far.")
+            .menuCard(isPresented: $isOpen, sections: [
+                [
+                    MenuCardItem("Restart All Agents") { controller.restartAllAgents() },
+                    MenuCardItem("Restart All Agents Except the Orchestrator") { controller.restartAllAgents(withOrchestrator: false) },
+                    MenuCardItem(selected <= 1 ? "Restart Selected Agent" : "Restart \(selected) Selected Agents", isEnabled: selected > 0) {
+                        controller.restartSelectedAgents()
+                    },
+                ],
+                awaiting == 0 ? [] : [
+                    MenuCardItem(awaiting == 1 ? "Restart the One with New Settings" : "Restart the \(awaiting) with New Settings") {
+                        controller.restartAgentsAwaitingRestart()
+                    },
+                ],
+            ])
     }
 }
 
