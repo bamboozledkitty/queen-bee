@@ -25,11 +25,11 @@ struct PaletteView: View {
                                 Button("Delete Role", role: .destructive) { services.deleteRole(role.id) }
                             }
                     }
-                    Rectangle().fill(Theme.hairline.ui).frame(height: 1).padding(.vertical, 3)
+                    DSDivider().padding(.vertical, DS.Space.xs)
                 }
             }
         }
-        .padding(Theme.Space.xs)
+        .padding(DS.Space.xs)
         .frame(width: Self.width)
         .floatingPanel()
     }
@@ -45,27 +45,28 @@ private struct PaletteRow: View {
     @State private var showsHelp = false
 
     var body: some View {
-        HStack(spacing: Theme.Space.s) {
+        HStack(spacing: DS.Space.s) {
             Image(systemName: role == nil ? CanvasGeometry.icon(for: kind) : "person.crop.square")
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 16)
+                .dsIcon(DS.IconSize.m, .medium)
+                .frame(width: DS.Size.iconSlot)
+                .accessibilityHidden(true)
             Text(role?.name ?? kind.label)
-                .font(.dsSans(Theme.Size.caption, role == nil ? .medium : .regular))
+                .textRole(role == nil ? .captionLabel : .caption)
                 .lineLimit(1)
             Spacer(minLength: 0)
             // A role a paired device saved or changed, which the Mac asks about before it is first used.
             if let changed = role?.changedLine {
                 Image(systemName: "ipad.and.iphone")
-                    .font(.system(size: 9, weight: .medium))
+                    .dsIcon(DS.IconSize.xs, .medium)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .help(changed)
                     .accessibilityLabel(changed)
             }
         }
         .foregroundStyle(Theme.ink.ui)
-        .padding(.horizontal, Theme.Space.s)
-        .padding(.vertical, 5)
-        .background(isHovered ? Theme.barHover.ui : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+        .padding(.horizontal, DS.Space.s)
+        .padding(.vertical, DS.Space.tight)
+        .background(isHovered ? Theme.barHover.ui : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.xs))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .task(id: isHovered) {
@@ -77,7 +78,7 @@ private struct PaletteRow: View {
         .overlay(alignment: .topLeading) {
             if showsHelp {
                 CardHelpView(kind: kind, role: role)
-                    .offset(x: PaletteView.width + Theme.Space.xs)
+                    .offset(x: PaletteView.width + DS.Space.xs)
                     .allowsHitTesting(false)
                     .transition(.opacity.combined(with: .offset(x: -6)))
             }
@@ -85,6 +86,12 @@ private struct PaletteRow: View {
         .zIndex(showsHelp ? 1 : 0)
         .animation(Theme.Motion.standard, value: showsHelp)
         .onTapGesture(perform: add)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(role?.name ?? kind.label)
+        .accessibilityHint(role?.changedLine ?? "")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Add", add)
+        .accessibilityAction(.default, add)
         .onDrag {
             // A type of the app's own, so a terminal under the pointer leaves the drop for the canvas.
             let provider = NSItemProvider()
@@ -106,36 +113,36 @@ struct CardHelpView: View {
 
     var body: some View {
         let help = role.map(CardHelp.text(for:)) ?? CardHelp.text(for: kind)
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: role == nil ? CanvasGeometry.icon(for: kind) : "person.crop.square").font(.system(size: 11, weight: .medium))
-                Text(role?.name ?? kind.label).font(.dsSans(Theme.Size.body, .medium))
+        VStack(alignment: .leading, spacing: DS.Space.tight) {
+            HStack(spacing: DS.Space.tight) {
+                Image(systemName: role == nil ? CanvasGeometry.icon(for: kind) : "person.crop.square").dsIcon(DS.IconSize.m, .medium).accessibilityHidden(true)
+                Text(role?.name ?? kind.label).textRole(.label)
             }
             Text(help.what)
-                .font(.dsSans(Theme.Size.body))
+                .textRole(.body)
                 .fixedSize(horizontal: false, vertical: true)
             if let changed = role?.changedLine {
                 Text("\(changed). You're asked before it is first used.")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(role == nil ? "For example" : "Its instructions").font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+            VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                Text(role == nil ? "For example" : "Its instructions").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                 Text(help.example)
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(6)
+            .padding(DS.Space.tight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+            .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: DS.Radius.xs))
             Text("Click to add it, or drag it onto the canvas.")
-                .font(.dsSans(Theme.Size.caption))
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
         }
         .foregroundStyle(Theme.ink.ui)
-        .padding(Theme.Space.m)
-        .frame(width: 250, alignment: .leading)
+        .padding(DS.Space.m)
+        .frame(width: DS.Size.popoverWidth, alignment: .leading)
         .floatingPanel()
     }
 }
@@ -204,7 +211,7 @@ struct ZoomPill: View {
     @AppStorage("showsMinimap") private var showsMinimap = true
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: DS.Space.xxs) {
             button("minus", help: "Zoom out") { controller.canvas?.zoom(by: 0.8) }
             Button { controller.canvas?.zoomToActualSize() } label: {
                 Text("\(Int((controller.zoom * 100).rounded()))%")
@@ -215,12 +222,12 @@ struct ZoomPill: View {
             .buttonStyle(.plain)
             .help("Back to 100%")
             button("plus", help: "Zoom in") { controller.canvas?.zoom(by: 1.25) }
-            DSDivider(vertical: true).frame(height: 14).padding(.horizontal, 2)
+            DSDivider(vertical: true).frame(height: 14).padding(.horizontal, DS.Space.xxs)
             button("arrow.up.left.and.arrow.down.right", help: "Fit the whole flow") { controller.canvas?.zoomToFit() }
             button(showsMinimap ? "map.fill" : "map", help: showsMinimap ? "Hide the map of the flow" : "Show a map of the whole flow") { showsMinimap.toggle() }
         }
-        .padding(.horizontal, 3)
-        .frame(height: 30)
+        .padding(.horizontal, DS.Space.xs)
+        .frame(height: DS.Size.bar)
         .floatingPanel()
     }
 
@@ -240,36 +247,58 @@ struct Minimap: View {
     static let size = CGSize(width: 190, height: 124)
     let controller: FlowController
 
-    var body: some View {
+    private struct Mark { var rect: CGRect; var failed: Bool; var live: Bool; var waiting: Bool; var selected: Bool; var isAgent: Bool }
+
+    private var marks: [Mark] {
         let flow = controller.flow
-        let frames = flow.cards.map(CanvasGeometry.frame(of:))
+        let waiting = Set(controller.cardsNeedingYou.map(\.id))
+        let selected = controller.selection.cardIDs
+        func isLive(_ card: Card) -> Bool {
+            waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
+                || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
+        }
+        // What the map draws: a card each, except that a folded group is the one card it is on the canvas.
+        let foldedIDs = Set((flow.groups ?? []).filter(\.isFolded).flatMap(\.cardIDs))
+        var marks: [Mark] = flow.cards.filter { !foldedIDs.contains($0.id) }.map { card in
+            Mark(rect: CanvasGeometry.frame(of: card), failed: controller.marks[card.id]?.failed == true, live: isLive(card),
+                 waiting: waiting.contains(card.id), selected: selected.contains(card.id), isAgent: card.kind == .agent)
+        }
+        for group in (flow.groups ?? []) where group.isFolded {
+            guard let rect = GroupFrameView.frame(of: group, in: flow) else { continue }
+            let members = flow.cards.filter { group.cardIDs.contains($0.id) }
+            marks.append(Mark(rect: rect, failed: members.contains { controller.marks[$0.id]?.failed == true },
+                              live: members.contains(where: isLive), waiting: members.contains { waiting.contains($0.id) },
+                              selected: Set(group.cardIDs) == selected, isAgent: false))
+        }
+        return marks
+    }
+
+    var body: some View {
+        let marks = self.marks
+
+        let frames = marks.map(\.rect)
         // The map is of the flow, so the cards fill it. The window's view is drawn over them and
         // runs off the map's edge when it takes in more than the flow.
         let world = (frames.isEmpty ? controller.viewport : frames.reduce(CGRect.null) { $0.union($1) }).insetBy(dx: -80, dy: -80)
         let scale = world.isNull || world.width <= 0 ? 1 : min(Self.size.width / world.width, Self.size.height / world.height)
         // The flow is drawn in the middle of the map, whatever its shape.
         let inset = CGSize(width: (Self.size.width - world.width * scale) / 2, height: (Self.size.height - world.height * scale) / 2)
-        let waiting = Set(controller.cardsNeedingYou.map(\.id))
-        let selected = controller.selection.cardIDs
 
         Canvas { context, _ in
             func place(_ rect: CGRect) -> CGRect {
                 CGRect(x: inset.width + (rect.minX - world.minX) * scale, y: inset.height + (rect.minY - world.minY) * scale,
                        width: max(2, rect.width * scale), height: max(2, rect.height * scale))
             }
-            for card in flow.cards {
-                let rect = place(CanvasGeometry.frame(of: card))
-                let failed = controller.marks[card.id]?.failed == true
-                let live = waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
-                    || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
-                let fill = failed ? Palette.fail : live ? Palette.live : card.kind == .agent ? Palette.textMuted : Palette.textFaint
-                context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(fill.color.opacity(waiting.contains(card.id) || failed || live ? 1 : 0.55)))
-                if selected.contains(card.id) {
+            for mark in marks {
+                let rect = place(mark.rect)
+                let fill = mark.failed ? Palette.fail : mark.live ? Palette.live : mark.isAgent ? Palette.textMuted : Palette.textFaint
+                context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(fill.color.opacity(mark.waiting || mark.failed || mark.live ? 1 : 0.55)))
+                if mark.selected {
                     context.stroke(Path(rect.insetBy(dx: -1.5, dy: -1.5)), with: .color(Palette.accent.color), lineWidth: 1.5)
                 }
             }
             if !controller.viewport.isEmpty {
-                context.stroke(Path(roundedRect: place(controller.viewport), cornerRadius: 3), with: .color(Palette.accent.color), lineWidth: 1)
+                context.stroke(Path(roundedRect: place(controller.viewport), cornerRadius: DS.Radius.xs), with: .color(Palette.accent.color), lineWidth: DS.Stroke.hairline)
             }
         }
         .frame(width: Self.size.width, height: Self.size.height)
@@ -296,7 +325,7 @@ struct FindPanel: View {
     private struct Match: Identifiable {
         let controller: FlowController
         let card: Card?
-        var id: String { controller.flow.id + "/" + (card?.id ?? "") }
+        var id: String { "\(ObjectIdentifier(controller))/" + (card?.id ?? "") }
     }
 
     private var matches: [Match] {
@@ -304,8 +333,8 @@ struct FindPanel: View {
         guard !wanted.isEmpty else { return [] }
         var found: [Match] = []
         // The flow on screen first, then the others.
-        let current = services.allFlows.filter { $0.flow.id == services.selectedFlowID }
-        let flows = current + services.allFlows.filter { $0.flow.id != services.selectedFlowID }
+        let current = services.allFlows.filter { $0 === services.selectedFlow }
+        let flows = current + services.allFlows.filter { $0 !== services.selectedFlow }
         for controller in flows {
             if controller.flow.name.localizedCaseInsensitiveContains(wanted) { found.append(Match(controller: controller, card: nil)) }
             for card in controller.flow.cards where card.name.localizedCaseInsensitiveContains(wanted)
@@ -319,11 +348,11 @@ struct FindPanel: View {
     var body: some View {
         let found = matches
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Space.s) {
-                Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.inkSecondary.ui)
+            HStack(spacing: DS.Space.s) {
+                Image(systemName: "magnifyingglass").dsIcon(DS.IconSize.l, .medium).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
                 TextField("Find a card or a flow", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.dsSans(Theme.Size.heading))
+                    .textRole(.subtitle)
                     .focused($isFocused)
                     .onSubmit { if found.indices.contains(picked) { go(to: found[picked]) } }
                     .onKeyPress(.downArrow) { picked = min(picked + 1, max(found.count - 1, 0)); return .handled }
@@ -331,51 +360,52 @@ struct FindPanel: View {
                     .onKeyPress(.escape) { close(); return .handled }
                     .onChange(of: query) { picked = 0 }
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, 10)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.snug)
 
             if !found.isEmpty {
-                Rectangle().fill(Theme.hairline.ui).frame(height: 1)
-                VStack(alignment: .leading, spacing: 1) {
+                DSDivider()
+                VStack(alignment: .leading, spacing: DS.Space.xxs) {
                     ForEach(Array(found.enumerated()), id: \.element.id) { index, match in
-                        HStack(spacing: Theme.Space.s) {
+                        HStack(spacing: DS.Space.s) {
                             Image(systemName: match.card.map { CanvasGeometry.icon(for: $0.kind) } ?? "point.3.connected.trianglepath.dotted")
-                                .font(.system(size: 11, weight: .medium))
-                                .frame(width: 16)
+                                .dsIcon(DS.IconSize.m, .medium)
+                                .frame(width: DS.Size.iconSlot)
+                                .accessibilityHidden(true)
                             Text(match.card?.name ?? match.controller.flow.name)
-                                .font(.dsSans(Theme.Size.body, .medium))
+                                .textRole(.label)
                                 .lineLimit(1)
-                            Spacer(minLength: Theme.Space.s)
+                            Spacer(minLength: DS.Space.s)
                             Text(match.card == nil ? "flow in \(match.controller.project.name)" : match.controller.flow.name)
-                                .font(.dsSans(Theme.Size.caption))
+                                .textRole(.caption)
                                 .foregroundStyle(Theme.inkSecondary.ui)
                                 .lineLimit(1)
                         }
-                        .padding(.horizontal, Theme.Space.s)
-                        .padding(.vertical, 5)
-                        .background(index == picked ? Theme.barHover.ui : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+                        .padding(.horizontal, DS.Space.s)
+                        .padding(.vertical, DS.Space.tight)
+                        .background(index == picked ? Theme.barHover.ui : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.xs))
                         .contentShape(Rectangle())
                         .onTapGesture { go(to: match) }
                         .onHover { if $0 { picked = index } }
                     }
                 }
-                .padding(Theme.Space.xs)
+                .padding(DS.Space.xs)
             } else if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+                DSDivider()
                 Text("No card or flow has that in its name.")
-                    .font(.dsSans(Theme.Size.body))
+                    .textRole(.body)
                     .foregroundStyle(Theme.inkSecondary.ui)
-                    .padding(Theme.Space.m)
+                    .padding(DS.Space.m)
             }
         }
         .foregroundStyle(Theme.ink.ui)
-        .frame(width: 440)
+        .frame(width: DS.Size.findWidth)
         .floatingPanel()
         .onAppear { isFocused = true }
     }
 
     private func go(to match: Match) {
-        services.selectedFlowID = match.controller.flow.id
+        services.selectedFlow = match.controller
         close()
         guard let card = match.card else { return }
         match.controller.select(.card(card.id))
@@ -398,7 +428,7 @@ struct CostPill: View {
     var body: some View {
         let total = controller.usageWithSubflows
         Button { showsBreakdown.toggle() } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: DS.Space.tight) {
                 Text(total.price)
                     .textRole(.monoCaption)
                     .contentTransition(.numericText())
@@ -406,7 +436,7 @@ struct CostPill: View {
             }
             .foregroundStyle((total.isZero ? Palette.textMuted : Palette.text).color)
             .padding(.horizontal, DS.Space.m)
-            .frame(height: 30)
+            .frame(height: DS.Size.bar)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -440,24 +470,25 @@ struct CostBreakdown: View {
         let whole = max(total.cost, 0.000001)
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Cost of \(controller.flow.name)").font(.dsSans(Theme.Size.title, .medium)).lineLimit(1)
+                Text("Cost of \(controller.flow.name)").textRole(.label).lineLimit(1)
                 Spacer()
-                Text(total.price).font(.dsMono(Theme.Size.title, .medium))
+                Text(total.price).textRole(.monoLabel)
                 Button(action: close) {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 16, height: 16).contentShape(Rectangle())
+                    Image(systemName: "xmark").dsIcon(DS.IconSize.xs, .semibold).frame(width: DS.Size.iconButton, height: DS.Size.iconButton).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.inkSecondary.ui)
+                .accessibilityLabel("Close")
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, Theme.Space.s)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.s)
             .background(Theme.bar.ui)
 
             if total.isZero {
                 Text("Nothing yet. A figure appears here once an agent in this flow has replied.")
-                    .font(.dsSans(Theme.Size.body))
+                    .textRole(.body)
                     .foregroundStyle(Theme.inkSecondary.ui)
-                    .padding(Theme.Space.m)
+                    .padding(DS.Space.m)
                     .overlay(alignment: .top) { divider }
             }
 
@@ -487,75 +518,75 @@ struct CostBreakdown: View {
                 part("Recent runs", trailing: nil) {
                     ForEach(Array(costed)) { run in
                         HStack {
-                            Text("\(RunPicker.label(for: run.started)) · \(run.summary)").font(.dsSans(Theme.Size.caption))
+                            Text("\(RunPicker.label(for: run.started)) · \(run.summary)").textRole(.caption)
                             Spacer()
-                            Text(run.cost.price).font(.dsMono(Theme.Size.caption, .medium))
+                            Text(run.cost.price).textRole(.monoLabel)
                         }
                     }
                 }
             }
 
             // Inside a sub-flow, the figure above is only this part of something larger.
-            if let outer = services.flowTrail.dropLast().last.flatMap({ id in services.allFlows.first { $0.flow.id == id } }) {
-                Button { services.goBack(to: outer.flow.id) } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.turn.left.up").font(.system(size: 10, weight: .medium)).frame(width: 14)
-                        Text("Part of \(outer.flow.name)").font(.dsSans(Theme.Size.caption, .medium)).lineLimit(1)
-                        Spacer(minLength: Theme.Space.s)
-                        Text("\(outer.usageWithSubflows.price) in all").font(.dsMono(Theme.Size.caption))
+            if let outer = services.flowTrail.dropLast().last.flatMap({ outer in services.allFlows.first { $0 === outer } }) {
+                Button { services.goBack(to: outer) } label: {
+                    HStack(spacing: DS.Space.tight) {
+                        Image(systemName: "arrow.turn.left.up").dsIcon(DS.IconSize.s, .medium).frame(width: DS.Size.iconSlot).accessibilityHidden(true)
+                        Text("Part of \(outer.flow.name)").textRole(.captionLabel).lineLimit(1)
+                        Spacer(minLength: DS.Space.s)
+                        Text("\(outer.usageWithSubflows.price) in all").textRole(.monoCaption)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, Theme.Space.m)
-                .padding(.vertical, Theme.Space.s)
+                .padding(.horizontal, DS.Space.m)
+                .padding(.vertical, DS.Space.s)
                 .background(Theme.bar.ui)
                 .overlay(alignment: .top) { divider }
                 .help("Go back to \(outer.flow.name)")
             }
 
             Text("An estimate of what this work would cost if you paid Anthropic by usage. On a Claude subscription you don't pay this, so read it as a measure of how much the flow uses. It updates each time an agent finishes a reply. A run's figure covers the agents and sub-flows it used, not the orchestrator.")
-                .font(.dsSans(Theme.Size.caption))
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(Theme.Space.m)
+                .padding(DS.Space.m)
                 .overlay(alignment: .top) { divider }
         }
         .foregroundStyle(Theme.ink.ui)
-        .frame(width: 320)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .frame(width: DS.Size.menuWidth)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.m))
         .floatingPanel()
         .task(id: controller.flow.id) { await controller.refreshUsageWithSubflows() }
     }
 
-    private var divider: some View { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+    private var divider: some View { DSDivider() }
 
     /// One titled part of the breakdown, with its subtotal on the right.
     private func part<Content: View>(_ title: String?, trailing: String?, @ViewBuilder rows: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: DS.Space.tight) {
             if let title {
                 HStack {
-                    Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                    Text(title).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                     Spacer()
-                    if let trailing { Text(trailing).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui) }
+                    if let trailing { Text(trailing).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui) }
                 }
             }
             rows()
         }
-        .padding(Theme.Space.m)
+        .padding(DS.Space.m)
         .overlay(alignment: .top) { divider }
     }
 
     /// One agent or sub-flow: its name, what it used, and a bar for its share of the whole.
     private func line(icon: String, name: String, usage: Usage, share: Double, indent: CGFloat = 0, opens: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 10, weight: .medium)).frame(width: 14)
-                Text(name).font(.dsSans(Theme.Size.caption, .medium)).lineLimit(1)
-                if opens { Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui) }
-                Spacer(minLength: Theme.Space.s)
-                Text(usage.tokenCount).font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
-                Text(usage.price).font(.dsMono(Theme.Size.caption, .medium)).frame(minWidth: 44, alignment: .trailing)
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            HStack(spacing: DS.Space.tight) {
+                Image(systemName: icon).dsIcon(DS.IconSize.s, .medium).frame(width: DS.Size.iconSlot).accessibilityHidden(true)
+                Text(name).textRole(.captionLabel).lineLimit(1)
+                if opens { Image(systemName: "chevron.right").dsIcon(DS.IconSize.xxs, .semibold).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true) }
+                Spacer(minLength: DS.Space.s)
+                Text(usage.tokenCount).textRole(.monoCaption).foregroundStyle(Theme.inkSecondary.ui)
+                Text(usage.price).textRole(.monoLabel).frame(minWidth: 44, alignment: .trailing)
             }
             GeometryReader { space in
                 Rectangle().fill(Theme.ink.ui)
@@ -583,7 +614,7 @@ struct StatusStrip: View {
     var body: some View {
         if let last = controller.log.last {
             Button(action: showLog) {
-                HStack(spacing: Theme.Space.s) {
+                HStack(spacing: DS.Space.s) {
                     StatusDot(controller.isRunning ? .live : .neutral, size: 6)
                     Text(last.text)
                         .lineLimit(1)
@@ -597,7 +628,7 @@ struct StatusStrip: View {
                 .textRole(.caption)
                 .foregroundStyle(Palette.text.color)
                 .padding(.horizontal, DS.Space.m)
-                .frame(height: 30)
+                .frame(height: DS.Size.bar)
                 .frame(maxWidth: 460, alignment: .leading)
                 .fixedSize(horizontal: true, vertical: false)
             }
@@ -642,23 +673,24 @@ struct OrchestratorCallout: View {
         let session = controller.orchestrator
         let isOff = session.state == .notStarted || session.state == .exited
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Describe the flow you want")
-                        .font(.dsSans(Theme.Size.body, .medium))
-                    Spacer(minLength: Theme.Space.s)
+                        .textRole(.label)
+                    Spacer(minLength: DS.Space.s)
                     Button { AppServices.shared.dismissHint(forFlow: controller.flow.id) } label: {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "xmark").dsIcon(DS.IconSize.xs, .semibold)
                             .frame(width: 14, height: 14)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Theme.inkSecondary.ui)
+                    .accessibilityLabel("Dismiss")
                     .help("Build it by hand")
                 }
                 Text(isOff ? "The orchestrator builds it on the canvas, but it isn't running yet."
                            : "Tell the orchestrator and it builds it here. Or drag cards in from the palette.")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .fixedSize(horizontal: false, vertical: true)
                 if isOff {
@@ -667,23 +699,23 @@ struct OrchestratorCallout: View {
                         showOrchestrator()
                     }
                     .buttonStyle(.panel())
-                    .padding(.top, 3)
+                    .padding(.top, DS.Space.xs)
                 } else if !orchestratorIsShowing {
                     Button("Show the orchestrator", action: showOrchestrator)
                         .buttonStyle(.panel())
-                        .padding(.top, 3)
+                        .padding(.top, DS.Space.xs)
                 }
             }
             .foregroundStyle(Theme.ink.ui)
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, 9)
-            .frame(width: 250, alignment: .leading)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.s)
+            .frame(width: DS.Size.popoverWidth, alignment: .leading)
             .floatingPanel()
 
             if orchestratorIsShowing, !isOff {
                 // The arrow reaches across the gap to the panel, and leans toward it now and then.
                 Arrow()
-                    .stroke(Theme.ink.ui, style: StrokeStyle(lineWidth: Theme.Stroke.link, lineCap: .round, lineJoin: .round))
+                    .stroke(Theme.ink.ui, style: StrokeStyle(lineWidth: DS.Stroke.link, lineCap: .round, lineJoin: .round))
                     .frame(width: 30, height: 12)
                     .offset(x: nudged ? 4 : 0)
                     .onAppear {

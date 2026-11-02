@@ -22,12 +22,20 @@ import Testing
         }
     }
 
-    /// Faint text is for placeholders and things that can't be used yet, and dots, rings and outlines are not
-    /// read as words: these need 3:1 on the surfaces they are drawn on.
+    /// Faint text is read as words (counts, times, placeholders), so it needs 4.5:1 on the surfaces text rests on.
+    @Test(arguments: Shade.Mode.allCases)
+    func faintTextIsReadableOnRestingSurfaces(mode: Shade.Mode) {
+        for (groundName, ground) in Self.grounds.filter({ ["chrome", "panel", "raised", "overlay"].contains($0.0) }) {
+            let ratio = Palette.textFaint.contrast(with: ground, in: mode)
+            #expect(ratio >= 4.5, "textFaint on \(groundName) in \(mode) is \(ratio)")
+        }
+    }
+
+    /// Dots, rings and outlines are not read as words: these need 3:1 on the surfaces they are drawn on.
     @Test(arguments: Shade.Mode.allCases)
     func marksStandOutFromTheirSurfaces(mode: Shade.Mode) {
         let marks: [(String, Shade)] = [
-            ("textFaint", Palette.textFaint), ("accent", Palette.accent),
+            ("accent", Palette.accent),
             ("live", Palette.live), ("pass", Palette.pass), ("fail", Palette.fail),
         ]
         for (name, colour) in marks {

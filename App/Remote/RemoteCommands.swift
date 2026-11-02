@@ -406,6 +406,10 @@ enum RemoteCommands {
             controller.shutDown()
             return nil
 
+        case .restartAgents(_, let which):
+            // "Can control" and the flow were checked above, as for every command. The restart keeps each agent's conversation.
+            return controller.restartAgents(which, byDevice: name)
+
         case .revertSettings(_, let cardID):
             guard let card = controller.flow.card(cardID) else { return cardGone }
             guard card.kind == .agent else { return "Only an agent card has settings to put back." }

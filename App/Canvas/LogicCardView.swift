@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
 
 /// One named output of a card: its name and how many times the run has left by it.
 /// The output taken last is tinted, so the run's latest turn is visible at a glance.
@@ -7,28 +8,31 @@ private final class PortRowView: NSView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
     private var isLatest = false
+    private var isRunning = false
 
     override var isFlipped: Bool { true }
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        nameLabel.font = Theme.Canvas.label(11.5)
+        nameLabel.font = TextRole.captionLabel.nsFont()
         nameLabel.alignment = .right
         nameLabel.lineBreakMode = .byTruncatingTail
-        countLabel.font = Theme.Canvas.figure()
+        countLabel.font = TextRole.figure.nsFont(digits: true)
         addSubview(nameLabel)
         addSubview(countLabel)
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    func set(name: String, count: Int, isLatest: Bool) {
+    func set(name: String, count: Int, isLatest: Bool, isRunning: Bool) {
         nameLabel.stringValue = name
         countLabel.stringValue = count > 0 ? "\(count)" : ""
         self.isLatest = isLatest
-        nameLabel.textColor = isLatest ? Theme.Canvas.liveText : Theme.Canvas.text
-        countLabel.textColor = isLatest ? Theme.Canvas.liveText : Theme.Canvas.textMuted
+        // Orange while the run is under way; once it has ended the path it took is green, like its links.
+        self.isRunning = isRunning
+        nameLabel.textColor = isLatest ? (isRunning ? Theme.Canvas.liveText : Theme.Canvas.passText) : Theme.Canvas.text
+        countLabel.textColor = isLatest ? (isRunning ? Theme.Canvas.liveText : Theme.Canvas.passText) : Theme.Canvas.textMuted
         needsDisplay = true
     }
 
@@ -41,7 +45,7 @@ private final class PortRowView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = isLatest ? Theme.Canvas.liveTint.cgColor : NSColor.clear.cgColor
+        layer?.backgroundColor = isLatest ? (isRunning ? Theme.Canvas.liveTint : Theme.Canvas.passTint).cgColor : NSColor.clear.cgColor
     }
 }
 
@@ -54,11 +58,11 @@ final class LogicCardView: CardView {
 
     override init(card: Card) {
         super.init(card: card)
-        summaryLabel.font = Theme.Canvas.label(12.5, .regular)
+        summaryLabel.font = TextRole.body.nsFont()
         summaryLabel.maximumNumberOfLines = 0
         summaryLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(summaryLabel)
-        warningLabel.font = Theme.Canvas.label(11.5)
+        warningLabel.font = TextRole.captionLabel.nsFont()
         warningLabel.textColor = Theme.Canvas.failText
         warningLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(warningLabel)
@@ -85,7 +89,7 @@ final class LogicCardView: CardView {
             }
         }
         for (row, port) in zip(portRows, named) {
-            row.set(name: portLabel(port), count: context.mark.ports[port] ?? 0, isLatest: context.mark.lastPort == port)
+            row.set(name: portLabel(port), count: context.mark.ports[port] ?? 0, isLatest: context.mark.lastPort == port, isRunning: context.isRunning)
         }
         needsLayout = true
     }
@@ -125,11 +129,11 @@ enum CardSummary {
         case .start:
             let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
             let command = first.isEmpty ? "Write the command" : first
-            return card.trigger.map { "\(command)\n\($0.summary)" } ?? command
+            return card.trigger.map { "\(command)\n\($0.summary(in: .current))" } ?? command
         case .ifElse: return check(card)
         case .switchCard: return "Claude picks one of \((card.branches ?? []).count) branches"
-        case .and: return "Waits for all \(inputs) linked cards"
-        case .or: return "Passes on the first of \(inputs) to answer"
+        case .and: return inputs == 0 ? "Link cards into this to wait for them" : "Waits for all \(inputs) linked cards"
+        case .or: return inputs == 0 ? "Link cards into this to pass on the first answer" : "Passes on the first of \(inputs) to answer"
         case .prompt:
             let first = (card.template ?? "").split(separator: "\n").first.map(String.init) ?? ""
             return first.isEmpty ? "Passes the message on" : first

@@ -25,11 +25,17 @@ public enum DS {
     public enum Space {
         public static let xxs: CGFloat = 2
         public static let xs: CGFloat = 4
+        /// Between an icon and its label, and inside a small row.
+        public static let tight: CGFloat = 6
         public static let s: CGFloat = 8
+        /// Padding inside a row that is a little roomier than `s`.
+        public static let snug: CGFloat = 10
         public static let m: CGFloat = 12
         public static let l: CGFloat = 16
         public static let xl: CGFloat = 24
         public static let xxl: CGFloat = 32
+        /// Around a first-run screen's content.
+        public static let page: CGFloat = 40
         public static let xxxl: CGFloat = 48
     }
 
@@ -75,6 +81,34 @@ public enum DS {
         public static let control: CGFloat = 28
         /// The Mac's sidebar.
         public static let sidebarWidth: CGFloat = 236
+        /// The column a row's leading symbol sits in, so the text after it lines up.
+        public static let iconSlot: CGFloat = 16
+        /// A small button that holds one symbol: close, refresh.
+        public static let iconButton: CGFloat = 16
+        /// A row of tabs or a bar inside a panel.
+        public static let bar: CGFloat = 30
+        /// How far down from the top the find panel, the command menu and the orchestrator's callout float.
+        public static let findInset: CGFloat = 90
+        public static let commandInset: CGFloat = 140
+        public static let calloutInset: CGFloat = 230
+        /// Floating panels' widths: settings, find, a menu, a popover, the command menu, the first-run window.
+        public static let settingsWidth: CGFloat = 460
+        public static let findWidth: CGFloat = 440
+        public static let menuWidth: CGFloat = 320
+        public static let popoverWidth: CGFloat = 250
+        public static let commandWidth: CGFloat = 640
+        public static let onboardingWidth: CGFloat = 520
+        /// Room left at the top left for the window's close, minimise and zoom buttons.
+        public static let windowControlsInset: CGFloat = 64
+        /// The command menu's search field, a row, and its footer.
+        public static let commandField: CGFloat = 52
+        public static let commandRow: CGFloat = 38
+        public static let commandFooter: CGFloat = 36
+        /// A small label's least height: a badge.
+        public static let badge: CGFloat = 20
+        /// The number between a stepper's buttons, and each button.
+        public static let stepValue: CGFloat = 22
+        public static let stepButton: CGFloat = 18
         /// How far the inset panel sits in from the window's edges.
         public static let panelInset: CGFloat = 8
     }
@@ -93,5 +127,43 @@ public enum DS {
         /// Springs with no bounce, so a change that is interrupted carries on from where it was.
         public static let quick: Animation = .snappy(duration: quickDuration, extraBounce: 0)
         public static let standard: Animation = .snappy(duration: standardDuration, extraBounce: 0)
+        /// The animation to run: `animation` as it is, or none when the person has asked for less motion, so the
+        /// change happens at once. A softened curve would still move what moves, which is what they asked not to see.
+        public static func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation? {
+            reduceMotion ? nil : animation
+        }
+    }
+
+    /// Roughly how far a floating menu, a popover or the command menu lifts off what is behind it. Depth comes
+    /// from the surface ladder and hairlines; a floating menu is the one place a shadow is allowed.
+    public enum Lift {
+        public static let radius: CGFloat = 12
+        public static let offset: CGFloat = 4
+    }
+}
+
+private struct MotionModifier<Value: Equatable>: ViewModifier {
+    let animation: Animation
+    let value: Value
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.animation(DS.Motion.resolved(animation, reduceMotion: reduceMotion), value: value)
+    }
+}
+
+extension View {
+    /// Animates a change in `value` with one of the design system's curves, or at once with nothing moving when
+    /// the person has asked for Reduce Motion. Use this, not `.animation(_:value:)`, so the setting is honoured.
+    public func dsAnimation<Value: Equatable>(_ animation: Animation = DS.Motion.quick, value: Value) -> some View {
+        modifier(MotionModifier(animation: animation, value: value))
+    }
+}
+
+extension View {
+    /// The shadow of a floating menu: the command menu, and nothing else. Everything else is lifted by its surface
+    /// and a hairline.
+    public func dsLift() -> some View {
+        shadow(color: Palette.lift.color, radius: DS.Lift.radius, y: DS.Lift.offset)
     }
 }

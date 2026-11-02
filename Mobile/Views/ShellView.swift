@@ -67,7 +67,7 @@ struct ConnectionBar: View {
                 Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: Theme.Touch.target)
                 Button(action: showSettings) {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 16, weight: .medium))
+                        .dsIcon(DS.IconSize.bar)
                         .foregroundStyle(Theme.ink.ui)
                         .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                         .contentShape(Rectangle())
@@ -78,11 +78,11 @@ struct ConnectionBar: View {
             if ConnectionStatus(client).hasHelp {
                 Hairline()
                 Text(ConnectionStatus.help(client))
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     // The strip is as wide as what is in it, and this sentence on one line would be the whole screen.
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(width: 280, alignment: .leading)
+                    .frame(width: DS.Size.menuNarrowWidth, alignment: .leading)
                     .padding(Theme.Space.m)
                     .accessibilityHidden(true)
             }
@@ -100,7 +100,7 @@ struct ConnectionBar: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .floatingPanel()
-        .animation(Theme.Motion.standard, value: ConnectionStatus(client))
+        .dsAnimation(DS.Motion.standard, value: ConnectionStatus(client))
     }
 }
 
@@ -111,14 +111,46 @@ private struct SplitShell: View {
     let showSettings: () -> Void
     @State private var columns = NavigationSplitViewVisibility.automatic
     @AppStorage("showsDetails") private var showsDetails = true
+    /// Held sideways. The list of flows then sits beside the canvas and pushes it over. Held upright there is
+    /// not the room for the list, the canvas and the panel at once, and the list slides over the canvas.
+    @State private var isWide = true
+    /// The place shown in the list's column in place of the flows, if one is.
+    @State private var place: DevicePlace?
 
     var body: some View {
+        // Two styles are two types, so the one that isn't used is not built. What is shown is the same view.
+        Group {
+            if isWide {
+                split.navigationSplitViewStyle(.balanced)
+            } else {
+                split.navigationSplitViewStyle(.prominentDetail)
+            }
+        }
+        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
+    }
+
+    private var split: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            FlowList()
+            Group {
+                if let place {
+                    PlaceScreen(place: place) { withAnimation(Theme.Motion.standard) { self.place = nil } }
+                } else {
+                    FlowList { place in withAnimation(Theme.Motion.standard) { self.place = place } }
+                }
+            }
                 .edgeRule(.trailing)
-                .navigationTitle("Flows")
+                .navigationTitle(place?.title ?? "Flows")
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
+                .toolbar {
+                    // The connection and Settings are on the canvas's foot, which the list covers while it is
+                    // slid over the canvas. So the list has its own way to Settings then.
+                    if !isWide {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button(action: showSettings) { Label("Settings", systemImage: "gearshape") }
+                        }
+                    }
+                }
         } detail: {
             NavigationStack {
                 CanvasArea(showFlows: columns == .detailOnly ? { columns = .all } : nil, showSettings: showSettings)
@@ -145,7 +177,11 @@ private struct SplitShell: View {
         }
         #if DEBUG
         // Upright, an iPad starts with the list of flows tucked away, and a test can't tap to bring it out.
-        .task { if DebugLaunch.show == "flows" { columns = .all } }
+        .task {
+            if DebugLaunch.show == "flows" { columns = .all }
+            // A test that names a place wants to see it in the list's column.
+            if let named = DebugLaunch.namedPlace { columns = .all; place = named }
+        }
         #endif
     }
 }
@@ -202,20 +238,22 @@ private struct StackShell: View {
                 switch tab {
                 case .flows: FlowList()
                 case .needsYou: WaitingList()
+                case .runs: RunsPlace()
+                case .schedules: SchedulesPlace()
                 }
             }
                 // The menu dims what is behind it, and a tap there puts it away.
                 .overlay {
                     if showsMenu {
                         Palette.scrim.color.ignoresSafeArea()
-                            .onTapGesture { withAnimation(DS.Motion.standard) { showsMenu = false } }
+                            .onTapGesture { withAnimation(Theme.Motion.standard) { showsMenu = false } }
                             .transition(.opacity)
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(alignment: .leading, spacing: DS.Space.s) {
                         if showsMenu {
-                            PhoneMenu(showSettings: showSettings) { showsMenu = false }
+                            PhoneMenu(showSettings: showSettings, choose: { tab = $0 }) { showsMenu = false }
                                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottomLeading)))
                         } else if needsConnectionBar {
                             // Something is wrong with the connection, or there is something to know about it: it
@@ -229,7 +267,7 @@ private struct StackShell: View {
                     .padding(.bottom, DS.Space.xs)
                 }
                 .background(Palette.panel.color)
-                .navigationTitle(tab == .flows ? "Flows" : "Needs you")
+                .navigationTitle(tab.title)
                 .navigationBarTitleDisplayMode(.large)
                 .navigationDestination(for: String.self) { _ in
                     CanvasArea(showSettings: showSettings)
@@ -278,10 +316,19 @@ private struct StackShell: View {
         // model: a screen that has been pushed isn't drawn again when this one's own state changes.
         .onChange(of: cover, initial: true) { client.panel.cover = cover }
         .onAppear { client.panel.usesSheets = true }
-        // Each sheet comes up at half height, however far the last one was pulled.
+        // Each sheet comes up at half height, however far the last one was pulled. The orchestrator's terminal is
+        // the exception: it is shown whole, as the Mac's picture, so at half height its type is about five
+        // points. It comes up at full height, and a person who wants the canvas back pulls it down.
         .onChange(of: presented) {
             client.panel.isSheetPresented = presented != nil
             if presented == nil { detent = .medium }
+            if presented == .tabs, client.panel.page == .orchestrator { detent = .large }
+        }
+        .onChange(of: client.sheet) { _, sheet in
+            if sheet == .tabs, client.panel.page == .orchestrator { detent = .large }
+        }
+        .onChange(of: client.panel.page) { _, page in
+            if client.sheet == .tabs, page == .orchestrator { detent = .large }
         }
         .onDisappear {
             client.panel.cover = 0
@@ -297,6 +344,8 @@ private struct StackShell: View {
             if open == nil { client.panel.showsTabs = false }
         }
         #if DEBUG
+        // A test that names a place wants to see it.
+        .task { if let named = DebugLaunch.namedPlace { tab = PhoneTab(named) } }
         // A test that names a tab's page wants to see it, and here the tabs are a sheet nothing has brought up.
         .task {
             guard DebugLaunch.show.flatMap(PanelPage.init(rawValue:)) != nil else { return }

@@ -51,8 +51,8 @@ private struct DSButton: View {
             .opacity(configuration.isPressed && isEnabled ? 0.75 : 1)
             .contentShape(shape)
             .onHover { isHovered = $0 }
-            .animation(DS.Motion.quick, value: configuration.isPressed)
-            .animation(DS.Motion.quick, value: isHovered)
+            .dsAnimation(DS.Motion.quick, value: configuration.isPressed)
+            .dsAnimation(DS.Motion.quick, value: isHovered)
     }
 
     private var isLit: Bool { isEnabled && (isHovered || configuration.isPressed) }
@@ -122,7 +122,7 @@ private struct DSIconButton: View {
                         in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
-            .animation(DS.Motion.quick, value: isHovered)
+            .dsAnimation(DS.Motion.quick, value: isHovered)
     }
 }
 

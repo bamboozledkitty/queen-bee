@@ -66,65 +66,15 @@ enum Theme {
         static let terminal = Palette.terminal.platform
         static let terminalText = Palette.terminalText.platform
 
-        /// A card's name in its title bar.
-        static func name(_ size: CGFloat = 13) -> NSFont { .systemFont(ofSize: size, weight: .semibold) }
-        /// A word on a card: a state, a port, a summary.
-        static func label(_ size: CGFloat = 11.5, _ weight: NSFont.Weight = .medium) -> NSFont { .systemFont(ofSize: size, weight: weight) }
-        /// A figure on a card: a cost, a count.
-        static func figure(_ size: CGFloat = 11) -> NSFont { .monospacedDigitSystemFont(ofSize: size, weight: .medium) }
-    }
-
-    // MARK: Type
-
-    /// Monospace, for anything that names or counts: card titles, ports, badges, the log.
-    static func mono(_ size: CGFloat = Size.body, _ weight: NSFont.Weight = .regular) -> NSFont {
-        .monospacedSystemFont(ofSize: size, weight: weight)
-    }
-
-    /// Sans, for anything read as a sentence: settings, help text, instructions.
-    static func sans(_ size: CGFloat = Size.body, _ weight: NSFont.Weight = .regular) -> NSFont {
-        .systemFont(ofSize: size, weight: weight)
-    }
-
-    enum Size {
-        static let caption: CGFloat = 11.5
-        static let body: CGFloat = 12.5
-        static let title: CGFloat = 13.5
-        static let heading: CGFloat = 16
-    }
-
-    // MARK: Shape
-
-    enum Space {
-        static let xs: CGFloat = 4
-        static let s: CGFloat = 8
-        static let m: CGFloat = 12
-        static let l: CGFloat = 16
-        static let xl: CGFloat = 24
-    }
-
-    enum Radius {
-        static let card: CGFloat = DS.Radius.m
-        static let badge: CGFloat = DS.Radius.xs
-    }
-
-    enum Stroke {
-        static let card: CGFloat = 1
-        static let link: CGFloat = 1.5
-        static let selected: CGFloat = 2
     }
 
     // MARK: Motion
 
     enum Motion {
-        /// Hover, press, anything tied to the pointer.
-        static let quickDuration: TimeInterval = 0.15
-        /// Selecting, panels opening, a panel changing height.
-        static let standardDuration: TimeInterval = 0.25
-        /// The canvas moving: zoom, fit, going to a card.
-        static let travelDuration: TimeInterval = 0.3
-        /// One step of the dashes marching along a live link.
-        static let march: TimeInterval = 0.8
+        static let quickDuration = DS.Motion.quickDuration
+        static let standardDuration = DS.Motion.standardDuration
+        static let travelDuration = DS.Motion.travelDuration
+        static let march = DS.Motion.march
 
         /// False when the person has asked the Mac for less motion.
         static var isAllowed: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -213,18 +163,8 @@ extension CALayer {
     }
 }
 
-extension Font {
-    static func dsMono(_ size: CGFloat = Theme.Size.body, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
-    }
-
-    static func dsSans(_ size: CGFloat = Theme.Size.body, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight)
-    }
-}
-
 /// The look shared by the controls that float over the canvas: the palette, the settings
-/// panel, the zoom pill, the status strip. Raised off the canvas by a hairline and a soft shadow,
+/// panel, the zoom pill, the status strip. Raised off the canvas by a hairline,
 /// with rounded corners that clip whatever is inside.
 struct FloatingPanel: ViewModifier {
     func body(content: Content) -> some View {
@@ -233,7 +173,6 @@ struct FloatingPanel: ViewModifier {
             .background(Palette.overlay.color, in: shape)
             .clipShape(shape)
             .overlay(shape.strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.hairline))
-            .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
     }
 }
 
@@ -249,14 +188,14 @@ struct Badge: View {
     var tone: Tone = .plain
 
     var body: some View {
-        HStack(spacing: 3) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)) }
+        HStack(spacing: DS.Space.xs) {
+            if let symbol { Image(systemName: symbol).dsIcon(DS.IconSize.xs, .bold) }
             if !text.isEmpty { Text(text) }
         }
-        .font(.dsSans(Theme.Size.caption, .medium))
+        .textRole(.captionLabel)
         .foregroundStyle(foreground.ui)
-        .padding(.horizontal, tone == .plain ? 6 : 8)
-        .frame(minHeight: 20)
+        .padding(.horizontal, tone == .plain ? DS.Space.tight : DS.Space.s)
+        .frame(minHeight: DS.Size.badge)
         .background(background.ui, in: Capsule())
     }
 

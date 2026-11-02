@@ -181,6 +181,7 @@ final class FlowController: ToolHost {
     private(set) var workRoot: URL
     /// The project's repository as last read. Nil when the project isn't in one, or it hasn't been read yet.
     private(set) var git: Git.Info?
+    @ObservationIgnored private var hasReadGitForDevice = false
     /// The flow is asking where it should work, the first time it opens. Its agents wait for the answer.
     var asksForWorkplace = false
     /// The person said "Not now" to that question: it isn't asked again until the app is next opened.
@@ -792,6 +793,7 @@ final class FlowController: ToolHost {
     private func refile(_ old: Flow, _ name: String) {
         undoManager.registerUndo(withTarget: self) { $0.restore(old, name) }
         undoManager.setActionName(name)
+        undoRevision += 1
     }
 
     /// The agents going from `current` to `next` would delete whose sessions are working or waiting on the person.
@@ -1340,13 +1342,45 @@ final class FlowController: ToolHost {
         restart(agents, orchestrator: orchestrator, saying: orchestrator && !agents.isEmpty ? line + ", and the orchestrator" : line)
     }
 
+    /// A paired device's Restart menu. It names its own cards, since the Mac's selection is the person's at the Mac,
+    /// and it has asked its own person about agents in the middle of a task, so the Mac does not stop to ask. Nil when
+    /// it was done, otherwise why not, in words the device shows. The Mac has already checked that the device may control.
+    func restartAgents(_ which: RemoteRestart, byDevice name: String) -> String? {
+        guard canRestartAgents else {
+            return asksForWorkplace ? "Choose where this flow works on your Mac first." : "This flow's agents can't be restarted just now."
+        }
+        let agents: [Card]
+        var withOrchestrator = false
+        var line: String
+        switch which {
+        case .all(let orchestrator):
+            agents = flow.cards.filter { $0.kind == .agent && !(heldBack.contains($0.id) && session(forCard: $0.id).state == .notStarted) }
+            withOrchestrator = orchestrator
+            line = orchestrator ? "restarted every agent and the orchestrator" : "restarted every agent, leaving the orchestrator as it was"
+        case .cards(let ids):
+            agents = flow.cards.filter { $0.kind == .agent && ids.contains($0.id) }
+            guard !agents.isEmpty else { return "None of those agents is in this flow any more." }
+            line = agents.count == 1 ? "restarted \(agents[0].name)" : "restarted \(agents.count) agents"
+        case .awaitingNewSettings:
+            agents = agentsAwaitingRestart
+            withOrchestrator = orchestratorNeedsRestart
+            guard !agents.isEmpty || withOrchestrator else { return "No agent is waiting to use new settings." }
+            line = agents.isEmpty ? "restarted the orchestrator with the flow's new details"
+                : agents.count == 1 ? "restarted \(agents[0].name) with its new settings" : "restarted \(agents.count) agents with their new settings"
+            if withOrchestrator, !agents.isEmpty { line += ", and the orchestrator" }
+        }
+        guard !agents.isEmpty || withOrchestrator else { return "There is no agent to restart." }
+        restart(agents, orchestrator: withOrchestrator, askFirst: false, saying: "\(name) \(line)", fromDevice: true)
+        return nil
+    }
+
     /// Restarts `agents`, and the orchestrator too when asked, each keeping its conversation so far. Asks first
     /// when one of them is in the middle of a task, since a restart cuts that task short.
-    private func restart(_ agents: [Card], orchestrator: Bool, saying line: String) {
+    private func restart(_ agents: [Card], orchestrator: Bool, askFirst: Bool = true, saying line: String, fromDevice: Bool = false) {
         guard canRestartAgents, !agents.isEmpty || orchestrator else { return }
         var busy = agents.filter(isBusy).map(\.name)
         if orchestrator, [.working, .needsYou].contains(self.orchestrator.state) { busy.append("the orchestrator") }
-        if !busy.isEmpty, !TestHarness.isEnabled {
+        if askFirst, !busy.isEmpty, !TestHarness.isEnabled {
             let list = Self.namesList(busy)
             let alert = NSAlert()
             alert.alertStyle = .warning
@@ -1360,7 +1394,7 @@ final class FlowController: ToolHost {
         }
         for card in agents { startSession(forCard: card.id) }
         if orchestrator { startOrchestrator() }
-        append(line)
+        if fromDevice { noteFromDevice(line) } else { append(line) }
     }
 
     /// A terminal that has run a process doesn't take a second one, so a restart gets a new terminal.
@@ -1931,6 +1965,18 @@ final class FlowController: ToolHost {
     /// Asked once, when a flow at the top of its chain first opens in a repository with no place chosen.
     private var shouldAskForWorkplace: Bool {
         git != nil && flow.workplace == nil && !inheritsWorkplace && !workplaceDeferred && !TestHarness.isEnabled
+    }
+
+    /// Reads the repository for a device that was sent this flow before the Mac opened it, so the device has the
+    /// branch chip. It reads once; whatever the Mac reads when it opens the flow replaces it, and the chip
+    /// follows the change.
+    func readGitForDevice() {
+        guard git == nil, !hasReadGitForDevice else { return }
+        hasReadGitForDevice = true
+        Task {
+            let info = await Git.info(at: project.root)
+            if git == nil { git = info }
+        }
     }
 
     /// Reads the repository again, for the chip's popover.

@@ -77,15 +77,15 @@ final class GroupFrameView: UIView {
         if look.group.isFolded {
             // The folded card is a fixed size, so its type only grows as far as the card has room for.
             let grown = min(scale, 1.7)
-            nameLabel.font = Theme.sans(Theme.Size.body * grown, .medium)
-            detailLabel.font = Theme.sans(Theme.Size.caption * grown)
+            nameLabel.font = Theme.cardName(Theme.Size.cardName * grown)
+            detailLabel.font = Theme.cardLabel(Theme.Size.label * grown, .regular)
             let nameHeight = ceil(nameLabel.intrinsicContentSize.height), detailHeight = ceil(detailLabel.intrinsicContentSize.height)
             let top = max(4, (bounds.height - nameHeight - detailHeight - 2) / 2)
             nameLabel.frame = CGRect(x: 12, y: top, width: bounds.width - 24, height: nameHeight)
             detailLabel.frame = CGRect(x: 12, y: top + nameHeight + 2, width: bounds.width - 24, height: detailHeight)
         } else {
-            nameLabel.font = Theme.sans(Theme.Size.body * scale, .medium)
-            detailLabel.font = Theme.sans(Theme.Size.caption * scale)
+            nameLabel.font = Theme.cardName(Theme.Size.cardName * scale)
+            detailLabel.font = Theme.cardLabel(Theme.Size.label * scale, .regular)
             let strip = CanvasGeometry.groupTitleHeight * scale
             let name = nameLabel.intrinsicContentSize, detail = detailLabel.intrinsicContentSize
             nameLabel.frame = CGRect(x: 10 * scale, y: (strip - ceil(name.height)) / 2, width: min(ceil(name.width), bounds.width * 0.6), height: ceil(name.height))

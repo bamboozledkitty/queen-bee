@@ -83,7 +83,7 @@ final class ProjectModel {
         let controller = FlowController(flow: flow, fileURL: url, project: self)
         controllers.append(controller)
         AppServices.shared.register(controller)
-        if select { AppServices.shared.selectedFlowID = flow.id }
+        if select { AppServices.shared.selectedFlow = controller }
         return controller
     }
 
@@ -106,10 +106,10 @@ final class ProjectModel {
             try? store.delete(controller.fileURL)
             controller.forgetHistory()
         }
-        AppServices.shared.unregister(flowID: controller.flow.id)
+        AppServices.shared.unregister(controller)
         controllers.removeAll { $0 === controller }
-        if AppServices.shared.selectedFlowID == controller.flow.id {
-            AppServices.shared.selectedFlowID = (controllers.first ?? AppServices.shared.allFlows.first)?.flow.id
+        if AppServices.shared.selectedFlow === controller {
+            AppServices.shared.selectedFlow = controllers.first ?? AppServices.shared.allFlows.first
         }
         return true
     }
@@ -129,7 +129,7 @@ final class ProjectModel {
     /// Stops every session this project started.
     func close() {
         watcher?.stop()
-        controllers.forEach { $0.shutDown(); AppServices.shared.unregister(flowID: $0.flow.id) }
+        controllers.forEach { $0.shutDown(); AppServices.shared.unregister($0) }
         browser.terminate()
     }
 }

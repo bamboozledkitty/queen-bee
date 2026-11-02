@@ -90,6 +90,22 @@ final class TerminalRegistry {
         key == expandedKey ? nil : terminals[key]?.mount
     }
 
+    @ObservationIgnored private var slots: [(key: String, slot: WeakSlot)] = []
+
+    /// A place in a panel that shows a session's terminal. Remembered so that a terminal can be handed on.
+    func add(slot: TerminalSlotView, key: String) {
+        slots.removeAll { $0.slot.value == nil }
+        if !slots.contains(where: { $0.slot.value === slot }) { slots.append((key, WeakSlot(slot))) }
+    }
+
+    /// A slot has gone away: puts the terminal in a slot that is staying, one on screen first.
+    func rehome(key: String) {
+        slots.removeAll { $0.slot.value == nil }
+        let staying = slots.compactMap { $0.key == key ? $0.slot.value : nil }.filter { !$0.isLeaving }
+        guard let mount = view(for: key), let target = staying.first(where: { $0.window != nil }) ?? staying.first else { return }
+        target.hold(mount)
+    }
+
     /// The terminal for the full-screen view, which is the one place that takes it while it is expanded.
     func expandedView(for key: String) -> TerminalMount? {
         key == expandedKey ? terminals[key]?.mount : nil
@@ -181,4 +197,9 @@ final class TerminalRegistry {
         return all
     }
     #endif
+}
+
+private struct WeakSlot {
+    weak var value: TerminalSlotView?
+    init(_ value: TerminalSlotView) { self.value = value }
 }

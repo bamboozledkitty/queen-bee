@@ -11,13 +11,14 @@ struct FlowHeader: View {
     @State private var isRenaming = false
     @State private var draft = ""
     @FocusState private var isFocused: Bool
+    @State private var deleting: FlowController?
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
         HStack(spacing: DS.Space.s) {
             if !showsSidebar {
                 // The window's buttons sit over this corner when the sidebar is hidden.
-                Spacer().frame(width: 64)
+                Spacer().frame(width: DS.Size.windowControlsInset)
             }
             Button { showsSidebar.toggle() } label: { Image(systemName: "sidebar.leading") }
                 .buttonStyle(.dsIcon)
@@ -37,7 +38,10 @@ struct FlowHeader: View {
                         controller.select(.none)
                         controller.showsFlowSettings = true
                     }
+                    Button(services.pinnedFlowIDs.contains(controller.flow.id) ? "Unpin" : "Pin") { services.togglePin(controller.flow.id) }
                     Button("Stop Its Agents") { controller.shutDown() }
+                    Divider()
+                    Button("Move to Trash…", role: .destructive) { deleting = controller }
                 } label: { Image(systemName: "ellipsis") }
                     .menuStyle(.button)
                     .menuIndicator(.hidden)
@@ -57,19 +61,30 @@ struct FlowHeader: View {
         .padding(.leading, DS.Space.s)
         .padding(.trailing, DS.Space.m)
         .frame(height: DS.Size.header)
+        .confirmationDialog("Move \"\(deleting?.flow.name ?? "")\" to the Trash?",
+                            isPresented: .init(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Move to Trash", role: .destructive) {
+                if let deleting, !deleting.project.delete(deleting, toTrash: true) {
+                    deleting.banner = "Couldn't move \"\(deleting.flow.name)\" to the Trash, so it is still here."
+                }
+                deleting = nil
+            }
+        } message: {
+            Text("Its agents are stopped and the flow's file goes to the Trash, so you can put it back from there with its run history. What the agents said stays in Claude Code's history.")
+        }
     }
 
     // MARK: Where you are
 
     private var breadcrumb: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DS.Space.tight) {
             if let controller {
                 Text(controller.project.name)
                     .foregroundStyle(Palette.textMuted.color)
                 chevron
                 // Inside a sub-flow, the flows it was opened from lead the way back.
-                ForEach(trail, id: \.flow.id) { outer in
-                    Button { services.goBack(to: outer.flow.id) } label: { Text(outer.flow.name) }
+                ForEach(trail, id: \.objectID) { outer in
+                    Button { services.goBack(to: outer) } label: { Text(outer.flow.name) }
                         .buttonStyle(.plain)
                         .foregroundStyle(Palette.textMuted.color)
                         .help("Back to \(outer.flow.name)")
@@ -104,14 +119,14 @@ struct FlowHeader: View {
 
     private var chevron: some View {
         Image(systemName: "chevron.right")
-            .font(.system(size: 9, weight: .semibold))
+            .dsIcon(DS.IconSize.xs, .semibold)
             .foregroundStyle(Palette.textFaint.color)
             .accessibilityHidden(true)
     }
 
     /// The flows this one was opened from, outermost first.
     private var trail: [FlowController] {
-        services.flowTrail.dropLast().compactMap { id in services.allFlows.first { $0.flow.id == id } }
+        services.flowTrail.dropLast().filter { outer in services.allFlows.contains { $0 === outer } }
     }
 
     private func startRenaming(_ controller: FlowController) {
@@ -136,7 +151,7 @@ struct FlowHeader: View {
             .buttonStyle(.plain)
             .help("Go to the card that is waiting on you")
         } else if controller.isRunning {
-            StatusPill("Running · \(controller.handOffs) \(controller.handOffs == 1 ? "hand-off" : "hand-offs")", tone: .live)
+            StatusPill("Running" + RunsList.handOffs(controller.handOffs), tone: .live)
         }
         // The branch the flow works on, or its worktree's: one place for the whole flow.
         if let chip = controller.workplaceChip {
@@ -149,7 +164,7 @@ struct FlowHeader: View {
                 .buttonStyle(.ds(.live))
                 .help("Stop the run (⌘.)")
         } else {
-            HStack(spacing: 2) {
+            HStack(spacing: DS.Space.xxs) {
                 Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill") }
                     .buttonStyle(.ds(.primary))
                     .disabled(!controller.canRun)
@@ -171,7 +186,7 @@ struct FlowHeader: View {
                 }
             }
         }
-        RestartMenu(controller: controller)
+        RestartMenuButton(controller: controller)
     }
 
     private func runHelp(_ controller: FlowController) -> String {
@@ -184,29 +199,26 @@ struct FlowHeader: View {
 
 /// Restarts the flow's agents together: all of them, the ones selected on the canvas, or the ones waiting to
 /// use new settings. Each keeps its conversation so far.
-private struct RestartMenu: View {
+private struct RestartMenuButton: View {
     let controller: FlowController
 
     var body: some View {
-        let selected = controller.selectedAgents.count
-        let awaiting = controller.agentsAwaitingRestart.count + (controller.orchestratorNeedsRestart ? 1 : 0)
+        // The items and their words come from Core, which a paired device's menu is made from too, so the two can't drift.
+        let menu = RestartMenu(selected: controller.selectedAgents.map(\.id),
+                               awaiting: controller.agentsAwaitingRestart.count + (controller.orchestratorNeedsRestart ? 1 : 0))
         Menu {
-            Button("Restart All Agents") { controller.restartAllAgents() }
-            Button("Restart All Agents Except the Orchestrator") { controller.restartAllAgents(withOrchestrator: false) }
-            Button(selected <= 1 ? "Restart Selected Agent" : "Restart \(selected) Selected Agents") { controller.restartSelectedAgents() }
-                .disabled(selected == 0)
-            if awaiting > 0 {
-                Divider()
-                Button(awaiting == 1 ? "Restart the One with New Settings" : "Restart the \(awaiting) with New Settings") {
-                    controller.restartAgentsAwaitingRestart()
-                }
+            ForEach(menu.items) { item in
+                if item.startsGroup { Divider() }
+                Button(item.title) { restart(item.which) }
+                    .disabled(!item.isEnabled)
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: DS.Space.tight) {
                 Label("Restart", systemImage: "arrow.clockwise")
                 // The same arrow as the branch chip's, to say this opens a menu.
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down").dsIcon(DS.IconSize.xxs, .semibold)
                     .foregroundStyle(Palette.textFaint.color)
+                    .accessibilityHidden(true)
             }
         }
             .menuStyle(.button)
@@ -215,6 +227,14 @@ private struct RestartMenu: View {
             .fixedSize()
             .disabled(!controller.canRestartAgents)
             .help("Restart every agent, with or without the orchestrator, or only the agents selected on the canvas. Each keeps its conversation so far.")
+    }
+
+    private func restart(_ which: RemoteRestart) {
+        switch which {
+        case .all(let withOrchestrator): controller.restartAllAgents(withOrchestrator: withOrchestrator)
+        case .cards: controller.restartSelectedAgents()
+        case .awaitingNewSettings: controller.restartAgentsAwaitingRestart()
+        }
     }
 }
 

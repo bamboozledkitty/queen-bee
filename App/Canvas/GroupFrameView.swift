@@ -32,9 +32,9 @@ final class GroupFrameView: NSView, NSGestureRecognizerDelegate {
         layer?.cornerCurve = .continuous
         handle.wantsLayer = true
         addSubview(handle)
-        nameLabel.font = Theme.Canvas.name()
+        nameLabel.font = TextRole.headline.nsFont()
         nameLabel.lineBreakMode = .byTruncatingTail
-        detailLabel.font = Theme.Canvas.label(11.5, .regular)
+        detailLabel.font = TextRole.caption.nsFont()
         detailLabel.lineBreakMode = .byTruncatingTail
         handle.addSubview(nameLabel)
         handle.addSubview(detailLabel)
@@ -86,16 +86,16 @@ final class GroupFrameView: NSView, NSGestureRecognizerDelegate {
         if group.isFolded {
             // The folded card is a fixed size, so its type only grows as far as the card has room for.
             let grown = min(scale, 1.7)
-            nameLabel.font = Theme.Canvas.name(13 * grown)
-            detailLabel.font = Theme.Canvas.label(11.5 * grown, .regular)
+            nameLabel.font = TextRole.headline.nsFont(scale: grown)
+            detailLabel.font = TextRole.caption.nsFont(scale: grown)
             handle.frame = bounds
             let nameHeight = ceil(nameLabel.intrinsicContentSize.height), detailHeight = ceil(detailLabel.intrinsicContentSize.height)
             let top = max(4, (bounds.height - nameHeight - detailHeight - 2) / 2)
             nameLabel.frame = NSRect(x: 12, y: top, width: bounds.width - 24, height: nameHeight)
             detailLabel.frame = NSRect(x: 12, y: top + nameHeight + 2, width: bounds.width - 24, height: detailHeight)
         } else {
-            nameLabel.font = Theme.Canvas.name(13 * scale)
-            detailLabel.font = Theme.Canvas.label(11.5 * scale, .regular)
+            nameLabel.font = TextRole.headline.nsFont(scale: scale)
+            detailLabel.font = TextRole.caption.nsFont(scale: scale)
             let strip = Self.titleHeight * scale
             handle.frame = NSRect(x: 0, y: 0, width: bounds.width, height: strip)
             nameLabel.sizeToFit()

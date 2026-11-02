@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// What floats over the top of the canvas when there is something to say about the flow as a whole: the way back
@@ -11,6 +12,7 @@ struct CanvasBanners: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             if let snapshot = client.mirror.snapshot {
                 if let parent = client.parentOfOpenFlow { BackToParent(parent: parent) }
+                if let workplace = snapshot.run.workplace { WorkplaceTag(text: workplace) }
                 if let banner = snapshot.run.banner, client.canvas.viewedRun == nil { FailureBanner(text: banner) }
                 let waiting = WaitingCard.all(in: snapshot)
                 if !waiting.isEmpty { NeedsYouBanner(waiting: waiting) }
@@ -19,10 +21,19 @@ struct CanvasBanners: View {
                         .padding(.horizontal, Theme.Space.m)
                         .floatingPanel()
                 }
+                if client.canvas.runHeldBack && client.canvas.viewedRun == nil {
+                    Text("A run is going, so the earlier run can't be shown yet. It stays in Runs for when this one ends.")
+                        .textRole(.caption)
+                        .foregroundStyle(Theme.ink.ui)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, Theme.Space.m)
+                        .padding(.vertical, DS.Space.tight)
+                        .floatingPanel()
+                }
                 if let callout = client.callout { CalloutView(callout: callout) }
             }
         }
-        .frame(maxWidth: 380, alignment: .leading)
+        .frame(maxWidth: DS.Size.bannerWidth, alignment: .leading)
     }
 }
 
@@ -39,10 +50,10 @@ private struct NeedsYouBanner: View {
         let abilities = client.abilities
         VStack(alignment: .leading, spacing: 0) {
             Label(waiting.count == 1 ? "1 needs you" : "\(waiting.count) need you", systemImage: "hand.raised")
-                .dsSans(Theme.Touch.body, .medium)
+                .textRole(.label)
                 .foregroundStyle(Theme.liveInk.ui)
                 .padding(.horizontal, Theme.Space.m)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: DS.Size.rowCompact, alignment: .leading)
                 .background(Theme.liveTint.ui)
                 .accessibilityAddTraits(.isHeader)
             ForEach(waiting.prefix(Self.most)) { card in
@@ -50,21 +61,21 @@ private struct NeedsYouBanner: View {
                 Button { client.go(to: card) } label: {
                     HStack(spacing: Theme.Space.s) {
                         Image(systemName: CanvasGeometry.icon(for: card.kind))
-                            .font(.system(size: 13, weight: .medium))
-                            .frame(width: 20)
+                            .dsIcon(DS.IconSize.xl)
+                            .frame(width: DS.Size.iconSlotWide)
                             .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(card.name).dsSans(Theme.Touch.body, .medium).lineLimit(1)
-                            Text(card.reason).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+                        VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                            Text(card.name).textRole(.label).lineLimit(1)
+                            Text(card.reason).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                                 .multilineTextAlignment(.leading)
                         }
                         Spacer(minLength: Theme.Space.s)
-                        Image(systemName: "scope").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.inkSecondary.ui)
+                        Image(systemName: "scope").dsIcon(DS.IconSize.xl).foregroundStyle(Theme.inkSecondary.ui)
                             .accessibilityHidden(true)
                     }
                     .foregroundStyle(Theme.ink.ui)
                     .padding(.horizontal, Theme.Space.m)
-                    .padding(.vertical, Theme.Space.xs + 2)
+                    .padding(.vertical, DS.Space.tight)
                     .frame(maxWidth: .infinity, minHeight: Theme.Touch.target, alignment: .leading)
                     .contentShape(Rectangle())
                 }
@@ -88,7 +99,7 @@ private struct NeedsYouBanner: View {
             if !last.isEmpty {
                 Hairline()
                 Text(last)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Theme.Space.m)
@@ -124,5 +135,31 @@ extension RemoteClient {
     func go(to card: WaitingCard) {
         canvas.select(.card(card.id))
         canvas.centre(onCard: card.id)
+    }
+}
+
+/// Where the flow works, as the Mac's branch chip says it: a branch, or a worktree's branch. Only shown: it is chosen on the Mac.
+struct WorkplaceTag: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: Theme.Space.xs) {
+            Image(systemName: "arrow.triangle.branch")
+                .dsIcon(DS.IconSize.l, .semibold)
+                .foregroundStyle(Theme.inkSecondary.ui)
+                .accessibilityHidden(true)
+            // A long branch name is cut short in the middle rather than taking over the top of the canvas.
+            Text(text)
+                .textRole(.monoCaption)
+                .foregroundStyle(Theme.ink.ui)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, Theme.Space.m)
+        .frame(minHeight: DS.Size.chip)
+        .floatingPanel()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Works on \(text)")
+        .accessibilityHint("Where this flow works. It is changed on your Mac.")
     }
 }

@@ -131,7 +131,9 @@ final class Shared: @unchecked Sendable {
     }
 }
 
-@Sendable func hello(as id: String) -> DeviceMessage { .hello(RemoteHello(version: Remote.version, deviceID: id, deviceName: "Test device")) }
+@Sendable func hello(as id: String) -> DeviceMessage {
+    .hello(RemoteHello(version: Remote.version, deviceID: id, deviceName: "Test device", features: [RemoteFeature.overview]))
+}
 
 let key = grant.key
 var connection = LinkConnection(to: local(port), key: key)
@@ -232,6 +234,15 @@ Task {
     case "stopAgents": return .stopAgents(flowID: flow)
     case "revertSettings": return .revertSettings(flowID: flow, cardID: text("card"))
     case "armSchedule": return .armSchedule(flowID: flow, cardID: text("card"), on: flag("on"))
+    case "restartAgents":
+        // `which` is "all", "allExceptOrchestrator", "awaiting", or "cards" with `cards`.
+        let which: RemoteRestart = switch text("which") {
+        case "allExceptOrchestrator": .all(withOrchestrator: false)
+        case "awaiting": .awaitingNewSettings
+        case "cards": .cards(list("cards"))
+        default: .all(withOrchestrator: true)
+        }
+        return .restartAgents(flowID: flow, which: which)
     case "paste":
         guard let raw = fields["fragment"], let data = try? JSONSerialization.data(withJSONObject: raw),
               let fragment = try? Remote.decode(FlowFragment.self, from: data) else { return nil }
@@ -397,7 +408,8 @@ while true {
              "holds": state.holds.map { ["id": $0.id, "card": $0.cardID, "kind": $0.kind.rawValue, "needsAllow": $0.needsAllow,
                                           "allowOnMac": $0.allowOnMac == true] as [String: Any] },
              "awaitingRestart": state.awaitingRestart, "orchestratorNeedsRestart": state.orchestratorNeedsRestart,
-             "banner": state.banner ?? NSNull(), "failed": state.marks.filter(\.value.failed).keys.sorted()])
+             "banner": state.banner ?? NSNull(), "failed": state.marks.filter(\.value.failed).keys.sorted(),
+             "workplace": state.workplace ?? NSNull()])
     case .log(_, let lines, let reset):
         say(["type": "log", "lines": lines.count, "reset": reset])
     case .messages(_, let link, let all):
@@ -423,5 +435,10 @@ while true {
              "at": Date().timeIntervalSince1970])
     case .browserCopied(_, let card, let text):
         say(["type": "browserCopied", "card": card, "text": text])
+    case .overview(let overview):
+        say(["type": "overview", "runs": overview.runs.map { ["flow": $0.flowName, "run": $0.runID ?? NSNull(), "number": $0.number ?? NSNull(),
+                                                              "outcome": $0.outcome?.rawValue ?? "running", "shared": $0.sharedID == true] as [String: Any] },
+             "schedules": overview.schedules.map { ["flow": $0.flowName, "card": $0.cardName, "summary": $0.summary, "armed": $0.armed,
+                                                    "hasNext": $0.next != nil] as [String: Any] }])
     }
 }

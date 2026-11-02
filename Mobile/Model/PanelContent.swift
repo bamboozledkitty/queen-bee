@@ -342,6 +342,8 @@ nonisolated struct Details: Equatable {
 /// One earlier run, as the list of runs shows it.
 nonisolated struct RunRow: Equatable, Identifiable {
     var id: String
+    /// Its number in its flow, as the Mac gives it: counting from 1 and never reused. Nil for a run kept before runs were numbered.
+    var number: Int?
     /// When it began.
     var started: String
     var outcome: RunRecord.Outcome
@@ -358,7 +360,7 @@ nonisolated struct RunRow: Equatable, Identifiable {
         // With nothing picked the latest run is on show, unless another is going now.
         let shown = viewed?.id ?? (snapshot.run.isRunning ? nil : snapshot.runs.last?.id)
         return snapshot.runs.reversed().map { run in
-            RunRow(id: run.id, started: Clock.run(run.started), outcome: run.outcome, length: Clock.length(from: run.started, to: run.ended),
+            RunRow(id: run.id, number: run.number, started: Clock.run(run.started), outcome: run.outcome, length: Clock.length(from: run.started, to: run.ended),
                    command: run.command, handOffs: "\(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")",
                    cost: run.usage == nil ? nil : run.cost.price, isOnShow: run.id == shown)
         }
@@ -366,7 +368,7 @@ nonisolated struct RunRow: Equatable, Identifiable {
 
     /// Read out as one sentence.
     var spoken: String {
-        "Run from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? ""). \(command)\(isOnShow ? ". On show." : "")"
+        "Run \(number.map { "\($0) " } ?? "")from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? ""). \(command)\(isOnShow ? ". On show." : "")"
     }
 }
 

@@ -1,4 +1,5 @@
 import CoreImage.CIFilterBuiltins
+import QueenBeeDesign
 import SwiftUI
 
 /// The Remote part of Settings: whether paired devices may connect, which are paired, and pairing another.
@@ -16,8 +17,8 @@ struct RemoteSettingsSection: View {
             if enabled {
                 ForEach(host.devices.devices) { device in
                     LabeledContent {
-                        HStack(spacing: Theme.Space.s) {
-                            if host.sessions.contains(where: { $0.device.id == device.id }) { Badge(text: "connected", tone: .live) }
+                        HStack(spacing: DS.Space.s) {
+                            if host.sessions.contains(where: { $0.device.id == device.id }) { Badge(text: "connected", tone: .pass) }
                             Toggle("Can control", isOn: Binding(get: { device.canControl },
                                                                 set: { host.setCanControl($0, for: device.id) }))
                                 .toggleStyle(.switch)
@@ -33,8 +34,8 @@ struct RemoteSettingsSection: View {
                 }
                 if !host.devices.devices.isEmpty {
                     Text("A device with “Can control” on can start and stop runs, answer approvals, type into sessions and edit flows on this Mac. It is off for every device until you turn it on.")
-                        .font(.dsSans(Theme.Size.caption))
-                        .foregroundStyle(.secondary)
+                        .textRole(.caption)
+                        .foregroundStyle(Palette.textMuted.color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Button("Pair a device…") {
@@ -46,7 +47,7 @@ struct RemoteSettingsSection: View {
                     .onChange(of: byAddress) { host.setByAddress(byAddress) }
                     .help("For a paired device that isn't on the same Wi-Fi as this Mac, such as one on a private network like Tailscale.")
                 if byAddress {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: DS.Space.xs) {
                         LabeledContent("Port", value: String(RemoteHost.addressPort))
                         LabeledContent("This Mac's addresses") {
                             Text(addresses.isEmpty ? "None found" : addresses.joined(separator: "\n"))
@@ -54,15 +55,15 @@ struct RemoteSettingsSection: View {
                                 .textSelection(.enabled)
                         }
                         Text("On the device, open Settings, choose “Connect by address” and type one of these with the port. Each device still needs its own key from pairing, and nothing reaches this Mac from the internet unless your network lets it. Use an address only on a network you trust, such as Tailscale.")
-                            .font(.dsSans(Theme.Size.caption))
-                            .foregroundStyle(.secondary)
+                            .textRole(.caption)
+                            .foregroundStyle(Palette.textMuted.color)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .onAppear { addresses = RemoteHost.addresses() }
                 }
                 if let problem = host.problem {
                     Text(problem)
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                         .foregroundStyle(Theme.failInk.ui)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -90,13 +91,13 @@ private struct PairingSheet: View {
     private var host: RemoteHost { RemoteHost.shared }
 
     var body: some View {
-        VStack(spacing: 14) {
-            Text("Pair a device").font(.dsSans(Theme.Size.heading, .semibold))
+        VStack(spacing: DS.Space.l) {
+            Text("Pair a device").textRole(.title)
             if let offer = host.pairing {
                 if let image = Self.qr(offer.code.text) {
                     // Black on white whatever the app's appearance, or a camera can't read it.
                     Image(nsImage: image).interpolation(.none).resizable().frame(width: 220, height: 220)
-                        .padding(10).background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(DS.Space.snug).background(Color.white, in: RoundedRectangle(cornerRadius: DS.Radius.m))
                         .accessibilityLabel("Pairing code")
                 }
                 Text("Open Queen Bee on your iPad or iPhone, choose this Mac and scan the code.")
@@ -104,11 +105,11 @@ private struct PairingSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text("Works once, for \(max(0, Int(offer.expires.timeIntervalSince(context.date)))) more seconds.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textMuted.color)
                 }
                 Text("Anyone who sees this code can pair while it works, so treat it like a password.")
-                    .font(.dsSans(Theme.Size.caption))
-                    .foregroundStyle(.secondary)
+                    .textRole(.caption)
+                    .foregroundStyle(Palette.textMuted.color)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Copy the code as text") {
@@ -118,14 +119,14 @@ private struct PairingSheet: View {
                 .help("For a device with no camera. Anyone who has the code can pair while it works.")
             } else {
                 Text(host.problem ?? "This code has been used or has run out.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textMuted.color)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
         }
-        .font(.dsSans(Theme.Size.body))
-        .padding(22)
+        .textRole(.body)
+        .padding(DS.Space.xl)
         .frame(width: 320)
         // The code goes away when a device has used it or its time is up.
         .onChange(of: host.pairing == nil) { if host.pairing == nil { dismiss() } }

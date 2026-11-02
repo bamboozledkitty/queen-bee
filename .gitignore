@@ -8,6 +8,7 @@ build/
 .queenbee/
 .claude/
 dist/
+__pycache__/
 
 # Signing details stay on the machine that made them.
 Local.xcconfig

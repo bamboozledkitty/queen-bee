@@ -35,6 +35,16 @@ extension ButtonStyle where Self == PanelButtonStyle {
     static func panel(_ kind: PanelButtonStyle.Kind = .outline) -> PanelButtonStyle { PanelButtonStyle(kind: kind) }
 }
 
+private struct FieldNameKey: EnvironmentKey { static let defaultValue: String? = nil }
+
+extension EnvironmentValues {
+    /// What the setting around a control is called, so a menu can say "Model, Haiku" rather than only "Haiku".
+    var fieldName: String? {
+        get { self[FieldNameKey.self] }
+        set { self[FieldNameKey.self] = newValue }
+    }
+}
+
 /// A choice from a short list: the current value, with a menu of the others behind it.
 struct MenuField<Value: Hashable>: View {
     let options: [(value: Value, label: String)]
@@ -43,22 +53,25 @@ struct MenuField<Value: Hashable>: View {
     /// the field is always as wide as its label.
     var shortensToFit = false
     let pick: (Value) -> Void
+    @Environment(\.fieldName) private var fieldName
 
     var body: some View {
+        let current = options.first { $0.value == selection }?.label ?? ""
         Menu {
             ForEach(options, id: \.value) { option in
                 Toggle(option.label, isOn: Binding(get: { option.value == selection }, set: { _ in pick(option.value) }))
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(options.first { $0.value == selection }?.label ?? "")
+            HStack(spacing: DS.Space.xs) {
+                Text(current)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
+                    .dsIcon(DS.IconSize.xxs, .semibold)
                     .foregroundStyle(Theme.inkSecondary.ui)
+                    .accessibilityHidden(true)
             }
-            .font(.dsSans(Theme.Size.body, .medium))
+            .textRole(.label)
             .foregroundStyle(Theme.ink.ui)
             .contentShape(Rectangle())
         }
@@ -66,6 +79,8 @@ struct MenuField<Value: Hashable>: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize(horizontal: !shortensToFit, vertical: true)
+        .accessibilityLabel(fieldName ?? current)
+        .accessibilityValue(fieldName == nil ? "" : current)
     }
 }
 
@@ -76,13 +91,13 @@ struct StepField: View {
     let set: (Int) -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: DS.Space.xxs) {
             step("minus", to: value - 1)
             Text("\(value)")
-                .font(.dsMono(Theme.Size.caption, .medium))
-                .frame(minWidth: 22)
+                .textRole(.monoLabel)
+                .frame(minWidth: DS.Size.stepValue)
                 .contentTransition(.numericText())
-                .animation(Theme.Motion.quick, value: value)
+                .dsAnimation(DS.Motion.quick, value: value)
             step("plus", to: value + 1)
         }
         .foregroundStyle(Theme.ink.ui)
@@ -91,8 +106,8 @@ struct StepField: View {
     private func step(_ symbol: String, to next: Int) -> some View {
         Button { set(next) } label: {
             Image(systemName: symbol)
-                .font(.system(size: 9, weight: .semibold))
-                .frame(width: 18, height: 18)
+                .dsIcon(DS.IconSize.xs, .semibold)
+                .frame(width: DS.Size.stepButton, height: DS.Size.stepButton)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -105,7 +120,7 @@ extension View {
     /// The box a panel's text is typed into.
     func fieldBox() -> some View {
         padding(.horizontal, DS.Space.s)
-            .padding(.vertical, 5)
+            .padding(.vertical, DS.Space.xs)
             .background(Palette.raised.color, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous).strokeBorder(Palette.hairlineStrong.color))
     }

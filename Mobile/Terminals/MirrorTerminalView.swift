@@ -17,7 +17,7 @@ final class MirrorTerminalView: TerminalView {
     var droppedReplies: (count: Int, bytes: Int) { (sink.count, sink.bytes) }
 
     init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: 520, height: 320), font: Theme.mono(Theme.Size.body))
+        super.init(frame: CGRect(x: 0, y: 0, width: 520, height: 320), font: Theme.mono(Theme.Size.terminal))
         terminalDelegate = sink
         // The bar of extra keys SwiftTerm puts over the keyboard. There is no keyboard.
         inputAccessoryView = nil

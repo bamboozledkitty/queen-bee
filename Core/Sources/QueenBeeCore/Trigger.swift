@@ -42,8 +42,40 @@ public struct Trigger: Codable, Equatable, Sendable {
     }
 
     /// "Every 30 minutes", "Every day at 09:00", "Mon, Wed at 09:00", "When src changes".
-    public var summary: String {
-        let clock = String(format: "%02d:%02d", min(max(hour, 0), 23), min(max(minute, 0), 59))
+    /// Times are always 24-hour here, so what the orchestrator reads never changes with the Mac's settings.
+    /// The app shows `summary(in:)` to people instead.
+    public var summary: String { summary(clock: String(format: "%02d:%02d", min(max(hour, 0), 23), min(max(minute, 0), 59))) }
+
+    /// The same, with the time written the way `locale` writes it: "7:30 AM" on a 12-hour Mac, "07:30" on a 24-hour one.
+    public func summary(in locale: Locale) -> String { summary(clock: Self.clock(hour: hour, minute: minute, in: locale)) }
+
+    /// A time of day as `locale` writes it, for the summary and for the pickers.
+    public static func clock(hour: Int, minute: Int, in locale: Locale) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        var parts = DateComponents(year: 2001, month: 1, day: 1)
+        parts.hour = min(max(hour, 0), 23)
+        parts.minute = min(max(minute, 0), 59)
+        let date = calendar.date(from: parts) ?? Date(timeIntervalSinceReferenceDate: 0)
+        return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour().minute())
+    }
+
+    /// Just the hour as `locale` writes it ("7 AM", "07"), for the hour picker.
+    public static func hourLabel(_ hour: Int, in locale: Locale) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        var parts = DateComponents(year: 2001, month: 1, day: 1)
+        parts.hour = min(max(hour, 0), 23)
+        let date = calendar.date(from: parts) ?? Date(timeIntervalSinceReferenceDate: 0)
+        return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour())
+    }
+
+    /// Whether `locale` writes the hour on a 24-hour clock.
+    public static func usesTwentyFourHours(_ locale: Locale) -> Bool {
+        !clock(hour: 15, minute: 0, in: locale).contains(where: \.isLetter) // no AM/PM marker
+    }
+
+    private func summary(clock: String) -> String {
         switch kind {
         case .interval:
             let m = max(minutes, 1)

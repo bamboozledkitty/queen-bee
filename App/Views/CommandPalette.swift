@@ -59,7 +59,7 @@ struct CommandPalette: View {
         for card in flow.cards {
             all.append(Command(id: "go/\(card.id)", title: "Go to \(card.name)", detail: card.kind.label,
                                icon: CanvasGeometry.icon(for: card.kind)) {
-                AppServices.shared.reveal(flowID: flow.id, cardID: card.id)
+                AppServices.shared.reveal(controller, cardID: card.id)
             })
         }
         for kind in CardKindMenu.kinds {
@@ -76,11 +76,11 @@ struct CommandPalette: View {
     var body: some View {
         let found = Array(PaletteSearch.rank(commands, by: query) { $0.title }.prefix(Self.shown))
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Space.s) {
-                Image(systemName: "command").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.inkSecondary.ui)
+            HStack(spacing: DS.Space.s) {
+                Image(systemName: "command").dsIcon(DS.IconSize.l, .medium).foregroundStyle(Theme.inkSecondary.ui)
                 TextField(placeholder, text: $query)
                     .textFieldStyle(.plain)
-                    .font(.dsSans(Theme.Size.heading))
+                    .textRole(.subtitle)
                     .focused($isFocused)
                     .onSubmit { if found.indices.contains(picked) { perform(found[picked]) } }
                     .onKeyPress(.downArrow) { picked = min(picked + 1, max(found.count - 1, 0)); return .handled }
@@ -90,33 +90,33 @@ struct CommandPalette: View {
                     .accessibilityLabel("Command")
             }
             .padding(.horizontal, DS.Space.l)
-            .frame(height: 52)
+            .frame(height: DS.Size.commandField)
 
             DSDivider()
             if found.isEmpty {
                 Text("Nothing matches. Try a card's name, or \"add\", \"link\" or \"run\".")
-                    .font(.dsSans(Theme.Size.body))
+                    .textRole(.body)
                     .foregroundStyle(Theme.inkSecondary.ui)
-                    .padding(Theme.Space.m)
+                    .padding(DS.Space.m)
             } else {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: DS.Space.xxs) {
                     ForEach(Array(found.enumerated()), id: \.element.id) { index, command in
                         HStack(spacing: DS.Space.m) {
                             Image(systemName: command.icon)
-                                .font(.system(size: 13, weight: .medium))
+                                .dsIcon(DS.IconSize.xl, .medium)
                                 .foregroundStyle(Palette.textMuted.color)
                                 .frame(width: 18)
                             Text(command.title)
-                                .font(.dsSans(Theme.Size.body, .medium))
+                                .textRole(.label)
                                 .lineLimit(1)
-                            Spacer(minLength: Theme.Space.s)
+                            Spacer(minLength: DS.Space.s)
                             Text(command.detail)
-                                .font(.dsSans(Theme.Size.caption))
+                                .textRole(.caption)
                                 .foregroundStyle(Theme.inkSecondary.ui)
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, DS.Space.m)
-                        .frame(height: 38)
+                        .frame(height: DS.Size.commandRow)
                         .background(index == picked ? Palette.hover.color : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                         .contentShape(Rectangle())
                         .onTapGesture { perform(command) }
@@ -130,20 +130,20 @@ struct CommandPalette: View {
             }
             DSDivider()
             HStack(spacing: DS.Space.m) {
-                HStack(spacing: 4) { KeyHint("↑", "↓"); Text("Move") }
-                HStack(spacing: 4) { KeyHint("↵"); Text("Choose") }
-                HStack(spacing: 4) { KeyHint("esc"); Text("Close") }
+                HStack(spacing: DS.Space.xs) { KeyHint("↑", "↓"); Text("Move") }
+                HStack(spacing: DS.Space.xs) { KeyHint("↵"); Text("Choose") }
+                HStack(spacing: DS.Space.xs) { KeyHint("esc"); Text("Close") }
                 Spacer()
             }
             .textRole(.caption)
             .foregroundStyle(Palette.textFaint.color)
             .padding(.horizontal, DS.Space.l)
-            .frame(height: 36)
+            .frame(height: DS.Size.commandFooter)
         }
         .foregroundStyle(Theme.ink.ui)
-        .frame(width: 640)
+        .frame(width: DS.Size.commandWidth)
         .floatingPanel()
-        .shadow(color: .black.opacity(0.25), radius: 24, y: 12)
+        .dsLift()
         .onAppear { isFocused = true }
     }
 

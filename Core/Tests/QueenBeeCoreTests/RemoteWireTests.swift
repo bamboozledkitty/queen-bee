@@ -40,7 +40,17 @@ enum WireSamples {
         RemoteRunState(isRunning: true, marks: ["c1": mark], linkPasses: ["l1": 1], liveLinkIDs: ["l1"], handOffs: 1,
                        holds: [PendingHold(id: "h1", cardID: "c1", kind: .script, text: "t", from: "A", command: "ls", needsAllow: true, allowOnMac: true)],
                        results: ["c1": "r"], usage: ["c1": usage], sessions: ["c1": .working], awaitingAnswer: ["c1"], banner: "b",
-                       awaitingRestart: ["c1": ["model"]], orchestratorNeedsRestart: true, runUsage: ["c1": usage])
+                       awaitingRestart: ["c1": ["model"]], orchestratorNeedsRestart: true, runUsage: ["c1": usage], workplace: "main · worktree")
+    }
+
+    static var overview: RemoteOverview {
+        RemoteOverview(
+            runs: [RemoteRunEntry(flowID: "f1", flowName: "Demo", projectID: "/p", projectName: "P", runID: "r1", number: 3, outcome: .failed,
+                                  summary: "failed", handOffs: 2, started: at, cost: usage, sharedID: true),
+                   RemoteRunEntry(flowID: "f1", flowName: "Demo", projectID: "/p", projectName: "P", runID: nil, number: 4, outcome: nil,
+                                  summary: "Running", handOffs: 0, started: nil)],
+            schedules: [RemoteScheduleEntry(flowID: "f1", flowName: "Demo", projectID: "/p", projectName: "P", cardID: "c1", cardName: "Start",
+                                            summary: "Every day at 09:00", isFile: false, armed: true, next: at, sharedID: true)])
     }
 
     static var record: RunRecord {
@@ -78,7 +88,7 @@ enum WireSamples {
             .terminal(id: "f1", key: "c1", chunk: TerminalChunk(reset: true, cols: 80, rows: 24, data: Data([1]))),
             .answer(id: 1, refusal: "no"), .control(canControl: true), .browserPage(id: "f1", card: "c1", page: page),
             .browserFrame(id: "f1", card: "c1", frame: RemoteBrowserFrame(jpeg: Data([1]), width: 1, height: 1, pageWidth: 1, pageHeight: 1)),
-            .browserCopied(id: "f1", card: "c1", text: "t"),
+            .browserCopied(id: "f1", card: "c1", text: "t"), .overview(overview),
         ]
     }
 
@@ -107,6 +117,8 @@ enum WireSamples {
             .newFlow(projectID: "p", name: "n"), .renameFlow(flowID: "f", name: "n"), .deleteFlow(flowID: "f"), .undo(flowID: "f"), .redo(flowID: "f"),
             .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "c"), .clearLog(flowID: "f"), .dismissBanner(flowID: "f"),
             .stopAgents(flowID: "f"), .revertSettings(flowID: "f", cardID: "c"), .armSchedule(flowID: "f", cardID: "c", on: true),
+            .restartAgents(flowID: "f", which: .all(withOrchestrator: false)), .restartAgents(flowID: "f", which: .cards(["c"])),
+            .restartAgents(flowID: "f", which: .awaitingNewSettings),
             .paste(flowID: "f", fragment: fragment, at: point), .addRoleCard(flowID: "f", roleID: "r", x: 1, y: 2),
             .newSubflow(flowID: "f", cardID: "c", name: "n"), .pin(flowID: "f", on: true), .saveRole(flowID: "f", cardID: "c", name: "n"),
             .updateRole(roleID: "r", flowID: "f", cardID: "c"), .deleteRole(roleID: "r"), .clearBrowserData(projectID: "p"),
@@ -155,7 +167,9 @@ enum WireSamples {
 @Suite struct RemoteWireTests {
     /// The shape of every message for each `Remote.version`. Apps on the same version connect without question,
     /// so a change to what they send each other has to be one an app built before it can still read.
-    static let fingerprints: [Int: String] = [5: "53ea78f1f4e3b85b01629d32"]
+    // Version 5 grew a message and a command, both sent only to an app that has said `RemoteFeature.overview`, and
+    // `RemoteRunState.workplace`, which is optional: an app from before reads all of it as it did.
+    static let fingerprints: [Int: String] = [5: "7a09bd04d52b55afec4f27be"]
 
     @Test func theWireFormatMatchesItsVersion() throws {
         let now = try WireSamples.fingerprint()

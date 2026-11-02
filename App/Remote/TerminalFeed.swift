@@ -56,12 +56,13 @@ nonisolated final class OutputLog: @unchecked Sendable {
     }
 
     /// Drops everything kept. Used when the terminal gets narrower: output laid out for the
-    /// wider terminal comes out scrambled when a narrower one is fed it.
-    func forget() {
+    /// wider terminal comes out scrambled when a narrower one is fed it. The program goes on
+    /// from where the cursor is now, so what is kept starts by putting the cursor there (zero-based):
+    /// fed to a blank terminal, what comes next lands where it does in the real one.
+    func forget(cursor: (col: Int, row: Int)) {
         lock.withLock {
             guard !kept.isEmpty else { return }
-            kept = Data()
-            whole = false
+            kept = Data("\u{1b}[\(cursor.row + 1);\(cursor.col + 1)H".utf8)
         }
     }
 

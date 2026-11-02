@@ -90,6 +90,8 @@ final class RemoteSession {
     private let epoch: String?
     /// Whether the device takes the earlier runs as changes: see `RemoteFeature.historyChanges`.
     private let historyChanges: Bool
+    /// Whether the device takes the lists across flows: see `RemoteFeature.overview`.
+    let hasOverview: Bool
     /// True while a fresh copy of the open flow is being sent in place of a message that couldn't be.
     private var isResending = false
 
@@ -102,6 +104,7 @@ final class RemoteSession {
         self.viaAddress = viaAddress
         epoch = hello.epoch.flatMap { $0.isEmpty ? nil : String($0.prefix(64)) }
         historyChanges = hello.has(RemoteFeature.historyChanges)
+        hasOverview = hello.has(RemoteFeature.overview)
         let (stream, continuation) = AsyncStream.makeStream(of: Queued.self)
         outbox = continuation
         // One sender, so messages leave in the order they were queued.
@@ -350,6 +353,8 @@ final class RemoteSession {
         controller = new
         last = nil
         guard let new else { return }
+        // The branch chip needs the repository, which a flow reads when the Mac opens it.
+        new.readGitForDevice()
         let snapshot = watchedSnapshot(of: new)
         last = snapshot
         send(.opened(snapshot))
@@ -381,12 +386,16 @@ final class RemoteSession {
             liveLinkIDs: controller.liveLinkIDs.sorted(), handOffs: controller.handOffs, holds: controller.holds,
             results: controller.results, usage: controller.usage, sessions: controller.sessions.mapValues(\.state),
             awaitingAnswer: controller.awaitingAnswer.sorted(), banner: controller.banner, awaitingRestart: awaiting,
-            orchestratorNeedsRestart: controller.orchestratorNeedsRestart, runUsage: runUsage)
+            orchestratorNeedsRestart: controller.orchestratorNeedsRestart, runUsage: runUsage,
+            workplace: controller.workplaceChip.map { RemoteOverview.cut(Remote.plainLine($0)) })
         // Read so that a schedule turned on or off at the Mac counts as a change: which are on is not in the flow.
         _ = controller.schedulesRevision
         let armed = controller.flow.cards.filter { $0.kind == .start && controller.isArmed($0) }.map(\.id)
         let manager = controller.undoManager
-        // The titles read the count that goes up whenever the undo stack changes, so that counts as a change too.
+        // The count goes up whenever the undo stack changes. It is read first, whatever the stack holds: the titles
+        // below only read it once there is something to undo, so a stack that was empty when this was built would
+        // never be asked about again, and the device's Undo would stay grey after its own move.
+        _ = controller.undoRevision
         let edit = RemoteEditState(undo: manager.canUndo ? controller.undoTitle : nil, redo: manager.canRedo ? controller.redoTitle : nil,
                                    armed: armed, nextFires: controller.nextFires.filter { armed.contains($0.key) })
         return RemoteFlowSnapshot(flow: controller.flow, run: run, edit: edit, log: controller.log, messages: controller.messages,

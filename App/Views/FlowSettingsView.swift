@@ -1,8 +1,12 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
-/// Settings that belong to a whole flow, in the corner a card's settings use.
+/// Settings that belong to a whole flow, shown as a page under the flow's Settings tab.
 struct FlowSettingsView: View {
+    /// How wide the page's column is. Wider than this and the lines are too long to read.
+    static let pageWidth: CGFloat = 520
+
     let controller: FlowController
     @State private var name = ""
     @State private var limit = ""
@@ -14,32 +18,26 @@ struct FlowSettingsView: View {
         let top = controller.topFlows
         let isTop = top.count == 1 && top[0] === controller
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Space.s) {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 12, weight: .medium)).frame(width: 16)
+            HStack(spacing: DS.Space.s) {
+                Image(systemName: "slider.horizontal.3").dsIcon(DS.IconSize.l, .medium).frame(width: DS.Size.iconSlot)
                 TextField("Flow name", text: $name)
                     .textFieldStyle(.plain)
-                    .font(.dsSans(Theme.Size.title, .medium))
+                    .textRole(.label)
                     .onSubmit { controller.rename(to: name) }
                     .help("Rename this flow")
                 Text(controller.flow.isSubflow == true ? "Sub-flow" : "Flow")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
-                Button { controller.showsFlowSettings = false } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 16, height: 16).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.inkSecondary.ui)
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, Theme.Space.s)
-            .background(Theme.bar.ui)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.s)
 
             if isTop {
                 line("Sub-flows can go") {
-                    HStack(spacing: 6) {
+                    HStack(spacing: DS.Space.tight) {
                         TextField("3", text: $limit)
                             .textFieldStyle(.plain)
-                            .font(.dsMono(Theme.Size.body, .medium))
+                            .textRole(.monoLabel)
                             .multilineTextAlignment(.center)
                             .frame(width: 34)
                             .fieldBox()
@@ -51,7 +49,7 @@ struct FlowSettingsView: View {
                                 if !digits.isEmpty { commitLimit() }
                             }
                         Text(Nesting.levels(controller.ownSubflowLimit).hasSuffix("s") ? "levels deep" : "level deep")
-                            .font(.dsSans(Theme.Size.caption))
+                            .textRole(.caption)
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
                 }
@@ -60,25 +58,25 @@ struct FlowSettingsView: View {
                     // Lowering the limit under what is already built deletes nothing.
                     Label("This flow already goes \(Nesting.levels(below)) deep. The levels past the limit are kept, marked on their Flow cards, and come out Fail when a run reaches them.",
                           systemImage: "exclamationmark.triangle")
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                         .foregroundStyle(Theme.failInk.ui)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, Theme.Space.m)
-                        .padding(.bottom, Theme.Space.s)
+                        .padding(.horizontal, DS.Space.m)
+                        .padding(.bottom, DS.Space.s)
                 } else {
                     text("A Flow card runs another flow, which can hold Flow cards of its own. This is how far down that may go under this flow. 0 means no sub-flows. It goes \(below) deep now.")
                 }
             } else {
                 // A sub-flow goes by the flow at the top, so there is one place to set the limit.
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: DS.Space.tight) {
                     Text(controller.levelsLeft >= 0
                          ? "This sub-flow may go \(Nesting.levels(controller.levelsLeft)) further down."
                          : "This sub-flow is past the limit, so it is kept but won't be run from the flow above.")
-                        .font(.dsSans(Theme.Size.body))
+                        .textRole(.body)
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(top, id: \.flow.id) { outer in
                         Button {
-                            services.selectedFlowID = outer.flow.id
+                            services.selectedFlow = outer
                             outer.showsFlowSettings = true
                         } label: {
                             Text("The limit is set on \(outer.flow.name): \(Nesting.levels(outer.ownSubflowLimit))")
@@ -87,16 +85,16 @@ struct FlowSettingsView: View {
                         .help("Go to \(outer.flow.name)'s settings")
                     }
                 }
-                .padding(Theme.Space.m)
+                .padding(DS.Space.m)
                 .overlay(alignment: .top) { divider }
             }
 
             line("Stop a run once it has spent") {
-                HStack(spacing: 4) {
-                    Text("$").font(.dsMono(Theme.Size.body, .medium))
+                HStack(spacing: DS.Space.xs) {
+                    Text("$").textRole(.monoLabel)
                     TextField("No limit", text: $spending)
                         .textFieldStyle(.plain)
-                        .font(.dsMono(Theme.Size.body, .medium))
+                        .textRole(.monoLabel)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 64)
                         .fieldBox()
@@ -126,10 +124,9 @@ struct FlowSettingsView: View {
             }
             text("Agent cards with a browser share one set of sign-ins across this project, kept apart from your own browser.")
         }
-        .frame(width: 480)
+        .frame(maxWidth: Self.pageWidth)
         .foregroundStyle(Theme.ink.ui)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-        .floatingPanel()
+        .raisedSurface()
         .onAppear {
             name = controller.flow.name
             limit = "\(controller.ownSubflowLimit)"
@@ -163,25 +160,25 @@ struct FlowSettingsView: View {
         return amount == amount.rounded() ? String(format: "%.0f", amount) : String(format: "%.2f", amount)
     }
 
-    private var divider: some View { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+    private var divider: some View { DSDivider() }
 
     private func line<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: Theme.Space.s) {
-            Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
-            Spacer(minLength: Theme.Space.s)
+        HStack(spacing: DS.Space.s) {
+            Text(title).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
+            Spacer(minLength: DS.Space.s)
             content()
         }
-        .padding(.horizontal, Theme.Space.m)
+        .padding(.horizontal, DS.Space.m)
         .frame(minHeight: 34)
         .overlay(alignment: .top) { divider }
     }
 
     private func text(_ words: String) -> some View {
         Text(words)
-            .font(.dsSans(Theme.Size.caption))
+            .textRole(.caption)
             .foregroundStyle(Theme.inkSecondary.ui)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.bottom, Theme.Space.s)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.bottom, DS.Space.s)
     }
 }

@@ -1,3 +1,4 @@
+import QueenBeeDesign
 import SwiftUI
 
 /// What the pill says: whether the Mac is there.
@@ -68,14 +69,14 @@ struct ConnectionPill: View {
         HStack(spacing: Theme.Space.s) {
             Circle()
                 .fill(dot(for: status).ui)
-                .frame(width: 8, height: 8)
+                .frame(width: DS.Size.dot, height: DS.Size.dot)
                 .accessibilityHidden(true)
             Text(isBrief && status.isConnected ? "Connected" : status.text)
-                .dsSans(Theme.Touch.caption, .medium)
+                .textRole(.footnoteLabel)
                 .foregroundStyle(Theme.ink.ui)
                 .lineLimit(1)
         }
-        .animation(Theme.Motion.standard, value: status)
+        .dsAnimation(DS.Motion.standard, value: status)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(status.hasHelp ? "\(status.text). \(ConnectionStatus.help(client))" : status.text)
     }
@@ -94,6 +95,6 @@ extension View {
     func dimmedWhileAway(_ isConnected: Bool) -> some View {
         opacity(isConnected ? 1 : 0.4)
             .allowsHitTesting(isConnected)
-            .animation(Theme.Motion.standard, value: isConnected)
+            .dsAnimation(DS.Motion.standard, value: isConnected)
     }
 }

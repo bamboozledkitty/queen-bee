@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The details while a flow is being edited: each setting as something that can be changed, drawn from
@@ -63,7 +64,7 @@ struct EditDetails: View {
                     FolderRow(folder: folder)
                 case .open(let flowID, let name):
                     HStack(spacing: Theme.Space.s) {
-                        Text("Build or change what it does:").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+                        Text("Build or change what it does:").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                         Spacer(minLength: Theme.Space.s)
                         Button("Open") { client.open(flowID) }
                             .buttonStyle(.panel())
@@ -120,12 +121,12 @@ struct DetailsHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
+                .dsIcon(DS.IconSize.row)
                 .foregroundStyle(Theme.ink.ui)
-                .frame(width: 22)
+                .frame(width: DS.Size.iconSlotRow)
                 .accessibilityHidden(true)
             Text(title)
-                .dsSans(Theme.Touch.title, .medium)
+                .textRole(.heading)
                 .foregroundStyle(Theme.ink.ui)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -133,7 +134,7 @@ struct DetailsHeader: View {
             if let state {
                 Badge(text: state.label.lowercased(), tone: state.tone)
             } else {
-                Text(kind).dsSans(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui)
+                Text(kind).textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
             }
         }
         .padding(.horizontal, Theme.Space.l)
@@ -151,11 +152,11 @@ private struct FolderRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-                Text("Folder").dsSans().foregroundStyle(Theme.inkSecondary.ui)
+                Text("Folder").textRole(.body).foregroundStyle(Theme.inkSecondary.ui)
                 Spacer(minLength: Theme.Space.s)
-                Text(folder).dsMono(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui).multilineTextAlignment(.trailing)
+                Text(folder).textRole(.monoLabel).foregroundStyle(Theme.ink.ui).multilineTextAlignment(.trailing)
             }
-            Text(EditForm.folderLine).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+            Text(EditForm.folderLine).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
         }
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
@@ -256,7 +257,7 @@ struct SettingField: View {
     /// A setting that is text: its name over its box.
     private func block<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            Text(name).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
+            Text(name).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
             content()
         }
         .padding(.horizontal, Theme.Space.l)
@@ -272,7 +273,7 @@ private struct SettingRow<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        let name = Text(title).dsSans().foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
+        let name = Text(title).textRole(.body).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
         ViewThatFits(in: .horizontal) {
             HStack(spacing: Theme.Space.m) {
                 name.fixedSize()
@@ -320,13 +321,13 @@ struct FieldStatus: View {
         if state != .untouched || counted != nil {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 if let counted {
-                    Text(counted).dsSans(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui)
+                    Text(counted).textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
                 }
                 switch state {
                 case .untouched:
                     EmptyView()
                 case .edited, .sending:
-                    Text(Self.words(state) ?? "").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+                    Text(Self.words(state) ?? "").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                 case .refused(let words):
                     kept(words, symbol: "exclamationmark.triangle", tone: Theme.failInk, tint: Theme.failTint, again: "Try Again")
                 case .unsaved:
@@ -343,10 +344,10 @@ struct FieldStatus: View {
     private func kept(_ words: String, symbol: String, tone: UIColor, tint: UIColor, again: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             Label(words, systemImage: symbol)
-                .dsSans(Theme.Touch.caption + 1, .medium)
+                .textRole(.captionLabel)
                 .foregroundStyle(tone.ui)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("What you wrote is kept.").dsSans(Theme.Touch.caption + 1).foregroundStyle(tone.ui)
+            Text("What you wrote is kept.").textRole(.caption).foregroundStyle(tone.ui)
             HStack(spacing: Theme.Space.s) {
                 Spacer(minLength: 0)
                 Button("Put Back") { client.discardField(field.key) }
@@ -394,11 +395,11 @@ private struct TextBox: View {
         }
         Group {
             if isMono {
-                TextField(placeholder, text: text, axis: .vertical).dsMono(Theme.Touch.body - 1)
+                TextField(placeholder, text: text, axis: .vertical).textRole(.mono)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             } else {
-                TextField(placeholder, text: text, axis: .vertical).dsSans()
+                TextField(placeholder, text: text, axis: .vertical).textRole(.body)
             }
         }
         .lineLimit(lines)
@@ -423,7 +424,7 @@ extension View {
     /// The box text is typed into: the panel's own, ruled in the colour of what is selected while the keyboard is in it.
     fileprivate func typingBox(isOn: Bool) -> some View {
         padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, Theme.Space.s + 2)
+            .padding(.vertical, DS.Space.snug)
             .frame(minHeight: Theme.Touch.target)
             .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
@@ -445,13 +446,13 @@ private struct ChoiceMenu: View {
                 ForEach(choices, id: \.value) { Text($0.label).tag($0.value) }
             }
         } label: {
-            HStack(spacing: Theme.Space.xs + 2) {
-                Text(chosen).dsSans(Theme.Touch.body, .medium).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui)
+            HStack(spacing: DS.Space.tight) {
+                Text(chosen).textRole(.label).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").dsIcon(DS.IconSize.s, .semibold).foregroundStyle(Theme.inkSecondary.ui)
             }
             .foregroundStyle(Theme.ink.ui)
             .padding(.horizontal, Theme.Space.m)
-            .frame(minHeight: 36)
+            .frame(minHeight: DS.Size.rowCompact)
             .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
             .frame(minHeight: Theme.Touch.target)
@@ -476,8 +477,7 @@ private struct OnOffSwitch: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.outline.ui, lineWidth: Theme.Stroke.card))
-        .frame(minHeight: Theme.Touch.target)
-        .animation(Theme.Motion.quick, value: isOn)
+        .dsAnimation(DS.Motion.quick, value: isOn)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "On" : "Off")
@@ -488,9 +488,9 @@ private struct OnOffSwitch: View {
     private func half(_ name: String, _ value: Bool) -> some View {
         Button { if isOn != value { set(value) } } label: {
             Text(name)
-                .dsSans(Theme.Touch.body, .medium)
+                .textRole(.label)
                 .foregroundStyle((isOn == value ? Theme.surface : Theme.ink).ui)
-                .frame(minWidth: 52, minHeight: 36)
+                .frame(minWidth: 52, minHeight: Theme.Touch.target)
                 .background(isOn == value ? Theme.ink.ui : .clear)
                 .contentShape(Rectangle())
         }
@@ -512,16 +512,16 @@ private struct StepControl: View {
             HStack(spacing: 0) {
                 step("minus", by: -1)
                 Text("\(value)")
-                    .dsSans(Theme.Touch.body, .medium)
+                    .textRole(.label)
                     .foregroundStyle(Theme.ink.ui)
-                    .frame(minWidth: 34)
+                    .frame(minWidth: DS.Size.stepValueTouch)
                     .contentTransition(.numericText())
                 step("plus", by: 1)
             }
             .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
             if !units.isEmpty {
-                Text(value == 1 ? unit : units).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui).fixedSize()
+                Text(value == 1 ? unit : units).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).fixedSize()
             }
         }
         .accessibilityElement(children: .ignore)
@@ -537,7 +537,7 @@ private struct StepControl: View {
         let next = value + change
         return Button { set(next) } label: {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .dsIcon(DS.IconSize.xxl, .semibold)
                 .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                 .contentShape(Rectangle())
         }
@@ -558,7 +558,7 @@ private struct BranchesField: View {
     var body: some View {
         let names = client.shown(field).list
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            Text(field.label).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui).accessibilityAddTraits(.isHeader)
+            Text(field.label).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).accessibilityAddTraits(.isHeader)
             ForEach(names.indices, id: \.self) { index in
                 let mine = FieldFocus(key: field.key, part: index)
                 HStack(spacing: 0) {
@@ -572,7 +572,7 @@ private struct BranchesField: View {
                         if new.contains("\n") { focus.wrappedValue = order.next(after: mine) }
                     }, axis: .vertical)
                     .lineLimit(1...2)
-                    .dsSans(Theme.Touch.body, .medium)
+                    .textRole(.label)
                     .foregroundStyle(Theme.ink.ui)
                     .submitLabel(.next)
                     .focused(focus, equals: mine)
@@ -611,8 +611,8 @@ private struct BranchesField: View {
     private func tool(_ symbol: String, _ label: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 36, height: Theme.Touch.target)
+                .dsIcon(DS.IconSize.xl, .semibold)
+                .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -670,7 +670,7 @@ private struct ScheduleField: View {
                     time(trigger)
                 case .weekly:
                     VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                        Text("On").dsSans().foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
+                        Text("On").textRole(.body).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
                         HStack(spacing: Theme.Space.xs) {
                             ForEach(Self.days, id: \.0) { day, letter, name in
                                 let isOn = trigger.weekdays.contains(day)
@@ -678,9 +678,9 @@ private struct ScheduleField: View {
                                     set { $0.weekdays = isOn ? $0.weekdays.filter { $0 != day } : ($0.weekdays + [day]).sorted() }
                                 } label: {
                                     Text(letter)
-                                        .dsSans(Theme.Touch.body, .medium)
+                                        .textRole(.label)
                                         .foregroundStyle((isOn ? Theme.surface : Theme.ink).ui)
-                                        .frame(maxWidth: .infinity, minHeight: 36)
+                                        .frame(maxWidth: .infinity, minHeight: DS.Size.rowCompact)
                                         .background((isOn ? Theme.ink : Theme.bar).ui, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
                                         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.badge).strokeBorder(isOn ? Theme.ink.ui : Theme.hairline.ui))
                                         .frame(minHeight: Theme.Touch.target)
@@ -697,7 +697,7 @@ private struct ScheduleField: View {
                     time(trigger)
                 case .file:
                     VStack(alignment: .leading, spacing: Theme.Space.s) {
-                        Text("File or folder in the project").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
+                        Text("File or folder in the project").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
                         TextField("inbox", text: Binding {
                             client.shown(field).schedule?.path ?? ""
                         } set: { new in
@@ -707,7 +707,7 @@ private struct ScheduleField: View {
                             if new.contains("\n") { focus.wrappedValue = order.next(after: mine) }
                         }, axis: .vertical)
                         .lineLimit(1...2)
-                        .dsMono(Theme.Touch.body - 1)
+                        .textRole(.mono)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .foregroundStyle(Theme.ink.ui)
@@ -731,7 +731,7 @@ private struct ScheduleField: View {
                 ChoiceMenu(title: "Hour", choices: (0...23).map { EditField.Choice(value: "\($0)", label: two($0)) }, selection: "\(trigger.hour)") { picked in
                     set { $0.hour = Int(picked) ?? $0.hour }
                 }
-                Text(":").dsMono(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui).accessibilityHidden(true)
+                Text(":").textRole(.monoLabel).foregroundStyle(Theme.ink.ui).accessibilityHidden(true)
                 ChoiceMenu(title: "Minute", choices: minutes.sorted().map { EditField.Choice(value: "\($0)", label: two($0)) }, selection: "\(trigger.minute)") { picked in
                     set { $0.minute = Int(picked) ?? $0.minute }
                 }
@@ -756,7 +756,7 @@ struct EditFoot: View {
                 HStack(spacing: Theme.Space.s) {
                     if let field = focus.wrappedValue {
                         Text(field.key.isLong ? "Sent a moment after you stop writing." : "Sent when you leave the box.")
-                            .dsSans(Theme.Touch.caption + 1)
+                            .textRole(.caption)
                             .foregroundStyle(Theme.inkSecondary.ui)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: Theme.Space.s)
@@ -765,7 +765,7 @@ struct EditFoot: View {
                             .accessibilityHint("Puts the keyboard away and sends what you wrote.")
                     } else {
                         Text(foot.text)
-                            .dsSans(Theme.Touch.caption + 1)
+                            .textRole(.caption)
                             .foregroundStyle((client.isEditing ? Theme.ink : Theme.inkSecondary).ui)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: Theme.Space.s)
@@ -803,10 +803,10 @@ struct FlowSettingsSheet: View {
         }
         VStack(spacing: 0) {
             HStack(spacing: Theme.Space.s) {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .medium)).frame(width: 22).accessibilityHidden(true)
-                Text("Flow Settings").dsSans(Theme.Touch.title, .medium).accessibilityAddTraits(.isHeader)
+                Image(systemName: "slider.horizontal.3").dsIcon(DS.IconSize.row).frame(width: DS.Size.iconSlotRow).accessibilityHidden(true)
+                Text("Flow Settings").textRole(.heading).accessibilityAddTraits(.isHeader)
                 Spacer(minLength: Theme.Space.s)
-                Text(flow?.isSubflow == true ? "Sub-flow" : "Flow").dsSans(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui)
+                Text(flow?.isSubflow == true ? "Sub-flow" : "Flow").textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
                 Button("Done") {
                     if focus != nil { focus = nil } else { client.settings.showsFlowSettings = false }
                 }
@@ -860,7 +860,7 @@ struct FlowSettingsSheet: View {
 
     private func help(_ text: String) -> some View {
         Text(text)
-            .dsSans(Theme.Touch.caption + 1)
+            .textRole(.caption)
             .foregroundStyle(Theme.inkSecondary.ui)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -879,10 +879,10 @@ private struct BrowserSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            Text("Browser for \(status.project)").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui).accessibilityAddTraits(.isHeader)
+            Text("Browser for \(status.project)").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).accessibilityAddTraits(.isHeader)
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                 Text(status.words)
-                    .dsSans()
+                    .textRole(.body)
                     .foregroundStyle(Theme.ink.ui)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -897,14 +897,14 @@ private struct BrowserSection: View {
             }
             if let refusal = client.settings.browserRefusal {
                 Label(refusal, systemImage: "exclamationmark.triangle")
-                    .dsSans(Theme.Touch.caption + 1, .medium)
+                    .textRole(.captionLabel)
                     .foregroundStyle(Theme.failInk.ui)
                     .fixedSize(horizontal: false, vertical: true)
             }
             // On a phone the button goes under the words, which would otherwise be a column a few words wide.
             (sizeClass == .compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Space.s)) : AnyLayout(HStackLayout(spacing: Theme.Space.s))) {
                 Text(BrowserStatus.clearText)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -997,7 +997,7 @@ extension FlowAsk {
         switch ask {
         case .new(_, let project): "New flow in \(project)"
         case .rename: "Rename Flow"
-        case .delete(_, let name): "Delete “\(name)”?"
+        case .delete(_, let name): "Move “\(name)” to the Trash?"
         case .stopAgents(_, let name): "Stop the agents of “\(name)”?"
         case nil: ""
         }
@@ -1007,7 +1007,7 @@ extension FlowAsk {
         switch ask {
         case .new: "Give it a name, or leave this empty and your Mac names it."
         case .rename: "The flow is renamed on your Mac."
-        case .delete: "The flow is taken out of this project on your Mac and its agents are stopped. It goes to the Trash on your Mac."
+        case .delete: "Its agents are stopped and the flow's file goes to the Trash on your Mac, so you can put it back from there with its run history."
         case .stopAgents: "Every session of this flow ends on your Mac, the orchestrator's included, and so does a run that is going."
         }
     }
@@ -1016,7 +1016,7 @@ extension FlowAsk {
         switch ask {
         case .new: "Make Flow"
         case .rename: "Rename"
-        case .delete: "Delete Flow"
+        case .delete: "Move to Trash"
         case .stopAgents: "Stop Its Agents"
         }
     }

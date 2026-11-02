@@ -49,8 +49,8 @@ final class BadgeLabel: UIView {
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         isHidden = true
-        layer.cornerRadius = 9
-        label.font = Theme.sans(Theme.Size.caption, .medium)
+        layer.cornerRadius = DS.Radius.m
+        label.font = Theme.cardLabel(Theme.Size.figure)
         addSubview(label)
     }
 
@@ -91,7 +91,7 @@ final class CardButtonView: UIView {
         isUserInteractionEnabled = false
         layer.cornerRadius = Theme.Radius.card
         layer.borderWidth = Theme.Stroke.card
-        label.font = Theme.sans(Theme.Size.body, .medium)
+        label.font = Theme.cardLabel()
         label.textAlignment = .center
         label.lineBreakMode = .byTruncatingTail
         addSubview(label)
@@ -185,7 +185,7 @@ class CardView: UIView {
         iconView.contentMode = .center
         iconView.tintColor = Theme.inkSecondary
         titleBar.addSubview(iconView)
-        nameLabel.font = Theme.sans(Theme.Size.body, .medium)
+        nameLabel.font = Theme.cardName()
         nameLabel.textColor = Theme.ink
         nameLabel.lineBreakMode = .byTruncatingTail
         titleBar.addSubview(nameLabel)
@@ -204,7 +204,7 @@ class CardView: UIView {
         body.addSubview(overview)
 
         grip.fillColor = nil
-        grip.lineWidth = 1
+        grip.lineWidth = DS.Stroke.hairline
         layer.addSublayer(grip)
 
         isAccessibilityElement = true
@@ -466,8 +466,8 @@ class CardView: UIView {
         overview.frame = body.bounds
         if zoom < Self.overviewBelow {
             let scale = 1 / max(zoom, 0.01)
-            overviewName.font = Theme.sans(min(44, 13 * scale), .medium)
-            overviewDetail.font = Theme.sans(min(32, 10 * scale))
+            overviewName.font = Theme.cardName(min(44, Theme.Size.cardName * scale))
+            overviewDetail.font = Theme.cardLabel(min(32, 10 * scale))
             let width = max(0, overview.bounds.width - 24)
             let nameHeight = min(overviewName.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
             let detailHeight = overviewDetail.intrinsicContentSize.height
@@ -580,10 +580,10 @@ private final class PortRowView: UIView {
 
     init() {
         super.init(frame: .zero)
-        nameLabel.font = Theme.sans(Theme.Size.caption, .medium)
+        nameLabel.font = Theme.cardLabel()
         nameLabel.textAlignment = .right
         nameLabel.lineBreakMode = .byTruncatingTail
-        countLabel.font = Theme.sans(Theme.Size.caption)
+        countLabel.font = Theme.cardLabel(Theme.Size.label, .regular)
         addSubview(nameLabel)
         addSubview(countLabel)
     }
@@ -614,11 +614,11 @@ final class LogicCardView: CardView {
 
     override init(card: Card) {
         super.init(card: card)
-        summaryLabel.font = Theme.sans(Theme.Size.body)
+        summaryLabel.font = Theme.cardLabel(Theme.Size.label, .regular)
         summaryLabel.numberOfLines = 0
         summaryLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(summaryLabel)
-        warningLabel.font = Theme.sans(Theme.Size.caption, .medium)
+        warningLabel.font = Theme.cardLabel()
         warningLabel.textColor = Theme.failInk
         warningLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(warningLabel)
@@ -742,7 +742,7 @@ final class AgentCardView: CardView {
         terminalHolder.backgroundColor = Theme.terminal
         terminalHolder.clipsToBounds = true
         content.addSubview(terminalHolder)
-        hintLabel.font = Theme.sans(Theme.Size.body)
+        hintLabel.font = Theme.cardLabel(Theme.Size.label, .regular)
         hintLabel.textColor = Theme.terminalInk.withAlphaComponent(0.6)
         hintLabel.textAlignment = .center
         content.addSubview(hintLabel)

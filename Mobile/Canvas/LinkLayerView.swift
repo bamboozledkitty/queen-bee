@@ -28,7 +28,7 @@ final class LinkLayerView: UIView {
                 layer.lineCap = .butt
                 layer.lineJoin = .round
             }
-            marching.lineWidth = 2
+            marching.lineWidth = DS.Stroke.focus
         }
     }
 
@@ -177,11 +177,11 @@ final class LinkLayerView: UIView {
         if look.count > 0 {
             let plate = strand.plate ?? {
                 let label = UILabel()
-                label.font = Theme.mono(Theme.Size.caption, .medium)
+                label.font = Theme.mono(Theme.Size.figure, .medium)
                 label.textColor = Theme.passInk
                 label.backgroundColor = Theme.passTint
                 label.textAlignment = .center
-                label.layer.cornerRadius = 8
+                label.layer.cornerRadius = DS.Radius.m
                 label.layer.masksToBounds = true
                 label.contentScaleFactor = traitCollection.displayScale * sharpness
                 addSubview(label)

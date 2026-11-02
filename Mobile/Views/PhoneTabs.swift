@@ -2,9 +2,27 @@ import QueenBeeCore
 import QueenBeeDesign
 import SwiftUI
 
-/// The two places at the root of the iPhone app, between them in the floating bar at the foot of the screen.
+/// The places at the root of the iPhone app. Needs you and Flows are in the floating bar at the foot of the screen; Runs
+/// and Schedules, which are read now and then, are in the menu the bar opens into.
 enum PhoneTab: Hashable {
-    case needsYou, flows
+    case needsYou, flows, runs, schedules
+
+    init(_ place: DevicePlace) {
+        switch place {
+        case .needsYou: self = .needsYou
+        case .runs: self = .runs
+        case .schedules: self = .schedules
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .needsYou: "Needs you"
+        case .flows: "Flows"
+        case .runs: "Runs"
+        case .schedules: "Schedules"
+        }
+    }
 }
 
 /// The bar that floats at the foot of the iPhone's first screen: Needs you, Flows, and a button that opens it into
@@ -16,20 +34,20 @@ struct PhoneTabBar: View {
 
     var body: some View {
         let waiting = client.mirror.library?.projects.contains { $0.flows.contains { $0.activity == .needsYou } } ?? false
-        HStack(spacing: 2) {
+        HStack(spacing: DS.Space.xxs) {
             tabButton(.needsYou, "Needs you", symbol: "tray", marked: waiting)
             tabButton(.flows, "Flows", symbol: "square.stack.3d.up", marked: false)
-            Button { withAnimation(DS.Motion.standard) { showsMenu.toggle() } } label: {
+            Button { withAnimation(Theme.Motion.standard) { showsMenu.toggle() } } label: {
                 Image(systemName: showsMenu ? "xmark" : "chevron.up.chevron.down")
-                    .font(.system(size: 15, weight: .semibold))
+                    .dsIcon(DS.IconSize.row, .semibold)
                     .foregroundStyle(Palette.textMuted.color)
-                    .frame(width: 56, height: 46)
+                    .frame(width: DS.Size.tabMenuWidth, height: DS.Size.tabHeight)
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(showsMenu ? "Close the menu" : "More: your Mac, Settings and pinned flows")
         }
-        .padding(5)
+        .padding(DS.Space.tight)
         .glassEffect(.regular, in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.hairline.color))
     }
@@ -41,12 +59,12 @@ struct PhoneTabBar: View {
             tab = value
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 18, weight: .medium))
+                .dsIcon(DS.IconSize.tab)
                 .foregroundStyle((isOn ? Palette.text : Palette.textMuted).color)
-                .frame(width: 64, height: 46)
+                .frame(width: DS.Size.tabWidth, height: DS.Size.tabHeight)
                 .background((isOn ? Palette.selected : Palette.panel.opacity(0)).color, in: Capsule())
                 .overlay(alignment: .topTrailing) {
-                    if marked { StatusDot(.live, size: 9).padding(.top, 9).padding(.trailing, 16) }
+                    if marked { StatusDot(.live, size: DS.Size.dotTouch).padding(.top, DS.Space.snug).padding(.trailing, DS.Space.l) }
                 }
                 .contentShape(Capsule())
         }
@@ -61,6 +79,8 @@ struct PhoneTabBar: View {
 struct PhoneMenu: View {
     @Environment(RemoteClient.self) private var client
     let showSettings: () -> Void
+    /// Goes to a place the bar doesn't have a button for.
+    let choose: (PhoneTab) -> Void
     let close: () -> Void
 
     var body: some View {
@@ -72,6 +92,14 @@ struct PhoneMenu: View {
             .padding(.horizontal, DS.Space.l)
             .frame(minHeight: DS.Size.touchTarget)
             DSDivider().padding(.horizontal, DS.Space.s)
+            item("Runs", symbol: DevicePlace.runs.symbol) {
+                close()
+                choose(.runs)
+            }
+            item("Schedules", symbol: DevicePlace.schedules.symbol) {
+                close()
+                choose(.schedules)
+            }
             item("Settings", symbol: "gearshape") {
                 close()
                 showSettings()
@@ -79,8 +107,10 @@ struct PhoneMenu: View {
             let pinned = client.pinnedFlows
             if !pinned.isEmpty {
                 SectionHeader("Pinned").padding(.horizontal, DS.Space.s).padding(.top, DS.Space.xs)
-                ForEach(pinned) { flow in
-                    item(flow.name, tone: flow.activity.tone) {
+                ForEach(Array(pinned.enumerated()), id: \.offset) { _, flow in
+                    // A flow whose id another has too is not opened, and the row says why, as the list of flows does.
+                    item(flow.name, note: flow.sharedID == true ? Remote.sharedFlowIDRefusal : nil, tone: flow.activity.tone) {
+                        guard flow.sharedID != true else { return }
                         close()
                         client.open(flow.id)
                     }
@@ -88,24 +118,30 @@ struct PhoneMenu: View {
             }
         }
         .padding(.vertical, DS.Space.xs)
-        .frame(width: 280)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Palette.hairline.color))
+        .frame(width: DS.Size.menuNarrowWidth)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous).strokeBorder(Palette.hairline.color))
     }
 
-    private func item(_ title: String, symbol: String? = nil, tone: StatusTone? = nil, action: @escaping () -> Void) -> some View {
+    private func item(_ title: String, note: String? = nil, symbol: String? = nil, tone: StatusTone? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: DS.Space.m) {
                 Group {
-                    if let symbol { Image(systemName: symbol).font(.system(size: 16, weight: .medium)) }
-                    if let tone { StatusDot(tone, size: 9) }
+                    if let symbol { Image(systemName: symbol).dsIcon(DS.IconSize.bar) }
+                    if let tone { StatusDot(tone, size: DS.Size.dotTouch) }
                 }
                 .foregroundStyle(Palette.textMuted.color)
-                .frame(width: 22)
-                Text(title).textRole(.label).foregroundStyle(Palette.text.color).lineLimit(1)
+                .frame(width: DS.Size.iconSlotRow)
+                VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                    Text(title).textRole(.label).foregroundStyle(Palette.text.color).lineLimit(1)
+                    if let note {
+                        Text(note).textRole(.caption).foregroundStyle(Palette.textMuted.color).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, DS.Space.l)
+            .padding(.vertical, note == nil ? 0 : DS.Space.xs)
             .frame(minHeight: DS.Size.touchTarget)
             .contentShape(Rectangle())
         }
@@ -117,14 +153,16 @@ extension FlowActivity {
     /// The state as a colour: what the flow's dot shows.
     var tone: StatusTone {
         switch self {
-        case .needsYou, .running: .live
+        case .needsYou: .live
+        case .running: .accent
         case .failed: .fail
         case .quiet: .neutral
         }
     }
 }
 
-/// Every flow that waits on you, is running, or stopped, across the Mac's projects. Tap one to open it.
+/// Every flow that waits on you, across the Mac's projects, as the Mac's Needs you does. Tap one to open it.
+/// A flow that is only running, or stopped, is in the list of flows with its state.
 struct WaitingList: View {
     @Environment(RemoteClient.self) private var client
 
@@ -137,14 +175,12 @@ struct WaitingList: View {
     var body: some View {
         let all = (client.mirror.library?.projects ?? []).flatMap { project in project.flows.map { Entry(project: project, flow: $0) } }
         let waiting = all.filter { $0.flow.activity == .needsYou }
-        let running = all.filter { $0.flow.activity == .running }
-        let stopped = all.filter { $0.flow.activity == .failed }
         Group {
-            if waiting.isEmpty && running.isEmpty && stopped.isEmpty {
+            if waiting.isEmpty {
                 VStack(spacing: DS.Space.m) {
-                    Image(systemName: "checkmark.circle").font(.system(size: 32, weight: .light)).foregroundStyle(Palette.textFaint.color)
+                    Image(systemName: "checkmark.circle").dsIcon(DS.IconSize.empty, .light).foregroundStyle(Palette.textFaint.color)
                     Text("Nothing needs you").textRole(.headline).foregroundStyle(Palette.text.color)
-                    Text("When a flow on your Mac waits for an answer, or is running, it shows here.")
+                    Text("When a flow on your Mac waits for an answer, it shows here.")
                         .textRole(.body).foregroundStyle(Palette.textMuted.color).multilineTextAlignment(.center)
                 }
                 .padding(DS.Space.xl)
@@ -153,10 +189,8 @@ struct WaitingList: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         section("Waiting on you", waiting)
-                        section("Running", running)
-                        section("Stopped", stopped)
                     }
-                    .padding(.bottom, 96)
+                    .padding(.bottom, DS.Size.floatingBarClearance)
                 }
             }
         }
@@ -176,16 +210,21 @@ struct WaitingList: View {
                 .accessibilityAddTraits(.isHeader)
             ForEach(entries) { entry in
                 Button {
+                    // One whose id another project's flow has too is not opened: the row says why.
                     if entry.flow.sharedID != true { client.open(entry.flow.id) }
                 } label: {
                     HStack(spacing: DS.Space.m) {
-                        StatusDot(entry.flow.activity.tone, size: 10)
-                            .frame(width: 40, height: 40)
+                        StatusDot(entry.flow.activity.tone, size: DS.Size.dotTouch)
+                            .frame(width: DS.Size.flowTile, height: DS.Size.flowTile)
                             .background(Palette.raised.color, in: RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous).strokeBorder(Palette.hairline.color))
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DS.Space.xxs) {
                             Text(entry.flow.name).textRole(.headline).foregroundStyle(Palette.text.color).lineLimit(1)
                             Text(entry.project.name).textRole(.caption).foregroundStyle(Palette.textMuted.color).lineLimit(1)
+                            if entry.flow.sharedID == true {
+                                Text(Remote.sharedFlowIDRefusal).textRole(.caption).foregroundStyle(Palette.textMuted.color)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         Spacer(minLength: DS.Space.s)
                         FlowActivityBadge(activity: entry.flow.activity)

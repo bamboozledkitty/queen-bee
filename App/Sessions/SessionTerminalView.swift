@@ -56,7 +56,10 @@ final class SessionTerminalView: TerminalView, TerminalViewDelegate {
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
         // Forgotten before the process hears of the new size: it repaints as soon as it does, on another
         // thread, and forgetting afterwards could throw away the start of that repaint.
-        if newCols < columns { output.forget() }
+        if newCols < columns {
+            let cursor = terminalStateSnapshot().cursor
+            output.forget(cursor: (cursor.col, cursor.row))
+        }
         columns = newCols
         var size = windowSize()
         link.windowSize = size

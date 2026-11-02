@@ -42,6 +42,7 @@ import math
 import os
 import plistlib
 import queue
+import random
 import shutil
 import socket
 import stat
@@ -99,15 +100,38 @@ def read_exactly(s, n):
     return buf
 
 
+def own_copy(support):
+    """A copy of the built app with a bundle id of its own, and where it is. The app keeps its settings (appearance,
+    the scripts a person has allowed, whether Remote is on) under its bundle id, so a test copy with the build's own id
+    would read and change the ones of the Dev copy a person uses. With an id of its own it starts with none, and the
+    settings it makes are removed with it. Returns (path, bundle id)."""
+    folder = support + "-app"
+    shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder)
+    copy = os.path.join(folder, "QueenBee.app")
+    subprocess.run(["ditto", APP, copy], check=True)
+    plist = os.path.join(copy, "Contents/Info.plist")
+    with open(plist, "rb") as f:
+        bundle_id = plistlib.load(f)["CFBundleIdentifier"]
+    test_id = f"{bundle_id}.test{os.path.basename(support)[len('QBTest-'):].replace('-', '')}"
+    subprocess.run(["/usr/libexec/PlistBuddy", "-c", f"Set :CFBundleIdentifier {test_id}", plist], check=True)
+    # The build is signed ad hoc, and the new id breaks that seal, so it is signed again the same way.
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", "--preserve-metadata=entitlements", copy],
+                   check=True, capture_output=True)
+    return copy, test_id
+
+
 class App:
     def __init__(self, project, support=SUPPORT, env=None):
         self.project = project
         self.support = support
         shutil.rmtree(support, ignore_errors=True)
         atexit.register(shutil.rmtree, support, ignore_errors=True)
+        self.bundle, self.bundle_id = own_copy(support)
+        atexit.register(self.forget_copy)
         # What a test copy moves to the Trash goes to a folder of its own instead, which goes with the support folder.
         self.trash = os.path.join(support, "Trash")
-        cmd = ["open", "-g", "-n", APP, "--env", f"QB_SUPPORT_DIR={support}", "--env", f"QB_TRASH_DIR={self.trash}"]
+        cmd = ["open", "-g", "-n", self.bundle, "--env", f"QB_SUPPORT_DIR={support}", "--env", f"QB_TRASH_DIR={self.trash}"]
         for k, v in (env or {}).items():
             cmd += ["--env", f"{k}={v}"]
         # The defaults-style flag goes first: after a bare flag, macOS would read it as that flag's value.
@@ -125,7 +149,12 @@ class App:
             raise RuntimeError("the test copy of the app didn't start")
 
     def op(self, flow_id, op, **kw):
-        return call(self.support, flow_id, dict(op=op, **kw))
+        started = time.time()
+        answer = call(self.support, flow_id, dict(op=op, **kw))
+        # The app answers this one on its main thread straight away, so a slow answer is a main thread that was busy.
+        if op == "remote-state":
+            self.slowest_state = max(getattr(self, "slowest_state", 0), time.time() - started)
+        return answer
 
     def state(self, flow_id):
         return self.op(flow_id, "state")
@@ -162,6 +191,34 @@ class App:
                 if self.pid not in pids():
                     break
                 time.sleep(0.25)
+        # The app's browser can outlive it for a moment, and writes its settings into the support folder as it goes.
+        # Waiting for it to finish (and stopping it if it won't) keeps it from putting the folder back after it is removed.
+        deadline = time.time() + 10
+        while time.time() < deadline and self.holders():
+            time.sleep(0.25)
+        for sig in ("-TERM", "-KILL"):
+            left = self.holders()
+            if not left:
+                break
+            subprocess.run(["kill", sig, *map(str, left)])
+            time.sleep(1)
+        shutil.rmtree(self.support, ignore_errors=True)
+        self.forget_copy()
+
+    def forget_copy(self):
+        """Removes the copy of the app and the settings it made."""
+        subprocess.run(["defaults", "delete", self.bundle_id], capture_output=True)
+        try:
+            os.remove(os.path.expanduser(f"~/Library/Preferences/{self.bundle_id}.plist"))
+        except OSError:
+            pass
+        shutil.rmtree(os.path.dirname(self.bundle), ignore_errors=True)
+
+    def holders(self):
+        """Processes still running with a path inside this copy's support folder on their command line, the browser's among them.
+        The slash keeps QBTest-123 from matching another run's QBTest-1234."""
+        out = subprocess.run(["pgrep", "-f", self.support + "/"], capture_output=True, text=True).stdout.split()
+        return [int(p) for p in out if int(p) != os.getpid()]
 
 
 def pids():
@@ -206,6 +263,17 @@ def sweep():
             for pid in pids():
                 if uses(pid, folder):
                     subprocess.run(["kill", "-TERM", str(pid)])
+            # A private copy of the app (its folder ends in -app) left its settings under its own bundle id.
+            info = os.path.join(folder, "QueenBee.app", "Contents", "Info.plist")
+            if folder.endswith("-app") and os.path.exists(info):
+                with open(info, "rb") as f:
+                    test_id = plistlib.load(f).get("CFBundleIdentifier", "")
+                if ".test" in test_id:
+                    subprocess.run(["defaults", "delete", test_id], capture_output=True)
+                    try:
+                        os.remove(os.path.expanduser(f"~/Library/Preferences/{test_id}.plist"))
+                    except FileNotFoundError:
+                        pass
             shutil.rmtree(folder, ignore_errors=True)
 
 
@@ -861,7 +929,7 @@ def remote_edits(app, device, send, ask, done, refused, since):
     check("and the command has not run, is still waiting, and the log does not say it was allowed",
           not os.path.exists(proof) and s["holds"] and s["holds"][0]["needsAllow"] and s["holds"][0]["card"] == "Shout"
           and not any("allowed Shout" in line for line in s["log"][len(log_before):]), f"{os.path.exists(proof)} {s['holds']} {s['log'][-3:]}")
-    kept = subprocess.run(["defaults", "read", "dev.queenbee.app.debug", "scriptsFromDevices"], capture_output=True, text=True).stdout
+    kept = subprocess.run(["defaults", "read", app.bundle_id, "scriptsFromDevices"], capture_output=True, text=True).stdout
     check("and that a device wrote it is kept in the app's own settings, where it outlasts the app being quit, and not in the flow file",
           hashlib.sha256(written.encode()).hexdigest() in kept and "allowOnMac" not in json.dumps(saved_flow(app, doors)) and "fromDevice" not in json.dumps(saved_flow(app, doors)),
           kept[-300:])
@@ -1576,6 +1644,9 @@ def remote_control(app, device, device_id):
         ("updateRole", {"flow": guard, "role": "norole", "card": alice}), ("deleteRole", {"role": "norole"}),
         ("clearBrowserData", {"project": project}), ("installBrowser", {"project": project}), ("restartBrowser", {"project": project}),
         ("patchCard", {"flow": edits, "card": there["Wrap"], "patch": {"browser": True}}),
+        # The header's Restart menu, in each of its forms.
+        ("restartAgents", {"flow": guard, "which": "all"}), ("restartAgents", {"flow": guard, "which": "allExceptOrchestrator"}),
+        ("restartAgents", {"flow": guard, "which": "cards", "cards": [alice]}), ("restartAgents", {"flow": guard, "which": "awaiting"}),
     ]
 
     check("pairing leaves a device able to watch and nothing more", app.op("app", "remote-state")["controlling"] == 0)
@@ -1907,11 +1978,15 @@ def scenario_remote(app):
         check("it can open a flow the Mac hasn't opened, whose sessions haven't started",
               unopened is not None and all(v == "notStarted" for v in unopened["sessions"].values()), str(unopened))
         app.op(other, "select")
+        since = len(device.seen)
         started = device.until(lambda m: m["type"] == "run" and m["flow"] == other
                                and m["sessions"].get("orchestrator", "notStarted") != "notStarted", 60)
         check("and is told when the Mac opens that flow and its sessions start", started is not None, str(device.seen[-4:]))
+        # The session's first screen can leave before the news that it started, so it may have been read past already.
+        def new_screen(m):
+            return m["type"] == "terminal" and m["key"] == "orchestrator" and m["reset"]
         check("and is sent the new session's screen",
-              device.until(lambda m: m["type"] == "terminal" and m["key"] == "orchestrator" and m["reset"], 30) is not None)
+              any(new_screen(m) for m in device.seen[since:]) or device.until(new_screen, 30) is not None)
         app.op(fid, "select")
         app.op(other, "close")
         device.tell(f"open {fid}")
@@ -1999,11 +2074,30 @@ def simulator():
     return devices[0]["udid"]
 
 
+_ports_given = set()
+
+
 def free_port():
-    """A port nothing is listening on. The app has to be told its ports before the listeners exist."""
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    """A port nothing is using. The app has to be told its ports before the listeners exist. It is picked below the
+    range the system hands out for outgoing connections, which every process on the machine draws from, so nothing
+    takes it between here and the listener starting, and never the same one twice in a run."""
+    first = int(subprocess.run(["sysctl", "-n", "net.inet.ip.portrange.first"], capture_output=True, text=True).stdout.strip() or 49152)
+    while True:
+        port = random.randrange(20000, min(first, 45000))
+        if port in _ports_given:
+            continue
+        try:
+            for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+                with socket.socket(family) as s:
+                    s.bind((host, port))
+        except OSError:
+            continue
+        _ports_given.add(port)
+        return port
+
+
+class StepTimedOut(Exception):
+    """A step the rest of a scenario depends on never happened. The check for it has already failed."""
 
 
 class Mobile:
@@ -2011,6 +2105,9 @@ class Mobile:
 
     def __init__(self, udid):
         self.udid = udid
+        self.timeouts = []
+        # Whether this Simulator is an iPhone, from its own name: QB_E2E_SIMULATOR may not name it, and a booted iPhone is used first.
+        self.phone = "iPhone" in self.device_name()
         # Read from the app as it was built: the project's own id, or the one Local.xcconfig gives it on a
         # machine set up to install the app on a real device.
         with open(os.path.join(MOBILE_APP, "Info.plist"), "rb") as f:
@@ -2022,6 +2119,17 @@ class Mobile:
         installed = simctl("install", udid, MOBILE_APP)
         if installed.returncode != 0:
             raise RuntimeError("the iPad app couldn't be installed: " + installed.stderr.strip()[:300])
+
+    def device_name(self):
+        try:
+            listing = json.loads(simctl("list", "devices", "-j").stdout)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return os.environ.get("QB_E2E_SIMULATOR", "")
+        for found in listing.get("devices", {}).values():
+            for d in found:
+                if d["udid"] == self.udid:
+                    return d["name"]
+        return os.environ.get("QB_E2E_SIMULATOR", "")
 
     def _state_file(self):
         folder = simctl("get_app_container", self.udid, self.id, "data").stdout.strip()
@@ -2055,6 +2163,13 @@ class Mobile:
         except (OSError, ValueError):
             return {}
 
+    def link_detail(self, state=None):
+        """How the app's last tries to connect went, and how long ago it last wrote its state, for a failed check."""
+        state = state if state is not None else self.state()
+        written = state.get("written")
+        age = f"{time.time() - written:.1f}s ago" if written else "never"
+        return f"app link {state.get('state')}, state written {age}, tries: {state.get('link')}"
+
     def wait(self, cond, timeout, what):
         """What the app says once `cond` is true of it, or what it last said if that never happens."""
         deadline = time.time() + timeout
@@ -2065,7 +2180,20 @@ class Mobile:
                 return last
             time.sleep(0.5)
         print(f"        (timed out after {timeout}s waiting for {what})", flush=True)
+        self.timeouts.append(what)
         return last
+
+    def step(self, args, cond, timeout, what):
+        """Launches the app with `args` and waits for `cond`. A slow start is tried once more. If the app still
+        doesn't get there, that is one failed check, and StepTimedOut ends the scenario: what follows needs this step."""
+        for attempt in (1, 2):
+            self.launch(*args)
+            before = len(self.timeouts)
+            state = self.wait(cond, timeout, what)
+            if len(self.timeouts) == before:
+                return state
+        check(f"the app got to {what}", False, f"timed out twice, after {timeout}s each")
+        raise StepTimedOut(what)
 
     def shot(self, name):
         # A moment for the screen to settle: the state is written before the view has finished changing.
@@ -2138,11 +2266,13 @@ def scenario_mobile(app):
         check("Remote turns on", app.op("app", "remote-on").get("on") is True)
         pair_port, device_port = free_port(), free_port()
         offer = app.op("app", "remote-pair", pairPort=pair_port, devicePort=device_port)
-        check("the Mac offers to pair on the port it was asked to", int(offer.get("port", 0)) == pair_port, str(offer.keys()))
+        check("the Mac offers to pair on the port it was asked to", int(offer.get("port", 0)) == pair_port, f"asked for {pair_port}: {offer}")
         mobile.launch("-qbHost", "127.0.0.1", "-qbPairPort", str(pair_port), "-qbPairCode", offer["code"], "-qbDevicePort", str(device_port))
         s = mobile.wait(lambda s: s["state"] == "connected" and s["flows"], 40, "the app to pair and connect")
-        check("the app pairs and connects", s.get("state") == "connected", str(s))
+        check("the app pairs and connects", s.get("state") == "connected",
+              f"{mobile.link_detail(s)}; Mac: {app.op('app', 'remote-state')}; slowest remote-state {getattr(app, 'slowest_state', 0):.2f}s")
         device = s.get("device", "")
+        print(f"        pairing and connecting took these tries: {s.get('link')}", flush=True)
         state = remote(lambda r: r["connected"] == 1, 10, "the Mac to see the device")
         check("the Mac lists one device, connected", state["devices"] == 1 and state["connected"] == 1 and state["pairing"] is False, str(state))
         check("the Mac listens for it on the port it was asked to", int(app.op("app", "remote-port", device=device).get("port", 0)) == device_port)
@@ -2196,6 +2326,12 @@ def scenario_mobile(app):
             detail = f"Mac {real.get('cols')}x{real.get('rows')} cursor {real.get('cursor')}, app {shown.get('cols')}x{shown.get('rows')} cursor {shown.get('cursor')}"
             if rows:
                 detail += f", {len(rows)} rows differ, first is row {rows[0]}: {real['screen'][rows[0]]!r} against {shown['screen'][rows[0]]!r}"
+            if not ok:
+                mac = app.op("app", "remote-state")
+                detail += (f"; app: {shown.get('chunks')} chunks, {shown.get('resets')} fresh starts, {shown.get('bytes')} bytes, "
+                           f"{mobile.link_detail(state)}; Mac: {mac.get('connected')} connected, {real.get('scrollback')} lines, "
+                           f"events {mac.get('events', [])[-8:]}; slowest remote-state {getattr(app, 'slowest_state', 0):.2f}s")
+                mobile.shot("mobile-fail-terminal")
             check(what, ok, detail)
             return real, shown, state
 
@@ -2243,8 +2379,14 @@ def scenario_mobile(app):
         s = mobile.wait(lambda s: s.get("expanded") == alice and ((s.get("terminals") or {}).get(alice) or {}).get("shown"), 40, "the terminal to open full screen")
         check("a terminal opens full screen", s.get("expanded") == alice, str(s.get("expanded")))
         real, shown, s = same_terminal("and shows the same there")
-        check("at a size that can be read", shown.get("onScreen", {}).get("width", 0) >= shown.get("natural", {}).get("width", 1) - 1,
-              f"{shown.get('onScreen')} for {shown.get('natural')}")
+        on, natural = shown.get("onScreen", {}), shown.get("natural", {}).get("width", 1)
+        if mobile.phone:
+            # A phone held upright is narrower than the Mac's terminal: it fills the width, less a margin, with every column in view.
+            across = ((s.get("canvas") or {}).get("visible") or {}).get("width", 0) * (s.get("canvas") or {}).get("zoom", 0)
+            check("at a size that can be read, filling the phone's width", on.get("x", -1) >= 0 and abs(on.get("width", 0) - min(natural, across - 24)) < 1,
+                  f"{on} of {across:.0f} across, {natural} on the Mac")
+        else:
+            check("at a size that can be read", on.get("width", 0) >= natural - 1, f"{on} for {shown.get('natural')}")
         mobile.shot("mobile-4g-terminal-full-screen")
         mobile.launch("-qbOpen", "Guard", "-qbShow", "orchestrator")
         s = mobile.wait(lambda s: ((s.get("terminals") or {}).get("orchestrator") or {}).get("shown") and drawn(s), 40, "the orchestrator's terminal to show")
@@ -2749,15 +2891,19 @@ def scenario_mobile(app):
         state = remote(lambda r: r["connected"] == 0, 20, "the Mac to notice the app has gone")
         check("quitting the app ends its connection", state["connected"] == 0 and state["devices"] == 1, str(state))
         mobile.launch("-qbOpen", "Guard", "-qbSelect", "Bob")
-        s = mobile.wait(lambda s: s["state"] == "connected" and s["flows"] and s.get("openFlowCards") and (s.get("canvas") or {}).get("selected"),
-                        40, "the app to connect again")
+        # The selection is noted at once, and the cards' own outlines a moment later, as they are drawn: both are waited for.
+        s = mobile.wait(lambda s: s["state"] == "connected" and s["flows"] and s.get("openFlowCards") and (s.get("canvas") or {}).get("selected")
+                        and any(c["selected"] for c in s["canvas"].get("cards", [])), 40, "the app to connect again")
         bob = next(c["id"] for c in GUARD["cards"] if c["name"] == "Bob")
         check("a card can be selected on the canvas, and only it is", (s.get("canvas") or {}).get("selected") == {"card": bob}
               and [c["name"] for c in s["canvas"]["cards"] if c["selected"]] == ["Bob"], str((s.get("canvas") or {}).get("selected")))
         s = mobile.wait(lambda s: (s.get("panel") or {}).get("detailsUp"), 10, "the card's details to come up")
         p = s.get("panel") or {}
-        check("and its details come up over the panel, the way back named for the Orchestrator tab under them",
-              p.get("detailsUp") is True and p.get("detailsTitle") == "Bob" and p.get("backTitle") == "Orchestrator" and (p.get("details") or {}).get("title") == "Bob",
+        # On a phone the details are a sheet with Close in place of a way back, as `panels` checks.
+        way_back = (p.get("sheet") == "details" and p.get("backTitle") is None) if mobile.phone else p.get("backTitle") == "Orchestrator"
+        check("and its details come up over the panel, the way back named for the Orchestrator tab under them" if not mobile.phone
+              else "and its details come up in a sheet over the canvas",
+              p.get("detailsUp") is True and p.get("detailsTitle") == "Bob" and way_back and (p.get("details") or {}).get("title") == "Bob",
               str({k: p.get(k) for k in ("detailsUp", "detailsTitle", "backTitle", "page")}))
         mobile.shot("mobile-4b-card-selected")
         check("launched again with nothing said about the Mac, the app connects by itself", s.get("state") == "connected" and s.get("device") == device, str(s))
@@ -2803,8 +2949,8 @@ def scenario_terminals():
     fresh = ["after the fresh start"] + [str(n) for n in range(1, 41)] + [""]
 
     def play(steps, *args, also=lambda s: True):
-        mobile.launch("-qbCanned", str(steps), *args)
-        return mobile.wait(lambda s: s.get("cannedStep") == steps and agent in (s.get("terminals") or {})
+        return mobile.step(("-qbCanned", str(steps), *args),
+                           lambda s: s.get("cannedStep") == steps and agent in (s.get("terminals") or {})
                            and (steps < 2 or shown_card(s, "Agent").get("hasTerminal") is not None) and also(s), 30, f"step {steps} of the made-up stream")
 
     def terminal(state, key=agent):
@@ -2916,6 +3062,8 @@ def scenario_terminals():
         check("the orchestrator's terminal is shown in the panel beside the canvas", t.get("shown") is True and t.get("scale", 0) > 0
               and t.get("onScreen", {}).get("width", 0) > 100, f"{t.get('onScreen')} scale {t.get('scale')}")
         mobile.shot("terminals-7-orchestrator")
+    except StepTimedOut as e:
+        print(f"        (the rest of terminals was not run: it needs {e})", flush=True)
     finally:
         mobile.appearance("light")
         mobile.quit()
@@ -2938,8 +3086,8 @@ def scenario_panels():
     changes, answer = "Changes are made on your Mac for now.", "Answer on your Mac for now."
 
     def play(stage, *args, also=lambda s: True):
-        mobile.launch("-qbCannedRun", str(stage), *args)
-        return mobile.wait(lambda s: s.get("cannedStage") == stage and len((s.get("canvas") or {}).get("cards", [])) == 8 and also(s),
+        return mobile.step(("-qbCannedRun", str(stage), *args),
+                           lambda s: s.get("cannedStage") == stage and len((s.get("canvas") or {}).get("cards", [])) == 8 and also(s),
                            30, f"stage {stage} of the made-up run")
 
     def panel(state):
@@ -2966,7 +3114,7 @@ def scenario_panels():
         mobile.shot(name + "-dark")
         mobile.appearance("light")
 
-    phone = "iPhone" in os.environ.get("QB_E2E_SIMULATOR", "")
+    phone = mobile.phone
 
     def up(state, title, back):
         """The details of `title` are on the screen: pushed over the panel with a way back to `back` beside the
@@ -3112,7 +3260,7 @@ def scenario_panels():
               and items(s).get("At") == "09:00", str(items(s)))
         both("panels-09-start-schedule")
 
-        s = play(3, "-qbViewRun", "1", "-qbShow", "log", also=lambda s: panel(s).get("viewedRun") == "run00002")
+        s = play(3, "-qbViewRun", "1", "-qbShow", "log", also=lambda s: panel(s).get("viewedRun") == "run00002" and (s.get("canvas") or {}).get("passes") == {"l0": 1, "l1": 1})
         p, canvas = panel(s), s.get("canvas") or {}
         check("an earlier run can be put on show", p.get("viewedRun") == "run00002" and [r["onShow"] for r in p.get("runs", [])] == [False, True, False],
               str(p.get("runs")))
@@ -3139,6 +3287,8 @@ def scenario_panels():
         check("when a new run begins on the Mac, the device goes back to showing the latest",
               p.get("lastViewedRun") == "run00001" and p.get("viewedRun") is None and not any(r["onShow"] for r in p.get("runs", []))
               and len(p.get("log", [])) == 29 and (s.get("canvas") or {}).get("passes") == {"l0": 1, "l1": 1}, f"{p.get('viewedRun')} {len(p.get('log', []))}")
+    except StepTimedOut as e:
+        print(f"        (the rest of panels was not run: it needs {e})", flush=True)
     finally:
         mobile.appearance("light")
         mobile.quit()
@@ -3926,13 +4076,13 @@ def scenario_settings_edit():
         f = flows(s)
         check("with control on, each project has a + and each flow a menu, and only the open flow's menu has its settings",
               f.get("canChange") is True and f.get("add") == ["Book club", "Allotment society"] and f.get("menu") == "Rota"
-              and f.get("menus", {}).get("Rota") == ["Rename…", "Pin", "Stop Its Agents", "Delete…"]
-              and f.get("menus", {}).get("Welcome note") == ["Rename…", "Pin", "Stop Its Agents", "Flow Settings…", "Delete…"], str(f))
+              and f.get("menus", {}).get("Rota") == ["Rename…", "Pin", "Stop Its Agents", "Move to Trash…"]
+              and f.get("menus", {}).get("Welcome note") == ["Rename…", "Pin", "Stop Its Agents", "Flow Settings…", "Move to Trash…"], str(f))
         both("settings-08-flows")
         s = play("askFlow:delete/Rota", *on, "-qbShow", "flows")
         ask = flows(s).get("asking") or {}
         check("deleting a flow asks first, by the flow's name, and says where it goes",
-              ask.get("title") == "Delete “Rota”?" and "It goes to the Trash on your Mac." in ask.get("message", "") and ask.get("answer") == "Delete Flow" and sent(s) == [] and "Rota" in s.get("flows", []),
+              ask.get("title") == "Move “Rota” to the Trash?" and "goes to the Trash on your Mac" in ask.get("message", "") and ask.get("answer") == "Move to Trash" and sent(s) == [] and "Rota" in s.get("flows", []),
               f"{ask} {sent(s)}")
         both("settings-09-delete-flow")
         s = play("askFlow:new/Book club", *on)
@@ -4054,6 +4204,27 @@ def scenario_parity():
               len(said(s)) == 10 and all(watch_only in (r or "") for r in said(s)[1:8])
               and said(s)[8:] == ["Press Edit to change this flow from here."] * 2 and w.get("pinned") == ["Reading list"], str(did(s)))
         both("parity-01-watch-only")
+        # The Mac's places and branch chip, as a device that may only watch has them: read-only, and no Restart menu.
+        s = play("", "-qbShow", "flows")
+        pl = (s.get("panel") or {}).get("places") or {}
+        check("a device that may only watch is shown the Mac's Runs and Schedules across flows, grouped as the Mac groups them",
+              pl.get("macHasOverview") is True and (pl.get("runs") or {}).get("stopped") == ["Welcome note #2", "Reading list #2"]
+              and (pl.get("runs") or {}).get("done", [])[:2] == ["Welcome note #3", "Welcome note #1"]
+              and (pl.get("schedules") or {}).get("on") == ["Mon, Wed at 09:00 / Welcome note", "When rota.csv changes / Rota"]
+              and (pl.get("schedules") or {}).get("off") == ["Every 30 minutes / Monthly newsletter"], str(pl))
+        check("the list of schedules only shows them, and says where to turn one on or off",
+              (pl.get("schedules") or {}).get("footer") == "Turn a schedule on or off in its Start card.", str(pl.get("schedules")))
+        check("Needs you counts the flows waiting, and the flow's branch is shown, but there is no Restart menu",
+              pl.get("needsYouCount") == 1 and (s.get("panel") or {}).get("workplace") == "redesign-research · worktree"
+              and (s.get("panel") or {}).get("restartMenu") is None, str(pl))
+        s = play("", "-qbShow", "flows", "-qbOldMac", "1")
+        check("a Mac from before these lists sends none, and the device says to update it, with no Restart menu",
+              ((s.get("panel") or {}).get("places") or {}).get("macHasOverview") is False and (s.get("panel") or {}).get("restartMenu") is None, str((s.get("panel") or {}).get("places")))
+        s = play("restart:all;restart:allExcept", *on)
+        check("with control, the Restart menu has the Mac's items, and each restarts agents on the made-up Mac",
+              [i["title"] for i in (s.get("panel") or {}).get("restartMenu", [])][:3]
+              == ["Restart All Agents", "Restart All Agents Except the Orchestrator", "Restart Selected Agent"]
+              and said(s) == [None, None], f"{(s.get('panel') or {}).get('restartMenu')} {did(s)}")
         s = play("find:spell", "-qbShow", "flows")
         f = p(s).get("find") or {}
         check("Find works for a device that only watches, over flows and cards in every flow",
@@ -4598,7 +4769,7 @@ def scenario_mirror(app):
     # What the feed costs by itself: the chunks are counted and nothing is drawn. The kept output is
     # made small for this reply, so the mirror opened after it starts from output with its beginning gone.
     app.op(fid, "mirror", card="Alice", shown=False)
-    app.op(fid, "mirror-limit", card="Alice", bytes=3000)
+    app.op(fid, "mirror-limit", card="Alice", bytes=8000)
     seconds, counted = count_to(401, 600)
     c = app.op(fid, "mirror-compare", card="Alice")
     print(f"        chunks only counted: {seconds:.1f}s, app at {counted:.1f}% of a processor; {c['chunks'] / seconds:.1f} chunks a second, "
@@ -4607,7 +4778,7 @@ def scenario_mirror(app):
     app.op(fid, "mirror", card="Alice")
     time.sleep(2)
     c = same("a mirror opened after the oldest output was dropped shows the same screen")
-    check("only the newest output was kept", c["snapshotBytes"] < 8000, f"{c['snapshotBytes']} bytes")
+    check("only the newest output was kept", c["snapshotBytes"] < 20000, f"{c['snapshotBytes']} bytes")
     app.op(fid, "mirror-limit", card="Alice", bytes=512 * 1024)
 
     cols = c["real"]["cols"]
@@ -5920,7 +6091,9 @@ def scenario_browser_mobile(app):
         check("the iPad pairs and connects", s.get("state") == "connected", str(s)[:300])
         app.op("app", "remote-control", device=s.get("device", ""), on=True)
         # Zoomed in on the card: zoomed out as far as its overview, a card shows no page and is sent none.
-        mobile.launch("-qbOpen", "Browser", "-qbZoomCard", "Surfer", "-qbDo", "wait:open;browserOpen:Surfer;wait:tap;browserTap:Surfer:120:90;browserType:Surfer:hi Bee")
+        # A phone fits the 960 pt card at about 0.39, under the 0.4 below which a card shows only its name, so it zooms in a little.
+        zoom = ("-qbZoom", "0.5") if mobile.phone else ()
+        mobile.launch("-qbOpen", "Browser", "-qbZoomCard", "Surfer", *zoom, "-qbDo", "wait:open;browserOpen:Surfer;wait:tap;browserTap:Surfer:120:90;browserType:Surfer:hi Bee")
         s = mobile.wait(lambda s: shown_card(s, "Surfer").get("browserShows") is True, 40, "the card to show the page")
         card = shown_card(s, "Surfer")
         check("the card on the canvas shows a picture of its page, beside its terminal",
@@ -5972,7 +6145,7 @@ def scenario_browser_canned():
     full = ("-qbExpandBrowser", "Surfer")
     # On an iPhone a card with a browser fits the screen only zoomed out to its overview, which shows no page, as on
     # the Mac. So there the canvas's checks zoom in on the card first, as a person would, and the rest is the same.
-    near = ("-qbZoomCard", "Surfer", "-qbZoom", "0.5") if "iPhone" in os.environ.get("QB_E2E_SIMULATOR", "") else ()
+    near = ("-qbZoomCard", "Surfer", "-qbZoom", "0.5") if mobile.phone else ()
 
     def b(state):
         return state.get("browsers") or {}

@@ -11,11 +11,11 @@ struct PlaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: DS.Space.s) {
-                if !showsSidebar { Spacer().frame(width: 64) }
+                if !showsSidebar { Spacer().frame(width: DS.Size.windowControlsInset) }
                 Button { showsSidebar.toggle() } label: { Image(systemName: "sidebar.leading") }
                     .buttonStyle(.dsIcon)
                     .accessibilityLabel(showsSidebar ? "Hide projects" : "Show projects")
-                Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.textMuted.color)
+                Image(systemName: icon).dsIcon(DS.IconSize.xl, .medium).foregroundStyle(Palette.textMuted.color)
                 Text(title).textRole(.body).fontWeight(.medium).foregroundStyle(Palette.text.color)
                 Spacer()
             }
@@ -77,26 +77,37 @@ private struct GroupHeader: View {
     }
 }
 
-/// A row in a place's list: highlighted under the pointer, filled when chosen.
-private struct PlaceRow<Content: View>: View {
+/// A row in a place's list: highlighted under the pointer, filled when chosen. The row itself is one button.
+/// Controls of their own go in `trailing`, beside that button and not inside it, so each can be pressed alone.
+private struct PlaceRow<Content: View, Trailing: View>: View {
     var isSelected = false
     let action: () -> Void
     @ViewBuilder let content: Content
+    @ViewBuilder let trailing: Trailing
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: DS.Space.m) { content }
-                .textRole(.body)
-                .padding(.horizontal, DS.Space.xl)
-                .frame(maxWidth: .infinity, minHeight: DS.Size.listRow, alignment: .leading)
-                .background((isSelected ? Palette.accentTint : isHovered ? Palette.hover : Palette.panel.opacity(0)).color)
-                .overlay(alignment: .bottom) { DSDivider() }
-                .contentShape(Rectangle())
+        HStack(spacing: DS.Space.m) {
+            Button(action: action) {
+                HStack(spacing: DS.Space.m) { content }
+                    .textRole(.body)
+                    .frame(maxWidth: .infinity, minHeight: DS.Size.listRow, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            trailing
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, DS.Space.xl)
+        .background((isSelected ? Palette.accentTint : isHovered ? Palette.hover : Palette.panel.opacity(0)).color)
+        .overlay(alignment: .bottom) { DSDivider() }
         .onHover { isHovered = $0 }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+extension PlaceRow where Trailing == EmptyView {
+    init(isSelected: Bool = false, action: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.init(isSelected: isSelected, action: action, content: content, trailing: { EmptyView() })
     }
 }
 
@@ -123,7 +134,7 @@ private struct EmptyPlace: View {
 
     var body: some View {
         VStack(spacing: DS.Space.m) {
-            Image(systemName: symbol).font(.system(size: 28, weight: .light)).foregroundStyle(Palette.textFaint.color)
+            Image(systemName: symbol).dsIcon(DS.IconSize.hero, .light).foregroundStyle(Palette.textFaint.color)
             Text(title).textRole(.headline).foregroundStyle(Palette.text.color)
             Text(text).textRole(.body).foregroundStyle(Palette.textMuted.color).multilineTextAlignment(.center).frame(maxWidth: 380)
         }
@@ -146,12 +157,13 @@ private struct NeedsYouList: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     GroupHeader(title: "Waiting on you", count: waiting.count, tone: .live)
-                    ForEach(waiting, id: \.card.id) { entry in
-                        PlaceRow { services.reveal(flowID: entry.controller.flow.id, cardID: entry.card.id) } content: {
+                    // A card's id is only unique in its flow, and a copied flow keeps its cards' ids.
+                    ForEach(waiting.map { WaitingRow(controller: $0.controller, card: $0.card) }) { entry in
+                        PlaceRow { services.reveal(entry.controller, cardID: entry.card.id) } content: {
                             Image(systemName: CanvasGeometry.icon(for: entry.card.kind))
-                                .font(.system(size: 12, weight: .medium))
+                                .dsIcon(DS.IconSize.l, .medium)
                                 .foregroundStyle(Palette.liveText.color)
-                                .frame(width: 16)
+                                .frame(width: DS.Size.iconSlot)
                             Text(entry.card.name).foregroundStyle(Palette.text.color).lineLimit(1)
                             Text(asks(entry.card, in: entry.controller)).foregroundStyle(Palette.textMuted.color).lineLimit(1)
                             Spacer(minLength: DS.Space.s)
@@ -176,7 +188,7 @@ private struct NeedsYouList: View {
 
 /// Every flow's runs, the ones going now first, then the ones that stopped, then the ones that finished.
 /// Choosing one shows its log beside the list.
-private struct RunsList: View {
+struct RunsList: View {
     @State private var chosen: String?
     private var services: AppServices { AppServices.shared }
 
@@ -184,7 +196,7 @@ private struct RunsList: View {
         let controller: FlowController
         /// Nil for the run going now, which isn't recorded until it ends.
         let record: RunRecord?
-        var id: String { record?.id ?? "live:\(controller.flow.id)" }
+        var id: String { "\(ObjectIdentifier(controller))/" + (record?.id ?? "live:\(controller.flow.id)") }
         var started: Date { record?.started ?? .distantFuture }
         var number: Int? { record.map(\.number) ?? RunRecord.nextNumber(after: controller.runs) }
     }
@@ -224,7 +236,7 @@ private struct RunsList: View {
             ForEach(entries) { entry in
                 PlaceRow(isSelected: chosen == entry.id) {
                     if entry.record == nil {
-                        services.selectedFlowID = entry.controller.flow.id
+                        services.selectedFlow = entry.controller
                     } else {
                         chosen = chosen == entry.id ? nil : entry.id
                     }
@@ -259,16 +271,29 @@ private struct RunsList: View {
             case .failed?: Image(systemName: "xmark").foregroundStyle(Palette.fail.color)
             }
         }
-        .font(.system(size: 11, weight: .bold))
-        .frame(width: 16)
+        .dsIcon(DS.IconSize.m, .bold)
+        .frame(width: DS.Size.iconSlot)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.outcomeName(record))
+    }
+
+    private static func outcomeName(_ record: RunRecord?) -> String {
+        switch record?.outcome {
+        case nil: "Running"
+        case .finished?: "Finished"
+        case .stopped?: "Stopped"
+        case .failed?: "Failed"
+        }
     }
 
     private func detail(_ entry: Entry) -> String {
-        guard let record = entry.record else {
-            let handOffs = entry.controller.handOffs
-            return "Running · \(handOffs) \(handOffs == 1 ? "hand-off" : "hand-offs")"
-        }
-        return "\(record.summary) · \(record.handOffs) \(record.handOffs == 1 ? "hand-off" : "hand-offs")"
+        guard let record = entry.record else { return "Running" + Self.handOffs(entry.controller.handOffs) }
+        return record.summary + Self.handOffs(record.handOffs)
+    }
+
+    /// Only replies passed to agents count, so a run of scripts alone has none, and then nothing is said.
+    static func handOffs(_ count: Int) -> String {
+        count == 0 ? "" : " · \(count) \(count == 1 ? "hand-off" : "hand-offs")"
     }
 }
 
@@ -278,6 +303,13 @@ private struct RunPeek: View {
     let record: RunRecord
     let close: () -> Void
     private var services: AppServices { AppServices.shared }
+
+    /// The time in the person's own format, with the day when it isn't today.
+    private static func time(of date: Date) -> String {
+        Calendar.current.isDateInToday(date)
+            ? date.formatted(date: .omitted, time: .shortened)
+            : date.formatted(date: .abbreviated, time: .shortened)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -292,7 +324,7 @@ private struct RunPeek: View {
                         .accessibilityLabel("Close")
                 }
                 Text(controller.flow.name).textRole(.title).foregroundStyle(Palette.text.color)
-                HStack(spacing: 6) {
+                HStack(spacing: DS.Space.tight) {
                     StatusPill(record.summary, tone: record.outcome == .finished ? .pass : record.outcome == .failed ? .fail : .neutral)
                     if !record.cost.isZero { StatusPill(record.cost.price, tone: .neutral, dot: false) }
                 }
@@ -303,7 +335,7 @@ private struct RunPeek: View {
                 LazyVStack(alignment: .leading, spacing: DS.Space.s) {
                     ForEach(record.log) { line in
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
-                            Text(line.date, format: .dateTime.hour().minute())
+                            Text(Self.time(of: line.date))
                                 .textRole(.monoCaption)
                                 .foregroundStyle(Palette.textFaint.color)
                                 .lineLimit(1)
@@ -316,7 +348,7 @@ private struct RunPeek: View {
             }
             DSDivider()
             Button {
-                services.selectedFlowID = controller.flow.id
+                services.selectedFlow = controller
                 controller.view(run: record.id)
             } label: { Text("Show on the canvas").frame(maxWidth: .infinity) }
                 .buttonStyle(.ds(.secondary, wide: true))
@@ -329,13 +361,14 @@ private struct RunPeek: View {
 
 /// Every Start card with a schedule, in every flow: which are on and when each runs next.
 private struct SchedulesList: View {
+    @State private var confirming: Entry?
     private var services: AppServices { AppServices.shared }
 
     private struct Entry: Identifiable {
         let controller: FlowController
         let card: Card
         let trigger: Trigger
-        var id: String { "\(controller.flow.id)/\(card.id)" }
+        var id: String { "\(ObjectIdentifier(controller))/\(controller.flow.id)/\(card.id)" }
     }
 
     var body: some View {
@@ -356,7 +389,23 @@ private struct SchedulesList: View {
                     group("Off", off, tone: .neutral)
                 }
             }
+            .confirmationDialog("Turn on this schedule?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                                titleVisibility: .visible, presenting: confirming) { entry in
+                Button("Turn on") { entry.controller.setTrigger(entry.trigger, onCard: entry.card.id) }
+                Button("Cancel", role: .cancel) {}
+            } message: { entry in
+                Text(consequence(of: entry))
+            }
         }
+    }
+
+    /// What turning the schedule on will do, in the words the person needs to agree to it.
+    private func consequence(of entry: Entry) -> String {
+        let command = (entry.card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let shown = command.count > 300 ? String(command.prefix(300)) + "…" : command
+        let begins = shown.isEmpty ? "with no command" : "with this command: \(shown)"
+        return "\(entry.trigger.summary(in: .current)), \(entry.controller.flow.name) runs from \(entry.card.name) with nobody watching, "
+            + "starting \(begins)\nQueen Bee has to be open for it to run."
     }
 
     @ViewBuilder
@@ -365,24 +414,26 @@ private struct SchedulesList: View {
             GroupHeader(title: title, count: entries.count, tone: tone)
             ForEach(entries) { entry in
                 let armed = entry.controller.isArmed(entry.card)
-                PlaceRow { AppServices.shared.reveal(flowID: entry.controller.flow.id, cardID: entry.card.id) } content: {
+                PlaceRow(action: { AppServices.shared.reveal(entry.controller, cardID: entry.card.id) }) {
                     Image(systemName: entry.trigger.kind == .file ? "doc" : "clock")
-                        .font(.system(size: 12, weight: .medium))
+                        .dsIcon(DS.IconSize.l, .medium)
                         .foregroundStyle(Palette.textMuted.color)
-                        .frame(width: 16)
-                    Text(entry.trigger.summary).foregroundStyle(Palette.text.color).lineLimit(1)
+                        .frame(width: DS.Size.iconSlot)
+                    Text(entry.trigger.summary(in: .current)).foregroundStyle(Palette.text.color).lineLimit(1)
                     Text("from \(entry.card.name)").foregroundStyle(Palette.textMuted.color).lineLimit(1)
                     Spacer(minLength: DS.Space.s)
                     if armed, let next = entry.controller.nextFires[entry.card.id] {
                         Text("Next \(RunPicker.label(for: next))").textRole(.caption).foregroundStyle(Palette.textMuted.color)
                     }
                     FlowTag(controller: entry.controller)
+                } trailing: {
                     if armed {
                         Button("Turn off") { entry.controller.turnScheduleOff(onCard: entry.card.id) }
                             .buttonStyle(.ds(.ghost))
                     } else {
-                        // A schedule that came in the flow's file, or from an undo, runs only once it is turned on here.
-                        Button("Turn on") { entry.controller.setTrigger(entry.trigger, onCard: entry.card.id) }
+                        // A schedule that came in the flow's file, or from an undo, runs only once it is turned on here,
+                        // after being shown what it will run.
+                        Button("Turn on") { confirming = entry }
                             .buttonStyle(.ds(.secondary))
                     }
                 }
@@ -402,4 +453,11 @@ private struct DevicesPlace: View {
             .frame(maxWidth: 640)
             .frame(maxWidth: .infinity)
     }
+}
+
+/// A card waiting on the person, known by its flow as well as its own id.
+private struct WaitingRow: Identifiable {
+    let controller: FlowController
+    let card: Card
+    var id: String { "\(ObjectIdentifier(controller))/\(card.id)" }
 }

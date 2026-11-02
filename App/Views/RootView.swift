@@ -19,7 +19,7 @@ enum PanelTab: String, CaseIterable {
 /// rounded panel inset from the window's edges, with its header and tabs along the top and the side panel
 /// down its right.
 struct WorkspaceView: View {
-    static let gap = Theme.Space.m
+    static let gap = DS.Space.m
 
     @AppStorage("showsSidebar") private var showsSidebar = true
     @AppStorage("showsPanel") private var showsPanel = true
@@ -51,7 +51,7 @@ struct WorkspaceView: View {
                 // Over everything, near the top, like a search field that came to you.
                 VStack {
                     FindPanel { services.showsFind = false }
-                        .padding(.top, 90)
+                        .padding(.top, DS.Size.findInset)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -64,7 +64,7 @@ struct WorkspaceView: View {
             if services.showsPalette, let controller = services.current {
                 VStack {
                     CommandPalette(controller: controller) { services.showsPalette = false }
-                        .padding(.top, 140)
+                        .padding(.top, DS.Size.commandInset)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -114,7 +114,7 @@ struct WorkspaceView: View {
                 ZStack {
                     if let controller = services.current {
                         CanvasRepresentable(controller: controller)
-                            .id(controller.flow.id)
+                            .id(controller.objectID)
                         CanvasControls(controller: controller) {
                             tab = .log
                             showsPanel = true
@@ -124,12 +124,12 @@ struct WorkspaceView: View {
                         }
                         .environment(\.orchestratorIsShowing, showsPanel && tab == .orchestrator)
                         .padding(Self.gap)
-                        .id(controller.flow.id)
+                        .id(controller.objectID)
                         if controller.showsFlowSettings {
                             // Over the canvas rather than in its place, so the agents' terminals keep their views.
                             ScrollView {
                                 FlowSettingsView(controller: controller)
-                                    .frame(maxWidth: 520)
+                                    .frame(maxWidth: FlowSettingsView.pageWidth)
                                     .padding(DS.Space.xl)
                                     .frame(maxWidth: .infinity)
                             }
@@ -149,7 +149,7 @@ struct WorkspaceView: View {
                     DSDivider(vertical: true)
                     SidePanel(controller: controller, tab: $tab, width: $panelWidth)
                         .frame(width: panelWidth)
-                        .id(controller.flow.id)
+                        .id(controller.objectID)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
@@ -213,7 +213,7 @@ struct CanvasControls: View {
             }
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }
             .overlay(alignment: .bottomTrailing) {
-                VStack(alignment: .trailing, spacing: Theme.Space.s) {
+                VStack(alignment: .trailing, spacing: DS.Space.s) {
                     if showsMinimap, !controller.flow.cards.isEmpty, !controller.showsCost {
                         Minimap(controller: controller)
                             .transition(.opacity)
@@ -222,7 +222,7 @@ struct CanvasControls: View {
                         CostBreakdown(controller: controller) { controller.showsCost = false }
                             .transition(.opacity.combined(with: .offset(y: 6)))
                     }
-                    HStack(spacing: Theme.Space.s) {
+                    HStack(spacing: DS.Space.s) {
                         CostPill(controller: controller, showsBreakdown: Binding(get: { controller.showsCost }, set: { controller.showsCost = $0 }))
                         ZoomPill(controller: controller)
                     }
@@ -234,7 +234,7 @@ struct CanvasControls: View {
                     // Below the middle of the panel's edge: clear of a new flow's cards, which sit at
                     // the top or, in a sub-flow shown whole, across the middle, and of the map at the foot.
                     OrchestratorCallout(controller: controller, orchestratorIsShowing: orchestratorIsShowing, showOrchestrator: showOrchestrator)
-                        .padding(.top, 230)
+                        .padding(.top, DS.Size.calloutInset)
                         .transition(.opacity.combined(with: .offset(x: -8)))
                 }
             }
@@ -250,15 +250,15 @@ extension EnvironmentValues {
 
 struct WelcomeView: View {
     var body: some View {
-        VStack(spacing: Theme.Space.l) {
+        VStack(spacing: DS.Space.l) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 40, weight: .light))
+                .dsIcon(DS.IconSize.display, .light)
                 .foregroundStyle(Theme.ink.ui)
             Text("Queen Bee")
-                .font(.dsSans(22, .medium))
+                .textRole(.largeTitle)
                 .foregroundStyle(Theme.ink.ui)
             Text("To start, choose the folder your agents should work in. Queen Bee saves your flows inside it.")
-                .font(.dsSans(Theme.Size.title))
+                .textRole(.body)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .frame(maxWidth: 420)
@@ -266,6 +266,6 @@ struct WelcomeView: View {
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
         }
-        .padding(40)
+        .padding(DS.Space.page)
     }
 }

@@ -2,7 +2,7 @@
 ///
 /// Colour carries meaning and nothing else. The surfaces and text are Queen Bee's navy and ink. Orange is live,
 /// green is "the run passed through", red is "it stopped here", and blue is selected, focused, or the one thing a
-/// screen is asking you to do. Depth comes from the surface ladder and hairlines, not from shadows.
+/// screen is asking you to do. Depth comes from the surface ladder and hairlines, not from shadows, except under a floating menu.
 public enum Palette {
     // MARK: Surfaces, from the back of the window to the front
 
@@ -18,6 +18,8 @@ public enum Palette {
     public static let hover = Shade(0xE7ECF3, 0x1B2E46)
     /// The selected row or tab.
     public static let selected = Shade(0xE4EAF2, 0x223955)
+    /// The shadow under a floating menu (`dsLift()`), the only shadow in the apps.
+    public static let lift = Shade(0x0A1422, 0x000000, alpha: 0.20, 0.50)
     /// Dims what is behind a sheet or the command menu.
     public static let scrim = Shade(0x0A1422, 0x04090F, alpha: 0.28, 0.55)
 
@@ -34,8 +36,10 @@ public enum Palette {
     public static let text = Shade(0x1F3A5F, 0xCFE0F5)
     /// What explains: labels, descriptions, times, icons at rest.
     public static let textMuted = Shade(0x546A88, 0x8AA3C2)
-    /// What can be passed over: placeholders, things that can't be used yet. Never the only place something is said.
-    public static let textFaint = Shade(0x7A8DA8, 0x6F87A6)
+    /// What can be passed over: placeholders, things that can't be used yet, counts and times. It reaches 4.5:1
+    /// on the chrome, the panel, a raised surface and an overlay, so it is readable on every surface text rests
+    /// on. On a hover or selected wash, use `textMuted`.
+    public static let textFaint = Shade(0x5B708E, 0x7B94B3)
 
     // MARK: Accent
 

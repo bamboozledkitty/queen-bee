@@ -118,6 +118,10 @@ import Testing
         #expect(!RemoteCommand.armSchedule(flowID: "f", cardID: "s", on: true).isEdit)
     }
 
+    @Test func theSchedulesListOnADeviceSaysWhereToTurnOneOn() {
+        #expect(RemoteOverview.schedulesAreForTheMac == "Turn a schedule on or off in its Start card.")
+    }
+
     // MARK: Pasting
 
     @Test func aPasteFromADeviceIsAllOrNothing() throws {

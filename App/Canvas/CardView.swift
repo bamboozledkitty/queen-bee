@@ -17,7 +17,7 @@ final class PortDotView: NSView {
         let d = CanvasGeometry.portRadius * 2 + 6
         super.init(frame: NSRect(x: 0, y: 0, width: d, height: d))
         wantsLayer = true
-        dot.lineWidth = Theme.Stroke.card
+        dot.lineWidth = DS.Stroke.hairline
         layer?.addSublayer(dot)
         toolTip = isOutput ? "\(portLabel(port)): drag from here to another card to link them" : "Messages arrive here"
     }
@@ -89,7 +89,7 @@ final class BadgeLabel: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 9
-        label.font = Theme.Canvas.label(11)
+        label.font = TextRole.captionLabel.nsFont()
         addSubview(label)
     }
 
@@ -191,7 +191,7 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         iconView.imageScaling = .scaleProportionallyDown
         iconView.contentTintColor = Theme.Canvas.textMuted
         titleBar.addSubview(iconView)
-        nameLabel.font = Theme.Canvas.name()
+        nameLabel.font = TextRole.headline.nsFont()
         nameLabel.textColor = Theme.Canvas.text
         nameLabel.lineBreakMode = .byTruncatingTail
         titleBar.addSubview(nameLabel)
@@ -343,8 +343,8 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         overview.frame = body.bounds
         if overview.isShowing {
             let scale = 1 / max(zoom, 0.01)
-            overviewName.font = Theme.Canvas.name(min(44, 13 * scale))
-            overviewDetail.font = Theme.Canvas.label(min(32, 10 * scale))
+            overviewName.font = TextRole.headline.nsFont(scale: min(44.0 / 13, scale))
+            overviewDetail.font = TextRole.captionLabel.nsFont(scale: min(32 / 11.5, scale))
             let width = max(0, overview.bounds.width - 24)
             let nameHeight = min(overviewName.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
             let detailHeight = overviewDetail.intrinsicContentSize.height

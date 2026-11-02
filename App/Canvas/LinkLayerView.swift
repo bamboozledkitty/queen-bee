@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
 
 /// Draws every link as a right-angled route under the cards. It never takes a click itself,
 /// so it can't block a card or a gesture: the canvas asks it which link a point is on.
@@ -132,7 +133,7 @@ final class LinkLayerView: NSView {
 
     /// A pass count on a small green plate, so it reads against the line under it.
     private func label(_ text: String, at point: CGPoint) {
-        let attributes: [NSAttributedString.Key: Any] = [.font: Theme.Canvas.figure(), .foregroundColor: Theme.Canvas.passText]
+        let attributes: [NSAttributedString.Key: Any] = [.font: TextRole.figure.nsFont(digits: true), .foregroundColor: Theme.Canvas.passText]
         let size = (text as NSString).size(withAttributes: attributes)
         let plate = CGRect(x: point.x - size.width / 2 - 6, y: point.y - size.height / 2 - 1, width: size.width + 12, height: size.height + 2)
         Theme.Canvas.passTint.setFill()

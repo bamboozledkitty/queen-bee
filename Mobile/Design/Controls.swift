@@ -31,14 +31,14 @@ extension View {
 
 /// A thin rule between two parts of a panel.
 struct Hairline: View {
-    var body: some View { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+    var body: some View { Rectangle().fill(Theme.hairline.ui).frame(height: DS.Stroke.hairline) }
 }
 
 extension View {
     /// A rule down one side, from the top of the screen to the bottom, where a column meets the paper.
     func edgeRule(_ edge: HorizontalAlignment) -> some View {
         overlay(alignment: Alignment(horizontal: edge, vertical: .center)) {
-            Rectangle().fill(Theme.hairline.ui).frame(width: 1).ignoresSafeArea().accessibilityHidden(true)
+            Rectangle().fill(Theme.hairline.ui).frame(width: DS.Stroke.hairline).ignoresSafeArea().accessibilityHidden(true)
         }
     }
 }
@@ -51,14 +51,14 @@ struct Badge: View {
     var tone: Tone = .plain
 
     var body: some View {
-        HStack(spacing: 3) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .bold)).accessibilityHidden(true) }
+        HStack(spacing: DS.Space.xxs) {
+            if let symbol { Image(systemName: symbol).dsIcon(DS.IconSize.s, .bold).accessibilityHidden(true) }
             if !text.isEmpty { Text(text) }
         }
-        .dsSans(Theme.Touch.caption, .medium)
+        .textRole(.footnoteLabel)
         .foregroundStyle(foreground.ui)
-        .padding(.horizontal, tone == .plain ? 8 : 10)
-        .frame(minHeight: 24)
+        .padding(.horizontal, tone == .plain ? DS.Space.s : DS.Space.snug)
+        .frame(minHeight: DS.Size.badgeTouch)
         .background(background.ui, in: Capsule())
     }
 
@@ -128,7 +128,7 @@ private struct PanelButton: View {
 
     var body: some View {
         configuration.label
-            .dsSans(Theme.Touch.body, .medium)
+            .textRole(.label)
             .lineLimit(1)
             .foregroundStyle(foreground.ui)
             .padding(.horizontal, kind == .quiet || kind == .tool || kind == .toolOn ? Theme.Space.s : Theme.Space.l)
@@ -137,8 +137,8 @@ private struct PanelButton: View {
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(border.ui, lineWidth: Theme.Stroke.card))
             .opacity(configuration.isPressed && isEnabled ? 0.6 : 1)
             .contentShape(Rectangle())
-            .animation(Theme.Motion.quick, value: configuration.isPressed)
-            .animation(Theme.Motion.quick, value: isEnabled)
+            .dsAnimation(DS.Motion.quick, value: configuration.isPressed)
+            .dsAnimation(DS.Motion.quick, value: isEnabled)
     }
 
     // A button that can't be pressed is drawn as a faint outline of itself: no fill, no ink border, grey text.
@@ -217,7 +217,7 @@ struct PanelSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             Text(title)
-                .dsSans(Theme.Touch.caption)
+                .textRole(.footnote)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 0) { content }
@@ -235,9 +235,9 @@ struct PanelRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-            Text(label).dsSans().foregroundStyle(Theme.ink.ui)
+            Text(label).textRole(.body).foregroundStyle(Theme.ink.ui)
             Spacer(minLength: Theme.Space.s)
-            Text(value).dsSans().foregroundStyle(Theme.inkSecondary.ui).multilineTextAlignment(.trailing)
+            Text(value).textRole(.body).foregroundStyle(Theme.inkSecondary.ui).multilineTextAlignment(.trailing)
         }
         .padding(.horizontal, Theme.Space.m)
         .frame(minHeight: Theme.Touch.target)
@@ -257,18 +257,18 @@ struct Plate<Actions: View>: View {
         VStack(spacing: Theme.Space.l) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 34, weight: .light))
+                    .dsIcon(DS.IconSize.empty, .light)
                     .foregroundStyle(Theme.ink.ui)
                     .accessibilityHidden(true)
             }
             VStack(spacing: Theme.Space.s) {
                 Text(title)
-                    .dsSans(Theme.Touch.heading, .medium)
+                    .textRole(.title)
                     .foregroundStyle(Theme.ink.ui)
                     .accessibilityAddTraits(.isHeader)
                 if !text.isEmpty {
                     Text(text)
-                        .dsSans()
+                        .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 }
             }
@@ -276,7 +276,7 @@ struct Plate<Actions: View>: View {
             actions
         }
         .padding(Theme.Space.xl)
-        .frame(maxWidth: 440)
+        .frame(maxWidth: DS.Size.plateWidth)
         .floatingPanel()
         .padding(Theme.Space.l)
     }

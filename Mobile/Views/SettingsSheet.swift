@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import QueenBeeLink
 import SwiftUI
 
@@ -25,7 +26,7 @@ struct SettingsSheet: View {
                         PanelRow(label: "Name", value: macName)
                         Hairline()
                         HStack {
-                            Text("Connection").dsSans().foregroundStyle(Theme.ink.ui)
+                            Text("Connection").textRole(.body).foregroundStyle(Theme.ink.ui)
                             Spacer(minLength: Theme.Space.s)
                             ConnectionPill(isBrief: true)
                         }
@@ -47,7 +48,7 @@ struct SettingsSheet: View {
                                 Text("This device will have to be paired again before it can connect.")
                             }
                         Text("This device stops connecting to \(macName). To use it again, pair it again from Settings on the Mac.")
-                            .dsSans(Theme.Touch.caption + 1)
+                            .textRole(.caption)
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
                     PanelSection(title: "About") {
@@ -55,7 +56,7 @@ struct SettingsSheet: View {
                     }
                 }
                 .padding(Theme.Space.l)
-                .frame(maxWidth: 560)
+                .frame(maxWidth: DS.Size.sheetWidth)
                 .frame(maxWidth: .infinity)
             }
             // The surface, not the paper: the lighter ink of the headings and the note is too faint on paper.
@@ -81,7 +82,7 @@ private struct AddressSection: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             PanelSection(title: "Connect by address") {
                 TextField("Your Mac's name or address", text: $text)
-                    .dsMono(Theme.Touch.body - 1)
+                    .textRole(.mono)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
@@ -110,7 +111,7 @@ private struct AddressSection: View {
                 }
             }
             Text(problem ?? "For a Mac that isn't on the same Wi-Fi, such as one you reach over Tailscale. On the Mac, turn on “Let devices connect by address too” in Settings, under Remote, and type one of the addresses it shows. Add “:port” if the Mac shows a port other than \(String(Remote.addressPort)).")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle((problem == nil ? Theme.inkSecondary : Theme.failInk).ui)
         }
         .onAppear { text = client.macAddress?.text ?? "" }
@@ -141,7 +142,7 @@ private struct NotificationsSection: View {
                     notifier.isOn = on
                     if on { Task { await notifier.ask() } }
                 })) {
-                    Text("Tell me when a run needs me or ends").dsSans().foregroundStyle(Theme.ink.ui)
+                    Text("Notify me when a card needs me or a run ends").textRole(.body).foregroundStyle(Theme.ink.ui)
                 }
                 .tint(Theme.ink.ui)
                 .padding(.horizontal, Theme.Space.m)
@@ -156,7 +157,7 @@ private struct NotificationsSection: View {
             Text(notifier.isOn && notifier.isAllowed == false
                  ? "Notifications are off for Queen Bee in this device's Settings. Turn them on there to be told."
                  : "Only for a little while after you leave the app: once iOS stops it in the background, nothing more arrives until you open it again. A device that can control your Mac can approve, reject and allow from the notification.")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
         }
         .task { await notifier.refreshPermission() }

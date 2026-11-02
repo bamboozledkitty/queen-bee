@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftTerm
 
 /// A back door for automated checks, open only when the app is launched with `--testing`.
@@ -76,9 +77,21 @@ enum TestHarness {
             // A test that drives the iPad app has to tell it the ports before either listener exists.
             host.testPorts = (payload["pairPort"]?.doubleValue.flatMap(UInt16.init(exactly:)), payload["devicePort"]?.doubleValue.flatMap(UInt16.init(exactly:)))
             #endif
+            let asked = Date()
             host.beginPairing()
-            guard host.pairing != nil else { return ["error": "pairing didn't start"] }
-            guard let port = await soon({ host.pairingPort }), let code = host.pairing?.code.text else { return ["error": "pairing didn't start"] }
+            /// Why, in the Mac's words, with how long it was waited for.
+            func failed() -> JSONValue {
+                ["error": .string("pairing didn't start after \(String(format: "%.1f", Date().timeIntervalSince(asked))) s: \(host.problem ?? "no problem given")"),
+                 "events": .array(host.testEvents.suffix(12).map(JSONValue.string))]
+            }
+            guard host.pairing != nil else { return failed() }
+            // As long as the listener itself is given to start, and no longer once it has failed.
+            var port: UInt16?
+            for _ in 0..<110 where host.pairing != nil {
+                if let ready = host.pairingPort { port = ready; break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard let port, let code = host.pairing?.code.text else { return failed() }
             return ["code": .string(code), "port": .number(Double(port))]
         case "remote-port":
             let id = payload["device"]?.stringValue ?? ""
@@ -90,6 +103,7 @@ enum TestHarness {
             #else
             let browsers = JSONValue.null
             #endif
+            let events = JSONValue.array(host.testEvents.suffix(30).map(JSONValue.string))
             return ["on": .bool(host.isOn), "devices": .number(Double(host.devices.devices.count)), "connected": .number(Double(host.sessions.count)),
                     "listening": .number(Double(host.ports.count)), "pairing": .bool(host.pairing != nil),
                     "open": .array(host.sessions.compactMap(\.openFlowName).map(JSONValue.string)),
@@ -97,7 +111,7 @@ enum TestHarness {
                     "controlling": .number(Double(host.devices.devices.filter(\.canControl).count)),
                     "selected": AppServices.shared.selectedFlowID.map(JSONValue.string) ?? .null,
                     "problem": host.problem.map(JSONValue.string) ?? .null,
-                    "browsers": browsers]
+                    "browsers": browsers, "events": events]
         case "remote-reset-queued":
             // Starts counting the most ever queued afresh, from what is queued now.
             #if DEBUG
@@ -541,7 +555,7 @@ enum MirrorWindow {
         counts = (0, 0, 0, 0)
         if shown {
             let made = TerminalView(frame: NSRect(x: 0, y: 0, width: 760, height: 480))
-            made.font = Theme.mono(12)
+            made.font = TextRole.mono.nsFont()
             let holder = NSView(frame: made.frame)
             holder.addSubview(made)
             let frame = NSWindow(contentRect: made.frame, styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)

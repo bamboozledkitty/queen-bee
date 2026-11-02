@@ -92,6 +92,23 @@ import Testing
         #expect(out.log.first == "Approval \"Gate\" → Approved")
     }
 
+    @Test func theEndCardsLogNamesTheApprovalThatPassedTheAnswerOn() async throws {
+        // Approved: Gate → Sender → Sent (End). Rejected: Gate → Dropped (End).
+        let flow = try gatedSend()
+        let engine = Engine(judge: ScriptedJudge())
+        let hold = try await reachGate(flow, engine)
+        let rejected = await engine.holdResolved(flow: flow, holdID: hold.id, port: "rejected", text: nil)
+        #expect(rejected.log.contains { $0.hasSuffix("\"Dropped\" got the final answer from Gate") }, "\(rejected.log)")
+
+        let again = Engine(judge: ScriptedJudge())
+        let second = try await reachGate(flow, again)
+        _ = await again.holdResolved(flow: flow, holdID: second.id, port: "approved", text: "Dear team")
+        let sender = try #require(flow.resolveCard("Sender"))
+        let done = await again.agentReplied(flow: flow, cardID: sender.id, text: "Sent")
+        // A new reply from an agent is that agent's own, so the End names the Sender.
+        #expect(done.log.contains { $0.hasSuffix("\"Sent\" got the final answer from Sender") }, "\(done.log)")
+    }
+
     @Test func rejectingTakesTheOtherOutputAndCanEndTheRun() async throws {
         let flow = try flow(.approval)
         let engine = Engine(judge: ScriptedJudge())

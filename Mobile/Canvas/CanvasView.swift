@@ -141,6 +141,15 @@ final class CanvasView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegat
             saveViewport()
             clear()
         }
+        // The Runs list went to a run of this flow: it goes on show as soon as the flow has it, unless a run is going.
+        if let wanted = model.wantedRun, wanted.flowID == snapshot.flow.id {
+            model.wantedRun = nil
+            if let record = snapshot.runs.first(where: { $0.id == wanted.runID }) {
+                // As on the Mac, a run that is going is what the canvas shows. Say so, as the tap would otherwise do nothing.
+                if snapshot.run.isRunning { model.runHeldBack = true } else { model.view(record) }
+            }
+        }
+        if !snapshot.run.isRunning, model.runHeldBack { model.runHeldBack = false }
         let viewed = Self.stillOnShow(model.viewedRun, in: snapshot)
         if viewed != model.viewedRun { model.view(viewed) }
         let abilities = Abilities(canControl: client.mirror.canControl, isConnected: client.state == .connected, snapshot: snapshot,
@@ -193,6 +202,7 @@ final class CanvasView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegat
 
     /// Takes everything off the canvas, for another flow to be put on it.
     private func clear() {
+        model.runHeldBack = false
         journey?.stop()
         journey = nil
         cardViews.values.forEach { $0.removeFromSuperview() }

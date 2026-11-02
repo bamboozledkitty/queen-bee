@@ -35,7 +35,7 @@ public struct NavRow<Leading: View, Trailing: View>: View {
         .background(fill.color, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .animation(DS.Motion.quick, value: isHovered)
+        .dsAnimation(DS.Motion.quick, value: isHovered)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -84,7 +84,7 @@ public struct PillTabs<Value: Hashable>: View {
                     HStack(spacing: 5) {
                         Text(tab.title)
                         if let count = tab.count {
-                            Text("\(count)").foregroundStyle(Palette.textFaint.color).monospacedDigit()
+                            Text("\(count)").foregroundStyle((isOn ? Palette.textMuted : Palette.textFaint).color).monospacedDigit()
                         }
                     }
                     .textRole(.label)
@@ -99,6 +99,6 @@ public struct PillTabs<Value: Hashable>: View {
                 .accessibilityAddTraits(isOn ? .isSelected : [])
             }
         }
-        .animation(DS.Motion.quick, value: selection)
+        .dsAnimation(DS.Motion.quick, value: selection)
     }
 }

@@ -64,6 +64,11 @@ final class CanvasModel {
     /// A card Find went to in a flow that wasn't open: its flow and its name. It is selected and put in the middle of
     /// the canvas once that flow is on it.
     @ObservationIgnored var wantedCard: (flowID: String, name: String)?
+    /// An earlier run the Runs list went to: its flow and its id. It is put on show once the flow is on the canvas and
+    /// has the run in its history. A run the Mac has let go of since is not an error: the flow is simply shown as it is.
+    var wantedRun: (flowID: String, runID: String)?
+    /// An earlier run was asked for while a run is going, so it is not on show: the canvas says why until that run ends.
+    var runHeldBack = false
     /// The canvas on screen, when there is one.
     @ObservationIgnored weak var view: CanvasView?
     /// Gives the terminal for a session, by its key: a card's id. Nil until there are terminals to give.

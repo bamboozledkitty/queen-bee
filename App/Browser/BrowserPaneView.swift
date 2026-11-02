@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
 
 /// The browser half of an agent card: a thin bar with back, forward, reload and the address, and under it a
 /// live picture of the page that takes the person's clicks, scrolling and keys.
@@ -43,7 +44,7 @@ final class BrowserPaneView: NSView, NSTextFieldDelegate {
             button.action = action
             bar.addSubview(button)
         }
-        address.font = Theme.mono(Theme.Size.caption)
+        address.font = TextRole.monoCaption.nsFont()
         address.textColor = Theme.ink
         address.isBordered = false
         address.drawsBackground = false
@@ -57,12 +58,12 @@ final class BrowserPaneView: NSView, NSTextFieldDelegate {
         address.action = #selector(openAddress)
         bar.addSubview(address)
 
-        notice.font = Theme.sans(Theme.Size.body)
+        notice.font = TextRole.body.nsFont()
         notice.textColor = Theme.inkSecondary
         notice.alignment = .center
         addSubview(notice)
         noticeButton.bezelStyle = .rounded
-        noticeButton.font = Theme.mono(Theme.Size.body)
+        noticeButton.font = TextRole.mono.nsFont()
         noticeButton.target = self
         noticeButton.action = #selector(runNoticeAction)
         addSubview(noticeButton)

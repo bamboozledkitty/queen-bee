@@ -1,4 +1,5 @@
 import AVFoundation
+import QueenBeeDesign
 import QueenBeeLink
 import SwiftUI
 
@@ -42,12 +43,12 @@ private struct IntroScreen: View {
         PairingPage {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Text("Queen Bee")
-                    .dsSans(28, .medium)
+                    .textRole(.display)
                     .foregroundStyle(Theme.ink.ui)
                     .accessibilityAddTraits(.isHeader)
                 // Ink, as is everything written straight on the paper here: the lighter ink is too faint on it to read easily.
                 Text("Watch the flows running on your Mac. Pair this device with your Mac once, and it connects by itself from then on.")
-                    .dsSans()
+                    .textRole(.body)
                     .foregroundStyle(Theme.ink.ui)
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -59,7 +60,7 @@ private struct IntroScreen: View {
             }
             .floatingPanel()
             Text("Both need to be on the same Wi-Fi. Nothing is sent over the internet.")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.ink.ui)
             Button("Continue", action: next)
                 .buttonStyle(.panel(.filled, wide: true))
@@ -75,15 +76,15 @@ private struct StepRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Space.m) {
             Text("\(number)")
-                .dsSans(Theme.Touch.body, .medium)
+                .textRole(.label)
                 .foregroundStyle(Theme.ink.ui)
-                .frame(width: 28, height: 28)
+                .frame(width: DS.Size.control, height: DS.Size.control)
                 .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text(title).dsSans(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
-                Text(text).dsSans().foregroundStyle(Theme.inkSecondary.ui)
+                Text(title).textRole(.label).foregroundStyle(Theme.ink.ui)
+                Text(text).textRole(.body).foregroundStyle(Theme.inkSecondary.ui)
             }
         }
         .padding(Theme.Space.l)
@@ -103,7 +104,7 @@ private struct MacListScreen: View {
         PairingPage {
             if browser.isBlocked {
                 Text("Queen Bee isn't allowed to look for your Mac. Turn on Local Network for Queen Bee in Settings, then come back.")
-                    .dsSans()
+                    .textRole(.body)
                     .foregroundStyle(Theme.ink.ui)
                 Button("Open Settings") { openSettings() }
                     .buttonStyle(.panel(.filled, wide: true))
@@ -113,15 +114,15 @@ private struct MacListScreen: View {
                         Button { choose(mac) } label: {
                             HStack(spacing: Theme.Space.m) {
                                 Image(systemName: "desktopcomputer").foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
-                                Text(mac.name).dsSans().foregroundStyle(Theme.ink.ui).lineLimit(1)
+                                Text(mac.name).textRole(.body).foregroundStyle(Theme.ink.ui).lineLimit(1)
                                 Spacer(minLength: Theme.Space.s)
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .dsIcon(DS.IconSize.l, .semibold)
                                     .foregroundStyle(Theme.inkSecondary.ui)
                                     .accessibilityHidden(true)
                             }
                             .padding(.horizontal, Theme.Space.l)
-                            .frame(minHeight: 52)
+                            .frame(minHeight: DS.Size.rowTall)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -131,18 +132,18 @@ private struct MacListScreen: View {
                     HStack(spacing: Theme.Space.m) {
                         ProgressView().tint(Theme.inkSecondary.ui)
                         Text(browser.macs.isEmpty ? "Looking for your Mac…" : "Looking for more…")
-                            .dsSans()
+                            .textRole(.body)
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
                     .padding(.horizontal, Theme.Space.l)
-                    .frame(minHeight: 52)
+                    .frame(minHeight: DS.Size.rowTall)
                     .accessibilityElement(children: .combine)
                 }
                 // As wide as the page, whether or not a Mac's name has made it so.
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .floatingPanel()
                 Text("A Mac is listed while it is showing a pairing code. If yours isn't here, choose “Pair a device…” in Queen Bee's settings on the Mac, and check that both are on the same Wi-Fi.")
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.ink.ui)
             }
         }
@@ -180,10 +181,10 @@ private struct CodeScreen: View {
             if isPairing {
                 HStack(spacing: Theme.Space.m) {
                     ProgressView().tint(Theme.inkSecondary.ui)
-                    Text("Pairing with \(mac.name)…").dsSans().foregroundStyle(Theme.ink.ui)
+                    Text("Pairing with \(mac.name)…").textRole(.body).foregroundStyle(Theme.ink.ui)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 60)
+                .padding(.vertical, DS.Space.placeholder)
                 .accessibilityElement(children: .combine)
             } else if pastes {
                 paste
@@ -192,7 +193,7 @@ private struct CodeScreen: View {
             }
             if !isPairing, let problem = client.pairingProblem {
                 Label(problem, systemImage: "exclamationmark.triangle")
-                    .dsSans()
+                    .textRole(.body)
                     .foregroundStyle(Theme.failInk.ui)
                     .padding(Theme.Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -222,7 +223,7 @@ private struct CodeScreen: View {
         switch camera {
         case .authorized:
             Text("Point the camera at the code on your Mac's screen.")
-                .dsSans()
+                .textRole(.body)
                 .foregroundStyle(Theme.ink.ui)
                 .frame(maxWidth: .infinity, alignment: .leading)
             CodeScanner { code in
@@ -243,12 +244,12 @@ private struct CodeScreen: View {
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.outline.ui, lineWidth: Theme.Stroke.card))
                 .accessibilityLabel("Camera, looking for the pairing code")
         case .notDetermined:
-ProgressView().tint(Theme.inkSecondary.ui).frame(maxWidth: .infinity).padding(.vertical, 60)
+ProgressView().tint(Theme.inkSecondary.ui).frame(maxWidth: .infinity).padding(.vertical, DS.Space.placeholder)
                 .accessibilityLabel("Waiting for the camera")
         default:
             VStack(alignment: .leading, spacing: Theme.Space.m) {
                 Text("Queen Bee isn't allowed to use the camera, so it can't scan the code. Turn on Camera for Queen Bee in Settings, or paste the code instead.")
-                    .dsSans()
+                    .textRole(.body)
                     .foregroundStyle(Theme.ink.ui)
                 Button("Open Settings") { openSettings() }.buttonStyle(.panel())
             }
@@ -263,20 +264,20 @@ ProgressView().tint(Theme.inkSecondary.ui).frame(maxWidth: .infinity).padding(.v
                  : cameraFailed
                  ? "The camera can't be used right now. On your Mac, choose “Copy the code as text” under the code. Then paste it here."
                  : "On your Mac, choose “Copy the code as text” under the code. Then paste it here.")
-                .dsSans()
+                .textRole(.body)
                 .foregroundStyle(Theme.ink.ui)
             TextField("queenbee-pair:…", text: $typed, axis: .vertical)
                 .lineLimit(2...4)
                 .textFieldStyle(.plain)
-                .dsMono()
+                .textRole(.mono)
                 .foregroundStyle(Theme.ink.ui)
-                .frame(minHeight: 28)
+                .frame(minHeight: DS.Size.control)
                 .fieldBox()
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .accessibilityLabel("Pairing code")
             if let typedProblem {
-                Text(typedProblem).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.failInk.ui)
+                Text(typedProblem).textRole(.caption).foregroundStyle(Theme.failInk.ui)
             }
             HStack {
                 PasteButton(payloadType: String.self) { strings in
@@ -311,7 +312,7 @@ private struct PairingPage<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xl) { content }
                 .padding(Theme.Space.xl)
-                .frame(maxWidth: 520)
+                .frame(maxWidth: DS.Size.onboardingWidth)
                 .frame(maxWidth: .infinity)
         }
         .background { Paper() }

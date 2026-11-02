@@ -165,6 +165,8 @@ enum DebugCannedRun {
                                 allowOnMac: UserDefaults.standard.bool(forKey: "qbFromDevice") ? true : nil)],
             results: [:], usage: usage, sessions: sessions, awaitingAnswer: [], banner: nil,
             runUsage: isParity ? [writer: Usage(cost: 0.13, input: 400, output: 360, cacheRead: 12_000, cacheWrite: 1_500)] : [:])
+        // Where the flow works, as the Mac's branch chip says it. `-qbWorkplace` gives other words.
+        run.workplace = UserDefaults.standard.string(forKey: "qbWorkplace") ?? "redesign-research · worktree"
         var messages: [String: [LinkMessage]] = [
             "l0": [LinkMessage(date: at(began - 6), from: "Start", text: command)],
             "l1": [LinkMessage(date: at(began - 12), from: "Start", text: command)],
@@ -187,7 +189,9 @@ enum DebugCannedRun {
         let esc = "\u{1b}"
 
         client.debugOutbox = { id, command in answer(client, id, command) }
-        client.debugTake(.welcome(RemoteWelcome(version: Remote.version, macName: "Example Mac", canControl: UserDefaults.standard.bool(forKey: "qbControl"))))
+        client.debugTake(.welcome(RemoteWelcome(version: Remote.version, macName: "Example Mac", canControl: UserDefaults.standard.bool(forKey: "qbControl"),
+                                                    // `-qbOldMac 1` is a Mac from before the lists across flows, the Restart menu and the branch chip.
+                                                    features: UserDefaults.standard.bool(forKey: "qbOldMac") ? nil : [RemoteFeature.overview])))
         var summary = RemoteFlowSummary(id: flowID, name: flow.name, isSubflow: false, activity: .needsYou)
         // Others beside it, so the list of flows has every kind of row. Only the first can be opened, unless `-qbParity 1`.
         func other(_ n: Int, _ name: String, _ activity: FlowActivity = .quiet, isSubflow: Bool = false) -> RemoteFlowSummary {
@@ -233,6 +237,40 @@ enum DebugCannedRun {
         mac.isFull = isParity
         mac.park(openable)
         client.debugTake(.library(library))
+        // The lists across flows: this flow's runs so far, a run going in another, and a few schedules.
+        func lists(runs kept: [RunRecord], isRunning: Bool) -> RemoteOverview {
+            func entry(_ record: RunRecord, _ flow: String, _ name: String, _ project: (String, String), _ number: Int) -> RemoteRunEntry {
+                RemoteRunEntry(flowID: flow, flowName: name, projectID: project.0, projectName: project.1, runID: record.id, number: number,
+                               outcome: record.outcome, summary: record.summary, handOffs: record.handOffs, started: record.started,
+                               cost: record.cost.isZero ? nil : record.cost)
+            }
+            let club = ("p", "Book club"), allotment = ("q", "Allotment society")
+            var runs = kept.enumerated().map { entry($1, flowID, flow.name, club, $0 + 1) }
+            if isRunning {
+                runs.append(RemoteRunEntry(flowID: flowID, flowName: flow.name, projectID: club.0, projectName: club.1, runID: nil, number: kept.count + 1,
+                                           outcome: nil, summary: "Running", handOffs: run.handOffs, started: nil))
+            }
+            let other = RunRecord(id: "run0b001", started: at(26 * 3600), ended: at(26 * 3600 - 300), outcome: .finished, command: "Write this month's newsletter.",
+                                  log: [], results: [:], marks: [:], linkPasses: [:], messages: [:], handOffs: 4,
+                                  usage: [writer: Usage(cost: 1.12, input: 5_000, output: 3_000, cacheRead: 90_000, cacheWrite: 12_000)])
+            let stopped = RunRecord(id: "run0b002", started: at(50 * 3600), ended: at(50 * 3600 - 40), outcome: .stopped, command: "Update the list.",
+                                    log: [], results: [:], marks: [:], linkPasses: [:], messages: [:], handOffs: 1)
+            runs.append(entry(other, "other001", "Monthly newsletter", club, 7))
+            runs.append(entry(stopped, "other002", "Reading list", club, 2))
+            runs.append(RemoteRunEntry(flowID: "other005", flowName: "Seed order with a long name that runs on", projectID: allotment.0, projectName: allotment.1,
+                                       runID: "run0c001", number: 11, outcome: .finished, summary: "finished", handOffs: 0, started: at(30 * 3600)))
+            let weekly = Trigger(kind: .weekly, hour: 9, minute: 0, weekdays: [2, 4])
+            let schedules = [
+                RemoteScheduleEntry(flowID: flowID, flowName: flow.name, projectID: club.0, projectName: club.1, cardID: start, cardName: "Start",
+                                    summary: weekly.summary, isFile: false, armed: true, next: now.addingTimeInterval(18 * 3600)),
+                RemoteScheduleEntry(flowID: "other001", flowName: "Monthly newsletter", projectID: club.0, projectName: club.1, cardID: "nweek001",
+                                    cardName: "Weekly", summary: Trigger(kind: .interval, minutes: 30).summary, isFile: false, armed: false),
+                RemoteScheduleEntry(flowID: "other006", flowName: "Rota", projectID: allotment.0, projectName: allotment.1, cardID: "rstart01",
+                                    cardName: "Start", summary: Trigger(kind: .file, path: "rota.csv").summary, isFile: true, armed: true),
+            ]
+            return RemoteOverview.made(runs: runs, schedules: schedules)
+        }
+        client.debugTake(.overview(lists(runs: [first, second], isRunning: true)))
         client.open(flowID)
         client.debugTake(.opened(RemoteFlowSnapshot(flow: flow, run: run, edit: mac.state, log: log, messages: messages, runs: [first, second])))
         // From here, a flow the device opens is sent by the made-up Mac.
@@ -290,6 +328,7 @@ enum DebugCannedRun {
                               messages: messages, handOffs: 6,
                               usage: [writer: Usage(cost: 0.37, input: 1_400, output: 1_040, cacheRead: 48_000, cacheWrite: 6_800)])
         client.debugTake(.history(id: flowID, runs: [first, second, third]))
+        client.debugTake(.overview(lists(runs: [first, second, third], isRunning: false)))
         if await done(3) { return }
 
         // 4: Run is pressed again on the Mac. The canvas is cleared for the new run.
@@ -301,6 +340,7 @@ enum DebugCannedRun {
         run.sessions[writer] = .working
         client.debugTake(.run(id: flowID, state: run))
         current = run
+        client.debugTake(.overview(lists(runs: [first, second, third], isRunning: true)))
         let again = lines(["Run started at Start", "Start → Writer", "Start → Style guide"], from: 0, every: 0)
         client.debugTake(.log(id: flowID, lines: again, reset: false))
         for link in messages.keys.sorted() {
@@ -314,6 +354,7 @@ enum DebugCannedRun {
         run.sessions[writer] = .exited
         client.debugTake(.run(id: flowID, state: run))
         current = run
+        client.debugTake(.overview(lists(runs: [first, second, third], isRunning: false)))
         if await done(5) { return }
 
         // 6
@@ -413,6 +454,23 @@ enum DebugCannedRun {
                         refusal = "None of this flow's agents is running."
                     } else {
                         edits?.setActivity(id, .quiet)
+                    }
+                case .restartAgents(_, let which):
+                    // Each agent asked for starts again, and the orchestrator when it is one of them, as the real Mac restarts them.
+                    let agents = (edits?.flow.cards ?? []).filter { $0.kind == .agent }.map(\.id)
+                    var restarted: [String] = []
+                    switch which {
+                    case .all(let withOrchestrator): restarted = agents + (withOrchestrator ? [orchestrator] : [])
+                    case .cards(let ids):
+                        restarted = agents.filter { ids.contains($0) }
+                        if restarted.isEmpty { refusal = "None of those agents is in this flow any more." }
+                    case .awaitingNewSettings:
+                        restarted = agents.filter { !(run.awaitingRestart[$0] ?? []).isEmpty } + (run.orchestratorNeedsRestart ? [orchestrator] : [])
+                        if restarted.isEmpty { refusal = "No agent is waiting to use new settings." }
+                    }
+                    for key in restarted {
+                        run.sessions[key] = .starting
+                        if key == orchestrator { run.orchestratorNeedsRestart = false } else { edits?.startedSession(key) }
                     }
                 case .armSchedule, .pin, .updateRole, .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser:
                     refusal = edits?.housekeeping(command)

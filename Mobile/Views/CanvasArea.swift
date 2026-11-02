@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The middle of the app: the canvas, and the open flow on it.
@@ -54,7 +55,7 @@ struct CanvasArea: View {
                 .padding(.trailing, Theme.Space.m)
                 .padding(.bottom, foot)
         }
-        .animation(Theme.Motion.standard, value: client.canvas.showsMap)
+        .dsAnimation(DS.Motion.standard, value: client.canvas.showsMap)
         // Over everything on the canvas, the bars included: a menu is the one thing being done while it is up.
         .overlay { EditMenuLayer(foot: foot) }
     }

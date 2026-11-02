@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The panel beside the canvas, for what the open flow's orchestrator and its runs have to say. On an iPhone
@@ -47,7 +48,7 @@ struct InspectorPanel: View {
                 .dimmedWhileAway(client.state == .connected)
         }
         .background(Theme.surface.ui)
-        .animation(Theme.Motion.standard, value: client.canvas.viewedRun?.id)
+        .dsAnimation(DS.Motion.standard, value: client.canvas.viewedRun?.id)
     }
 
     /// How many lines, answers and runs there are, beside the names of their pages, as on the Mac's tabs.
@@ -172,11 +173,11 @@ private struct TabButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .dsSans(Theme.Touch.body, isOn ? .medium : .regular)
+                .textRole(isOn ? .label : .body)
                 .foregroundStyle((isOn ? Theme.ink : Theme.inkSecondary).ui)
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 7)
+                .padding(.horizontal, DS.Space.tight)
                 .frame(minHeight: Theme.Touch.target)
                 .overlay(alignment: .bottom) {
                     Rectangle().fill(isOn ? Theme.ink.ui : .clear).frame(height: Theme.Stroke.selected)
@@ -200,13 +201,13 @@ private struct PageSwitch: View {
             ForEach(pages) { page in
                 let isOn = page == selected, count = counts[page] ?? 0
                 Button { pick(page) } label: {
-                    HStack(spacing: Theme.Space.xs + 2) {
-                        Text(page.title).dsSans(Theme.Touch.body, .medium)
-                        if count > 0 { Text("\(count)").dsSans(Theme.Touch.caption).opacity(0.75) }
+                    HStack(spacing: DS.Space.tight) {
+                        Text(page.title).textRole(.label)
+                        if count > 0 { Text("\(count)").textRole(.footnote).opacity(0.75) }
                     }
                     .lineLimit(1)
                     .foregroundStyle((isOn ? Theme.surface : Theme.ink).ui)
-                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .frame(maxWidth: .infinity, minHeight: Theme.Touch.target)
                     .background(isOn ? Theme.ink.ui : .clear)
                     .contentShape(Rectangle())
                 }
@@ -217,7 +218,7 @@ private struct PageSwitch: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.outline.ui, lineWidth: Theme.Stroke.card))
-        .animation(Theme.Motion.quick, value: selected)
+        .dsAnimation(DS.Motion.quick, value: selected)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
     }
@@ -231,8 +232,8 @@ struct EarlierRunNotice: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            Text("Showing the run from \(Clock.run(run.started)).")
-                .dsSans(Theme.Touch.caption + 1)
+            Text("Showing \(run.number.map { "run \($0), from" } ?? "the run from") \(Clock.run(run.started)).")
+                .textRole(.caption)
                 .foregroundStyle(Theme.ink.ui)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Theme.Space.s)
@@ -242,7 +243,7 @@ struct EarlierRunNotice: View {
                 .fixedSize()
                 .accessibilityHint("Shows the latest run again.")
         }
-        .padding(.vertical, Theme.Space.xs + 2)
+        .padding(.vertical, DS.Space.tight)
     }
 }
 
@@ -252,8 +253,8 @@ struct NothingOpen: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            Text("No flow open").dsSans(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
-            Text(text).dsSans().foregroundStyle(Theme.inkSecondary.ui)
+            Text("No flow open").textRole(.label).foregroundStyle(Theme.ink.ui)
+            Text(text).textRole(.body).foregroundStyle(Theme.inkSecondary.ui)
         }
     }
 }
@@ -274,13 +275,13 @@ struct OrchestratorPanel: View {
             let caption = SessionCaption(key: key, client: client)
             VStack(spacing: 0) {
                 HStack(spacing: Theme.Space.s) {
-                    Text("Runs this flow").dsSans().foregroundStyle(Theme.inkSecondary.ui)
+                    Text("Runs this flow").textRole(.body).foregroundStyle(Theme.inkSecondary.ui)
                     if let badge = caption.badge { Badge(text: badge.text, tone: badge.tone) }
                     Spacer(minLength: Theme.Space.s)
                     if let button = client.abilities.orchestrator { OrchestratorButton(button: button) }
                     Button { client.openTerminal(key) } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 14, weight: .medium))
+                            .dsIcon(DS.IconSize.xxl)
                             .foregroundStyle(Theme.ink.ui)
                             .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                             .contentShape(Rectangle())
@@ -292,8 +293,8 @@ struct OrchestratorPanel: View {
                 Hairline()
                 // The Mac's padding around its terminal, on the terminal's own colour.
                 TerminalPicture(key: key)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, DS.Space.tight)
+                    .padding(.vertical, DS.Space.xs)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .background(Theme.terminal.ui)
                 // A message for the orchestrator can be written here. Keys are for the full-screen view.
@@ -301,8 +302,8 @@ struct OrchestratorPanel: View {
             }
         } else {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
-                Text("Not started").dsSans(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
-                Text("The session that runs this flow hasn't been started on your Mac.").dsSans().foregroundStyle(Theme.inkSecondary.ui)
+                Text("Not started").textRole(.label).foregroundStyle(Theme.ink.ui)
+                Text("The session that runs this flow hasn't been started on your Mac.").textRole(.body).foregroundStyle(Theme.inkSecondary.ui)
                 if let button = client.abilities.orchestrator { OrchestratorButton(button: button).padding(.top, Theme.Space.xs) }
             }
             .padding(Theme.Space.l)
@@ -324,7 +325,7 @@ private struct OrchestratorButton: View {
             if isLive, button.title == "Restart" {
                 Button { client.press(button.press) } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .medium))
+                        .dsIcon(DS.IconSize.xxl)
                         .foregroundStyle(Theme.ink.ui)
                         .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                         .contentShape(Rectangle())

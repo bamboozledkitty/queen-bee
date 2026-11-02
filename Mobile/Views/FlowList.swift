@@ -9,6 +9,9 @@ import SwiftUI
 /// held on a row offers to rename, pin, stop or delete it.
 struct FlowList: View {
     @Environment(RemoteClient.self) private var client
+    /// On an iPad, Needs you, Runs and Schedules sit above the flows, as in the Mac's sidebar, and choosing one shows it
+    /// in this column. Nil on an iPhone, where they are in the bar at the foot.
+    var choosePlace: ((DevicePlace) -> Void)?
 
     var body: some View {
         let isConnected = client.state == .connected
@@ -20,7 +23,8 @@ struct FlowList: View {
                 } else {
                     ScrollViewReader { scroll in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 2) {
+                            LazyVStack(alignment: .leading, spacing: DS.Space.xxs) {
+                                if let choosePlace { PlaceRows(choose: choosePlace) }
                                 FindField()
                                     .padding(.top, Theme.Space.s)
                                 if let refusal = client.settings.refusal {
@@ -34,7 +38,8 @@ struct FlowList: View {
                                     let pinned = client.pinnedFlows
                                     if !pinned.isEmpty {
                                         heading("Pinned")
-                                        ForEach(pinned) { row(for: $0, depth: 0, key: "pinned/") }
+                                        // Two projects' flows can share an id, so a row is known by its place in the list.
+                                        ForEach(Array(pinned.enumerated()), id: \.offset) { row(for: $0.element, depth: 0, key: "pinned/") }
                                     }
                                     ForEach(library.projects) { project in
                                         section(for: project)
@@ -46,7 +51,11 @@ struct FlowList: View {
                         }
                         // The open flow may be far down a long list, as when the app comes back to it.
                         .onChange(of: client.mirror.openFlowID, initial: true) { _, open in
-                            if let open { scroll.scrollTo(open) }
+                            if let open {
+                                // The row's identity names its project, as two projects can hold a flow with the same id.
+                                let project = library.projects.first { $0.flows.contains { $0.id == open } }
+                                scroll.scrollTo(Self.identity(project: project?.id ?? "", key: "", flow: open))
+                            }
                         }
                     }
                 }
@@ -65,13 +74,13 @@ struct FlowList: View {
     @ViewBuilder
     private func section(for project: RemoteProject) -> some View {
         header(project)
-        ForEach(FlowNesting.rows(project.flows)) { row(for: $0.flow, depth: $0.depth) }
+        ForEach(FlowNesting.rows(project.flows)) { row(for: $0.flow, depth: $0.depth, project: project.id) }
     }
 
     private func heading(_ title: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             Text(title)
-                .dsSans(Theme.Touch.caption, .medium)
+                .textRole(.footnoteLabel)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .accessibilityAddTraits(.isHeader)
             Hairline()
@@ -85,7 +94,7 @@ struct FlowList: View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             HStack(spacing: Theme.Space.xs) {
                 Text(project.name)
-                    .dsSans(Theme.Touch.caption, .medium)
+                    .textRole(.footnoteLabel)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
@@ -93,9 +102,9 @@ struct FlowList: View {
                 if client.canChangeFlows {
                     Button { client.askForNewFlow(in: project) } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 14, weight: .semibold))
+                            .dsIcon(DS.IconSize.xxl, .semibold)
                             .foregroundStyle(Theme.ink.ui)
-                            .frame(width: Theme.Touch.target, height: Theme.Touch.target - Theme.Space.s)
+                            .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -109,10 +118,13 @@ struct FlowList: View {
         .padding(.bottom, Theme.Space.xs)
     }
 
+    /// What tells a row from every other in the list: its project as well as its flow, since a copied flow keeps its id.
+    private static func identity(project: String, key: String, flow: String) -> String { "\(project)/\(key)\(flow)" }
+
     /// - Parameter depth: how far down a sub-flow is, under the flow that runs it.
     /// - Parameter key: tells a pinned flow's row from its row in its project, where it is listed too.
     @ViewBuilder
-    private func row(for flow: RemoteFlowSummary, depth: Int, key: String = "") -> some View {
+    private func row(for flow: RemoteFlowSummary, depth: Int, key: String = "", project: String = "") -> some View {
         let isOpen = client.mirror.openFlowID == flow.id
         let menu = client.flowMenu(for: flow), isMenuOut = client.settings.flowMenu == key + flow.id && !menu.isEmpty
         FlowRow(flow: flow, depth: depth, isOpen: isOpen, isMenuOut: isMenuOut) {
@@ -125,7 +137,7 @@ struct FlowList: View {
             // Held again, the menu goes.
             if !menu.isEmpty { client.settings.flowMenu = isMenuOut ? nil : key + flow.id }
         }
-        .id(key + flow.id)
+        .id(Self.identity(project: project, key: key, flow: flow.id))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([flow.name, flow.isSubflow ? "sub-flow" : nil, flow.pinned ? "pinned" : nil].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(flow.sharedID == true ? Remote.sharedFlowIDRefusal : flow.activity.words ?? "")
@@ -148,8 +160,8 @@ struct FlowList: View {
 
     private func note(_ title: String, _ text: String) -> some View {
         VStack(spacing: Theme.Space.s) {
-            Text(title).dsSans(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
-            if !text.isEmpty { Text(text).dsSans(Theme.Touch.body).foregroundStyle(Theme.inkSecondary.ui) }
+            Text(title).textRole(.label).foregroundStyle(Theme.ink.ui)
+            if !text.isEmpty { Text(text).textRole(.body).foregroundStyle(Theme.inkSecondary.ui) }
         }
         .multilineTextAlignment(.center)
         .padding(Theme.Space.xl)
@@ -171,21 +183,21 @@ private struct FlowRow: View {
         HStack(spacing: Theme.Space.s) {
             if flow.isSubflow {
                 Image(systemName: "arrow.turn.down.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .dsIcon(DS.IconSize.m, .semibold)
                     .foregroundStyle(Theme.inkSecondary.ui)
-                    .padding(.leading, CGFloat(max(0, depth - 1)) * 14)
+                    .padding(.leading, CGFloat(max(0, depth - 1)) * DS.Size.treeIndent)
             } else {
-                StatusDot(flow.activity.tone, size: 9).frame(width: 16)
+                StatusDot(flow.activity.tone, size: DS.Size.dotTouch).frame(width: DS.Size.iconSlot)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.Space.xxs) {
                 Text(flow.name)
-                    .dsSans(Theme.Touch.body, isOpen ? .medium : .regular)
+                    .textRole(isOpen ? .label : .body)
                     .foregroundStyle((flow.isSubflow && !isOpen ? Theme.inkSecondary : Theme.ink).ui)
                     .lineLimit(1)
                 // The Mac opens and changes neither of two flows with one id, so the row says why it won't open.
                 if flow.sharedID == true {
                     Text(Remote.sharedFlowIDRefusal)
-                        .dsSans(Theme.Touch.caption)
+                        .textRole(.footnote)
                         .foregroundStyle(Theme.inkSecondary.ui)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -193,7 +205,7 @@ private struct FlowRow: View {
             .padding(.vertical, flow.sharedID == true ? Theme.Space.xs : 0)
             Spacer(minLength: Theme.Space.xs)
             if flow.pinned {
-                Image(systemName: "pin.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
+                Image(systemName: "pin.fill").dsIcon(DS.IconSize.s, .semibold).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
             }
             FlowActivityBadge(activity: flow.activity)
         }
@@ -205,7 +217,7 @@ private struct FlowRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
         .onLongPressGesture(minimumDuration: 0.4, perform: hold) { isPressed = $0 }
-        .animation(Theme.Motion.quick, value: isPressed)
+        .dsAnimation(DS.Motion.quick, value: isPressed)
     }
 }
 
@@ -223,10 +235,10 @@ private struct FlowRowMenu: View {
                 Button { choose(item.kind) } label: {
                     HStack(spacing: Theme.Space.s) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 14, weight: .medium))
-                            .frame(width: 24)
+                            .dsIcon(DS.IconSize.xxl)
+                            .frame(width: DS.Size.iconSlotLarge)
                             .accessibilityHidden(true)
-                        Text(item.title).dsSans(Theme.Touch.body, .medium).lineLimit(1)
+                        Text(item.title).textRole(.label).lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle((item.kind == .delete || item.kind == .stopAgents ? Theme.failInk : Theme.ink).ui)
@@ -244,23 +256,24 @@ private struct FlowRowMenu: View {
 }
 
 extension FlowActivity {
-    /// What the Mac's sidebar calls each state. Nothing for a flow that is doing nothing.
+    /// What the Mac's sidebar calls each state, as it writes them. Nothing for a flow that is doing nothing.
     var words: String? {
         switch self {
-        case .needsYou: "needs you"
-        case .running: "running"
-        case .failed: "stopped"
+        case .needsYou: "Needs you"
+        case .running: "Running"
+        case .failed: "Stopped"
         case .quiet: nil
         }
     }
 }
 
-/// The flow's state as the Mac's sidebar badges it.
+/// The flow's state as the Mac's sidebar words it: for the two states worth reading at a glance. Running shows
+/// by its dot alone, in the accent colour, which is not the orange of a flow that waits on you.
 struct FlowActivityBadge: View {
     let activity: FlowActivity
 
     var body: some View {
-        if let words = activity.words {
+        if let words = activity.words, activity != .running {
             Badge(text: words, tone: activity == .failed ? .fail : .live)
         }
     }
@@ -274,9 +287,9 @@ private struct FindField: View {
     var body: some View {
         @Bindable var settings = client.settings
         HStack(spacing: Theme.Space.s) {
-            Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
+            Image(systemName: "magnifyingglass").dsIcon(DS.IconSize.xxl).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true)
             TextField("Flows and cards", text: $settings.search)
-                .dsSans()
+                .textRole(.body)
                 .foregroundStyle(Theme.ink.ui)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -285,8 +298,8 @@ private struct FindField: View {
                 .accessibilityLabel("Find flows and cards")
             if !settings.search.isEmpty {
                 Button { settings.search = "" } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 15)).foregroundStyle(Theme.inkSecondary.ui)
-                        .frame(width: 32, height: Theme.Touch.target).contentShape(Rectangle())
+                    Image(systemName: "xmark.circle.fill").dsIcon(DS.IconSize.row, .regular).foregroundStyle(Theme.inkSecondary.ui)
+                        .frame(width: Theme.Touch.target, height: Theme.Touch.target).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear Find")
@@ -308,7 +321,7 @@ private struct FindList: View {
     var body: some View {
         if found.isEmpty {
             Text("No card or flow has that in its name.")
-                .dsSans()
+                .textRole(.body)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .padding(.horizontal, Theme.Space.s)
                 .padding(.vertical, Theme.Space.l)
@@ -325,7 +338,7 @@ private struct FindList: View {
 
     private func title(_ text: String) -> some View {
         Text(text)
-            .dsSans(Theme.Touch.caption, .medium)
+            .textRole(.footnoteLabel)
             .foregroundStyle(Theme.inkSecondary.ui)
             .padding(.leading, Theme.Space.s)
             .padding(.top, Theme.Space.l)
@@ -336,10 +349,10 @@ private struct FindList: View {
     private func hit(_ hit: FindResults.Hit, icon: String, name: String, place: String) -> some View {
         Button { client.go(to: hit) } label: {
             HStack(spacing: Theme.Space.s) {
-                Image(systemName: icon).font(.system(size: 12, weight: .medium)).frame(width: 18).accessibilityHidden(true)
-                Text(name).dsSans(Theme.Touch.body, .medium).lineLimit(1)
+                Image(systemName: icon).dsIcon(DS.IconSize.l).frame(width: DS.Size.iconSlotWide).accessibilityHidden(true)
+                Text(name).textRole(.label).lineLimit(1)
                 Spacer(minLength: Theme.Space.s)
-                Text(place).dsSans(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui).lineLimit(1)
+                Text(place).textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui).lineLimit(1)
             }
             .foregroundStyle(Theme.ink.ui)
             .padding(.horizontal, Theme.Space.s)

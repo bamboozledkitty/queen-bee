@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The details of what is selected, as a page of their own: pushed over the panel beside the canvas, with the
@@ -46,7 +47,7 @@ struct DetailsScreen: View {
         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top = $0 }
         .background(Theme.bar.ui)
         .navigationTitle(client.detailsTitle)
-        .animation(Theme.Motion.standard, value: client.canvas.viewedRun?.id)
+        .dsAnimation(DS.Motion.standard, value: client.canvas.viewedRun?.id)
         .onChange(of: client.canvas.selection, initial: true) { _, new in
             if new != .none { last = new }
         }
@@ -65,8 +66,8 @@ struct DetailsScreen: View {
             if let back {
                 Button { client.closeDetails() } label: {
                     HStack(spacing: Theme.Space.xs) {
-                        Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
-                        Text(back).dsSans(Theme.Touch.body).lineLimit(1)
+                        Image(systemName: "chevron.left").dsIcon(DS.IconSize.row, .semibold)
+                        Text(back).textRole(.body).lineLimit(1)
                     }
                     .foregroundStyle(Theme.ink.ui)
                     .padding(.horizontal, Theme.Space.m)
@@ -80,9 +81,9 @@ struct DetailsScreen: View {
             } else {
                 // Named as the sheet of the panel's tabs names its tab, so the two sheets read alike.
                 Text("Details")
-                    .dsSans(Theme.Touch.body, .medium)
+                    .textRole(.label)
                     .foregroundStyle(Theme.ink.ui)
-                    .padding(.horizontal, Theme.Space.xs + 7)
+                    .padding(.horizontal, DS.Space.m)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
                 // Not "Done": with Edit on, the foot of the details has a Done of its own, which stops editing.
@@ -127,7 +128,7 @@ struct DetailsPage: View {
                         DetailsHeader(icon: "square.on.square", title: "\(ids.count) cards", kind: "Cards", state: nil)
                         Hairline()
                         Text("Several cards are selected. Tap one card to see what it is set to.")
-                            .dsSans(Theme.Touch.caption + 1)
+                            .textRole(.caption)
                             .foregroundStyle(Theme.inkSecondary.ui)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, Theme.Space.l)
@@ -232,7 +233,7 @@ private struct DetailsView: View {
             if !abilities.canAct {
                 Hairline()
                 Text(Details.changes)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Theme.Space.l)
@@ -272,9 +273,9 @@ struct ItemView: View {
         switch item.style {
         case .row:
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-                Text(item.label).dsSans().foregroundStyle(Theme.inkSecondary.ui)
+                Text(item.label).textRole(.body).foregroundStyle(Theme.inkSecondary.ui)
                 Spacer(minLength: Theme.Space.s)
-                Text(item.value).dsSans(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
+                Text(item.value).textRole(.label).foregroundStyle(Theme.ink.ui)
                     .multilineTextAlignment(.trailing)
                     // Wrapped, never cut short: a sheet pulled to full height offers a row one line.
                     .fixedSize(horizontal: false, vertical: true)
@@ -286,14 +287,14 @@ struct ItemView: View {
             .accessibilityElement(children: .combine)
         case .text, .code:
             VStack(alignment: .leading, spacing: Theme.Space.s) {
-                Text(item.label).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+                Text(item.label).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                 LongText(text: item.value, isMono: item.style == .code).foregroundStyle(Theme.ink.ui).fieldBox()
             }
             .padding(.horizontal, Theme.Space.l)
             .padding(.vertical, Theme.Space.m)
         case .note:
             Text(item.label)
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,7 +302,7 @@ struct ItemView: View {
                 .padding(.vertical, Theme.Space.m)
         case .caution:
             Label(item.label, systemImage: "exclamationmark.circle")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.liveInk.ui)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -310,7 +311,7 @@ struct ItemView: View {
                 .background(Theme.liveTint.ui)
         case .warning:
             Label(item.label, systemImage: "exclamationmark.triangle")
-                .dsSans(Theme.Touch.body, .medium)
+                .textRole(.label)
                 .foregroundStyle(Theme.failInk.ui)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.Space.l)
@@ -318,7 +319,7 @@ struct ItemView: View {
         case .stopped:
             HStack(spacing: Theme.Space.s) {
                 Text(item.label)
-                    .dsSans(Theme.Touch.body, .medium)
+                    .textRole(.label)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let retry { PressButtons(buttons: [retry]).fixedSize() }
             }
@@ -328,7 +329,7 @@ struct ItemView: View {
             .background(Theme.failTint.ui)
         case .pending:
             Label(item.label, systemImage: "clock.arrow.circlepath")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.liveInk.ui)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -338,7 +339,7 @@ struct ItemView: View {
         case .waiting:
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Text(item.label)
-                    .dsSans(Theme.Touch.body, .medium)
+                    .textRole(.label)
                     .fixedSize(horizontal: false, vertical: true)
                 if !item.value.isEmpty {
                     LongText(text: item.value, isMono: item.isCode)
@@ -354,7 +355,7 @@ struct ItemView: View {
                     OpenTerminalButton(cardID: inTerminal.id, name: inTerminal.name)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 } else if let answerLine {
-                    Text(answerLine).dsSans(Theme.Touch.caption + 1).fixedSize(horizontal: false, vertical: true)
+                    Text(answerLine).textRole(.caption).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .foregroundStyle(Theme.liveInk.ui)
@@ -383,7 +384,7 @@ struct LongText: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Group {
-                if isMono { Text(text).dsMono(Theme.Touch.caption + 1) } else { Text(text).dsSans() }
+                if isMono { Text(text).textRole(.monoCaption) } else { Text(text).textRole(.body) }
             }
             .lineLimit(isLong && !isOpen ? lines : nil)
             .textSelection(.enabled)
@@ -406,18 +407,18 @@ struct MessageList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             Text(title)
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .accessibilityAddTraits(.isHeader)
             if messages.isEmpty {
                 Text("Nothing has gone along this link in the run on show.")
-                    .dsSans()
+                    .textRole(.body)
                     .foregroundStyle(Theme.inkSecondary.ui)
             }
             ForEach(messages) { message in
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     Text("\(Clock.time(message.date)) · from \(message.from)")
-                        .dsSans(Theme.Touch.caption)
+                        .textRole(.footnote)
                         .foregroundStyle(Theme.inkSecondary.ui)
                     LongText(text: message.text, lines: 6).foregroundStyle(Theme.ink.ui)
                 }

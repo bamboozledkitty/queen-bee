@@ -11,12 +11,12 @@ struct WorkplaceChip: View {
 
     var body: some View {
         Button { showsForm.toggle() } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .semibold))
+            HStack(spacing: DS.Space.tight) {
+                Image(systemName: "arrow.triangle.branch").dsIcon(DS.IconSize.s, .semibold)
                     .foregroundStyle(Palette.textMuted.color)
                 // A long branch name is cut short in the middle rather than taking over the header.
                 Text(text).textRole(.mono).lineLimit(1).truncationMode(.middle).frame(maxWidth: 260)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down").dsIcon(DS.IconSize.xxs, .semibold)
                     .foregroundStyle(Palette.textFaint.color)
             }
             .fixedSize()
@@ -48,12 +48,12 @@ struct WorkplaceForm: View {
 
     var body: some View {
         let setting = controller.workplaceSetting
-        VStack(alignment: .leading, spacing: Theme.Space.m) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: DS.Space.m) {
+            VStack(alignment: .leading, spacing: DS.Space.xxs) {
                 Text(isFirstRun ? "Where should this flow work?" : "Where this flow works")
-                    .font(.dsSans(Theme.Size.title, .semibold))
+                    .textRole(.headline)
                 Text("\(controller.flow.name), in \(controller.project.name)")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
             }
             if let from = setting.from {
@@ -62,11 +62,11 @@ struct WorkplaceForm: View {
                 choices(git)
             } else {
                 Text("\(controller.project.name) isn't a git repository, so the flow works in the folder itself.")
-                    .font(.dsSans(Theme.Size.body))
+                    .textRole(.body)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(Theme.Space.l)
+        .padding(DS.Space.l)
         .frame(width: 380)
         .task {
             await controller.refreshGit()
@@ -75,19 +75,19 @@ struct WorkplaceForm: View {
     }
 
     private func inherited(from outer: FlowController, setting: Workplace) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
             Text(setting.summary(project: controller.project.name, current: controller.git?.current))
-                .font(.dsSans(Theme.Size.body))
+                .textRole(.body)
                 .fixedSize(horizontal: false, vertical: true)
             Text("A sub-flow works wherever the flow that runs it does, so the setting is \(outer.flow.name)'s.")
-                .font(.dsSans(Theme.Size.caption))
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
                 Button("Open \(outer.flow.name)") {
                     done()
-                    AppServices.shared.selectedFlowID = outer.flow.id
+                    AppServices.shared.selectedFlow = outer
                 }
                 .buttonStyle(.panel(.outline))
             }
@@ -123,7 +123,7 @@ struct WorkplaceForm: View {
                 row("New branch") {
                     TextField("qb/my-flow", text: Binding(get: { model.newName }, set: { self.model?.newName = $0 }))
                         .textFieldStyle(.plain)
-                        .font(.dsSans(Theme.Size.body, .medium))
+                        .textRole(.label)
                         .fieldBox()
                 }
                 row("Starting from") {
@@ -144,14 +144,14 @@ struct WorkplaceForm: View {
             ForEach(model.notes, id: \.self) { note($0) }
             if let problem = model.problem ?? staleProblem {
                 Text(problem)
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.failInk.ui)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if controller.isRunning && !isFirstRun {
                 note("Stop the run to change where the flow works.")
             }
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: DS.Space.s) {
                 Spacer()
                 Button(isFirstRun ? "Not now" : "Cancel") {
                     if isFirstRun { Task { await controller.answerWorkplaceQuestion(nil) } }
@@ -168,9 +168,9 @@ struct WorkplaceForm: View {
     }
 
     private func row<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: Theme.Space.s) {
+        HStack(spacing: DS.Space.s) {
             Text(title)
-                .font(.dsSans(Theme.Size.body, .medium))
+                .textRole(.label)
                 .frame(width: 88, alignment: .leading)
             content()
             Spacer(minLength: 0)
@@ -179,7 +179,7 @@ struct WorkplaceForm: View {
 
     private func note(_ text: String) -> some View {
         Text(text)
-            .font(.dsSans(Theme.Size.caption))
+            .textRole(.caption)
             .foregroundStyle(Theme.inkSecondary.ui)
             .fixedSize(horizontal: false, vertical: true)
     }
