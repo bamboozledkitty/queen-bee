@@ -174,6 +174,81 @@ import Testing
         #expect(store.lookUp("device-a").keepsDevice)
     }
 
+    /// A source build's keys, in a file only this account can read, kept from one launch to the next.
+    @Test func aFileKeepsKeysForTheNextLaunch() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("device-keys.json")
+        let store = FileKeyStore(url: url)
+        #expect(store.lookUp("device-a") == .missing)
+        #expect(store.accounts().isEmpty)
+        #expect(store.write(key, "device-a") == errSecSuccess)
+        #expect(store.write(Data(repeating: 1, count: 32), "device-b") == errSecSuccess)
+        let permissions = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        #expect(permissions == 0o600)
+
+        let later = FileKeyStore(url: url)
+        #expect(later.lookUp("device-a") == .found(key))
+        #expect(later.accounts() == ["device-a", "device-b"])
+        #expect(later.delete("device-a") == errSecSuccess)
+        #expect(later.lookUp("device-a") == .missing)
+        #expect(MigratingKeyStore.gone(later.delete("device-a")))
+    }
+
+    /// A file that can't be read says nothing about the keys in it, so no device is dropped over it. It only moves
+    /// aside when a new key has to be kept, and stays there for whoever wants to look.
+    @Test func aDamagedFileNeverMakesAKeyMissingAndNeverStopsPairing() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("device-keys.json")
+        try Data("not json".utf8).write(to: url)
+        let store = FileKeyStore(url: url)
+        #expect(store.lookUp("device-a").keepsDevice)
+        #expect(store.delete("device-a") == errSecIO)
+        #expect(try Data(contentsOf: url) == Data("not json".utf8))
+
+        #expect(store.write(key, "device-a") == errSecSuccess)
+        #expect(store.lookUp("device-a") == .found(key))
+        #expect(try Data(contentsOf: store.damagedURL) == Data("not json".utf8))
+    }
+
+    /// Two copies of the app, each with its own store on one file, each adding keys at once.
+    @Test func copiesSharingAFileDontLoseEachOthersKeys() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("device-keys.json")
+        let (one, other) = (FileKeyStore(url: url), FileKeyStore(url: url))
+        let key = key
+        await withTaskGroup(of: Void.self) { group in
+            for n in 0..<40 {
+                group.addTask { (n.isMultiple(of: 2) ? one : other).write(key, "device-\(n)") }
+            }
+        }
+        #expect(one.accounts().count == 40)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["device-keys.json", "device-keys.json.lock"])
+    }
+
+    @Test func theKeyFileStaysOutOfBackups() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("device-keys.json")
+        #expect(FileKeyStore(url: url).write(key, "device-a") == errSecSuccess)
+        #expect(try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    }
+
+    /// A key another copy kept is seen, not an older reading of the file.
+    @Test func anotherCopysChangeIsSeen() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("device-keys.json")
+        let (one, other) = (FileKeyStore(url: url), FileKeyStore(url: url))
+        #expect(one.write(key, "device-a") == errSecSuccess)
+        #expect(one.lookUp("device-a") == .found(key))
+        #expect(other.delete("device-a") == errSecSuccess)
+        #expect(one.lookUp("device-a") == .missing)
+    }
+
     @Test func writingAndDeletingTouchBothPlaces() {
         let modern = MemoryKeyStore(), legacy = MemoryKeyStore(["device-a": Data(repeating: 1, count: 32)])
         let store = MigratingKeyStore(modern: modern, legacy: legacy)

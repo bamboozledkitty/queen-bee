@@ -81,6 +81,10 @@ script does not, because it needs a signed-in
 Claude Code. Run it, or the scenarios near your change (`./scripts/e2e.py guard loop`), when you touch sessions,
 hand-offs, the canvas or the engine, and say in the pull request which ones you ran.
 
+## Coding agents
+
+[AGENTS.md](AGENTS.md) holds the instructions for coding agents working in this repo. Claude Code reads it through `CLAUDE.md`.
+
 ## Where things live
 
 - `Core/` is a Swift package with no UI: the flow model, the file store, the routing engine, the orchestrator's tools

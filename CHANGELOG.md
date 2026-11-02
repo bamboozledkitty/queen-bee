@@ -17,6 +17,10 @@ All notable changes to Queen Bee are listed here. The format follows
 - Needs you, Runs, Schedules and Devices at the top of the Mac's sidebar: what waits on you, every flow's runs with each one's log, every schedule with Turn on and Turn off, and your paired devices.
 - Runs are numbered (#12), and a run keeps its number after older runs are let go.
 
+### Fixed
+
+- A copy of Queen Bee built from source ("Queen Bee Dev") no longer asks for your Keychain password after every build. It kept paired devices' keys in the login keychain, which trusts an app by its exact build, so each new build had to be allowed again. It now keeps them in a file only your account can read, in its own data folder; a device paired with it has to be paired again once, and Settings says so. The installed app keeps its keys in the Keychain as before.
+
 ## [0.8.0] - 2026-10-30
 
 ### Added

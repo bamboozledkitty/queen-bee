@@ -227,7 +227,7 @@ final class RemoteHost {
     /// Says so, and reads the key again later. One wait at a time for each device.
     private func keyUnreadable(_ id: String, status: OSStatus) {
         failing.insert(id)
-        listeningProblem = "Queen Bee couldn't read a device's key from the Keychain (\(status)) and will try again in a minute."
+        listeningProblem = "Queen Bee couldn't read a device's key from \(KeyVault.place) (\(status)) and will try again in a minute."
         guard keyRetries.insert(id).inserted else { return }
         Task {
             try? await Task.sleep(for: .seconds(Self.keyRetry))
@@ -719,7 +719,7 @@ final class RemoteHost {
             let before = devices.devices.first { $0.id == id }
             let oldKey = devices.key(for: id)
             guard let key = devices.add(id: id, name: name.isEmpty ? "Device" : name), let macID = devices.macID else {
-                pairingProblem = "Queen Bee couldn't save the device's key in your Keychain, so it wasn't paired."
+                pairingProblem = "Queen Bee couldn't save the device's key in \(KeyVault.place), so it wasn't paired."
                 try await connection.send(PairReply.refused("Queen Bee couldn't save this device's key on the Mac."))
                 return
             }
