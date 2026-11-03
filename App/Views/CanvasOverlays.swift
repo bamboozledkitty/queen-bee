@@ -405,7 +405,7 @@ struct FindPanel: View {
     }
 
     private func go(to match: Match) {
-        services.selectedFlow = match.controller
+        services.show(match.controller)
         close()
         guard let card = match.card else { return }
         match.controller.select(.card(card.id))

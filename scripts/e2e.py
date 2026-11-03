@@ -2081,9 +2081,21 @@ def free_port():
     """A port nothing is using. The app has to be told its ports before the listeners exist. It is picked below the
     range the system hands out for outgoing connections, which every process on the machine draws from, so nothing
     takes it between here and the listener starting, and never the same one twice in a run."""
-    first = int(subprocess.run(["sysctl", "-n", "net.inet.ip.portrange.first"], capture_output=True, text=True).stdout.strip() or 49152)
-    while True:
-        port = random.randrange(20000, min(first, 45000))
+    def sysctl(name, default):
+        out = subprocess.run(["sysctl", "-n", name], capture_output=True, text=True).stdout.strip()
+        return int(out) if out.isdigit() else default
+
+    first = sysctl("net.inet.ip.portrange.first", 49152)
+    last = sysctl("net.inet.ip.portrange.last", 65535)
+    # Below the outgoing range when there is room under it, otherwise above its end.
+    if first > 20000:
+        low, high = 20000, min(first, 45000)
+    else:
+        low, high = max(last + 1, 20000), 65535
+    if high - low < 100:
+        raise RuntimeError(f"free_port: no usable port range (outgoing ports are {first}-{last})")
+    for _ in range(1000):
+        port = random.randrange(low, high)
         if port in _ports_given:
             continue
         try:
@@ -2094,6 +2106,7 @@ def free_port():
             continue
         _ports_given.add(port)
         return port
+    raise RuntimeError(f"free_port: no free port found in {low}-{high} after 1000 tries")
 
 
 class StepTimedOut(Exception):

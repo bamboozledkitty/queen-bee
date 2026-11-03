@@ -63,6 +63,8 @@ import Testing
 
     @Test func theFirstRunIsOne() {
         #expect(RunRecord.nextNumber(after: []) == 1)
+        #expect(RunRecord.nextNumber(after: [], floor: 12) == 13)
+        #expect(RunRecord.nextNumber(after: [run(7), run(8)], floor: 3) == 9)
     }
 
     @Test func numbersCarryOnPastTheHighest() {

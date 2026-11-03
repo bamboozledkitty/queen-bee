@@ -26,11 +26,11 @@ struct FlowHeader: View {
                 .help("Show or hide projects and flows")
             breadcrumb
             if let controller {
-                Button { services.togglePin(controller.flow.id) } label: {
-                    Image(systemName: services.pinnedFlowIDs.contains(controller.flow.id) ? "pin.fill" : "pin")
+                Button { services.togglePin(controller) } label: {
+                    Image(systemName: services.isPinned(controller) ? "pin.fill" : "pin")
                 }
                 .buttonStyle(.dsIcon)
-                .accessibilityLabel(services.pinnedFlowIDs.contains(controller.flow.id) ? "Unpin" : "Pin")
+                .accessibilityLabel(services.isPinned(controller) ? "Unpin" : "Pin")
                 .help("Pin this flow to the top of the sidebar")
                 Menu {
                     Button("Rename…") { startRenaming(controller) }
@@ -38,7 +38,7 @@ struct FlowHeader: View {
                         controller.select(.none)
                         controller.showsFlowSettings = true
                     }
-                    Button(services.pinnedFlowIDs.contains(controller.flow.id) ? "Unpin" : "Pin") { services.togglePin(controller.flow.id) }
+                    Button(services.isPinned(controller) ? "Unpin" : "Pin") { services.togglePin(controller) }
                     Button("Stop Its Agents") { controller.shutDown() }
                     Divider()
                     Button("Move to Trash…", role: .destructive) { deleting = controller }
@@ -61,17 +61,7 @@ struct FlowHeader: View {
         .padding(.leading, DS.Space.s)
         .padding(.trailing, DS.Space.m)
         .frame(height: DS.Size.header)
-        .confirmationDialog("Move \"\(deleting?.flow.name ?? "")\" to the Trash?",
-                            isPresented: .init(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-            Button("Move to Trash", role: .destructive) {
-                if let deleting, !deleting.project.delete(deleting, toTrash: true) {
-                    deleting.banner = "Couldn't move \"\(deleting.flow.name)\" to the Trash, so it is still here."
-                }
-                deleting = nil
-            }
-        } message: {
-            Text("Its agents are stopped and the flow's file goes to the Trash, so you can put it back from there with its run history. What the agents said stays in Claude Code's history.")
-        }
+        .movesToTrash($deleting)
     }
 
     // MARK: Where you are

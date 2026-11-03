@@ -487,8 +487,8 @@ enum RemoteCommands {
 
         case .pin(_, let on):
             let id = controller.flow.id
-            guard services.pinnedFlowIDs.contains(id) != on else { return nil }
-            services.togglePin(id)
+            guard services.isPinned(controller) != on else { return nil }
+            services.togglePin(controller)
             say(.pin, on ? "pinned this flow" : "unpinned this flow")
             return nil
 

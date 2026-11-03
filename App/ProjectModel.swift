@@ -83,7 +83,7 @@ final class ProjectModel {
         let controller = FlowController(flow: flow, fileURL: url, project: self)
         controllers.append(controller)
         AppServices.shared.register(controller)
-        if select { AppServices.shared.selectedFlow = controller }
+        if select { AppServices.shared.show(controller) }
         return controller
     }
 

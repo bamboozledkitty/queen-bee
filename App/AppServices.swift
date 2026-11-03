@@ -30,7 +30,8 @@ final class AppServices {
     /// the same id (a copied flow keeps its id), and picking one must not open the other.
     var selectedFlow: FlowController? {
         didSet {
-            place = .flow
+            // The place is left only by a person's choice (`show`). A fallback, such as the next flow after one is
+            // deleted, keeps the person where they are.
             guard selectedFlow !== oldValue else { return }
             // Going into a sub-flow sets the trail first. Any other change of flow starts a new one.
             if flowTrail.last !== selectedFlow { flowTrail = selectedFlow.map { [$0] } ?? [] }
@@ -38,11 +39,18 @@ final class AppServices {
         }
     }
 
-    /// The id of the flow on the canvas. Setting it picks the flow with that id, the one in the project on screen
-    /// when two open projects have it. Where a flow is at hand, set `selectedFlow` instead.
+    /// Puts a flow on the canvas as the person's choice, so the window leaves a place for it. Anything the person
+    /// didn't pick, such as the flow that follows a deleted one, sets `selectedFlow` and stays where it is.
+    func show(_ controller: FlowController?) {
+        selectedFlow = controller
+        place = .flow
+    }
+
+    /// The id of the flow on the canvas. Setting it is a choice, as `show` is: it picks the flow with that id, the
+    /// one in the project on screen when two open projects have it.
     var selectedFlowID: String? {
         get { selectedFlow?.flow.id }
-        set { selectedFlow = newValue.flatMap { flowNamed(byID: $0) } }
+        set { show(newValue.flatMap { flowNamed(byID: $0) }) }
     }
 
     /// The flow with this id, preferring the project on screen and then the first open one.
@@ -248,14 +256,14 @@ final class AppServices {
     func enter(_ inner: FlowController, from outer: FlowController) {
         let upTo = flowTrail.firstIndex { $0 === outer }.map { Array(flowTrail[...$0]) } ?? [outer]
         flowTrail = upTo + [inner]
-        selectedFlow = inner
+        show(inner)
     }
 
     /// Goes back up the trail to one of the flows on it.
     func goBack(to flow: FlowController) {
         guard let index = flowTrail.firstIndex(where: { $0 === flow }) else { return }
         flowTrail = Array(flowTrail[...index])
-        selectedFlow = flow
+        show(flow)
     }
 
     /// The find panel is open.
@@ -299,23 +307,39 @@ final class AppServices {
         showWorkspace()
         // Leaving a place for the flow builds the canvas again, just as changing flow does.
         let switching = selectedFlow !== controller || place != .flow
-        selectedFlow = controller
+        show(controller)
         // The orchestrator isn't a card, and a card may have been deleted since.
         guard let cardID, controller.flow.card(cardID) != nil else { return }
         controller.select(.card(cardID))
-        Task {
-            // A window or a flow's canvas that wasn't on screen takes a moment to appear.
-            if switching || !wasShowing {
-                // Wait until the canvas is on screen, a little at a time and up to about a second.
-                for _ in 0..<20 {
-                    try? await Task.sleep(for: .milliseconds(50))
-                    if controller.canvas?.window != nil { break }
-                }
-                try? await Task.sleep(for: .milliseconds(50))
-            }
-            if let group = controller.flow.group(containing: cardID), group.isFolded { controller.setFolded(false, group: group.id) }
-            controller.canvas?.zoom(toCard: cardID)
+        if switching || !wasShowing || controller.canvas?.window == nil {
+            // The canvas isn't on screen yet. It says so when it joins the window (`canvasAppeared`).
+            wantedCards[ObjectIdentifier(controller)] = (cardID, Date())
+        } else {
+            zoomToCard(cardID, in: controller)
         }
+    }
+
+    /// The card each flow's canvas is to zoom to once it is on screen, and when it was asked for.
+    @ObservationIgnored private var wantedCards: [ObjectIdentifier: (card: String, asked: Date)] = [:]
+    /// How long a wish to zoom to a card holds. A canvas that never appears must not zoom to it much later.
+    private static let wantedCardLife: TimeInterval = 5
+
+    /// The flow's canvas has joined a window. If a card was asked for, zoom to it.
+    func canvasAppeared(for controller: FlowController) {
+        guard let wanted = wantedCards.removeValue(forKey: ObjectIdentifier(controller)),
+              Date().timeIntervalSince(wanted.asked) < Self.wantedCardLife else { return }
+        Task { [weak self, weak controller] in
+            // The window is still laying the canvas out, so it gets a moment before the zoom.
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let self, let controller else { return }
+            self.zoomToCard(wanted.card, in: controller)
+        }
+    }
+
+    private func zoomToCard(_ cardID: String, in controller: FlowController) {
+        // A card folded away in a group can't be shown until the group is unfolded.
+        if let group = controller.flow.group(containing: cardID), group.isFolded { controller.setFolded(false, group: group.id) }
+        controller.canvas?.zoom(toCard: cardID)
     }
 
     /// Every card waiting on the person, in every open project: agents asking a question or for permission, and
@@ -380,8 +404,15 @@ final class AppServices {
         if remembersProjects { UserDefaults.standard.set(true, forKey: OnboardingView.seenKey) }
     }
 
-    /// Flows kept at the top of the sidebar.
-    private(set) var pinnedFlowIDs: Set<String> = []
+    /// Flows kept at the top of the sidebar, by project folder and flow id.
+    private(set) var pins = PinSet()
+
+    /// The ids of the flows pinned in any open project. For where only the id matters; use `isPinned` otherwise.
+    var pinnedFlowIDs: Set<String> { pins.ids }
+
+    func isPinned(_ controller: FlowController) -> Bool {
+        pins.contains(project: controller.project.root.path, id: controller.flow.id)
+    }
 
     @ObservationIgnored private var controllers: [String: WeakController] = [:]
     @ObservationIgnored private var serverTask: Task<Void, Never>?
@@ -515,7 +546,7 @@ final class AppServices {
     /// Puts back the folders that were in the sidebar last time, then the one named on the command line.
     private func restoreProjects() {
         if remembersProjects {
-            pinnedFlowIDs = Set(UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
+            pins = PinSet(saved: UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? [])
             for path in UserDefaults.standard.stringArray(forKey: Self.projectsKey) ?? []
             where FileManager.default.fileExists(atPath: path) {
                 addProject(URL(fileURLWithPath: path), select: false)
@@ -539,7 +570,7 @@ final class AppServices {
             rememberProjects()
             return made
         }()
-        if select, let first = project.controllers.first { selectedFlow = first }
+        if select, let first = project.controllers.first { show(first) }
         return project
     }
 
@@ -557,9 +588,11 @@ final class AppServices {
         UserDefaults.standard.set(projects.map(\.root.path), forKey: Self.projectsKey)
     }
 
-    func togglePin(_ flowID: String) {
-        if !pinnedFlowIDs.insert(flowID).inserted { pinnedFlowIDs.remove(flowID) }
-        if remembersProjects { UserDefaults.standard.set(pinnedFlowIDs.sorted(), forKey: Self.pinnedKey) }
+    func togglePin(_ controller: FlowController) {
+        let id = controller.flow.id
+        pins.toggle(project: controller.project.root.path, id: id,
+                    otherProjects: allFlows.filter { $0.flow.id == id }.map { $0.project.root.path })
+        if remembersProjects { UserDefaults.standard.set(pins.saved, forKey: Self.pinnedKey) }
     }
 
     func shutDown() {
@@ -574,9 +607,10 @@ final class AppServices {
 
     /// Forgets the flow, unless another open project's flow with the same id has taken its place.
     func unregister(_ controller: FlowController) {
-        if controllers[controller.flow.id]?.value === controller || controllers[controller.flow.id]?.value == nil {
-            controllers[controller.flow.id] = nil
-        }
+        let id = controller.flow.id
+        guard controllers[id]?.value === controller || controllers[id]?.value == nil else { return }
+        // Another open project's flow with this id takes the entry over, so its sessions are still routed.
+        controllers[id] = allFlows.first { $0 !== controller && $0.flow.id == id }.map(WeakController.init)
     }
 
     // MARK: What sessions have been told
@@ -814,7 +848,7 @@ final class AppServices {
         guard let controller = deviceFlow(link.flow) ?? (named.count == 1 ? named.first : nil) else {
             return Self.tell("Queen Bee can't find that flow", "No flow called \(link.flow), or with that id, is in a folder open in Queen Bee. If two open folders have it, open only one of them.")
         }
-        selectedFlow = controller
+        show(controller)
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Run “\(controller.flow.name)”?"

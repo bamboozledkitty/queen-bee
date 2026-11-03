@@ -198,7 +198,7 @@ struct RunsList: View {
         let record: RunRecord?
         var id: String { "\(ObjectIdentifier(controller))/" + (record?.id ?? "live:\(controller.flow.id)") }
         var started: Date { record?.started ?? .distantFuture }
-        var number: Int? { record.map(\.number) ?? RunRecord.nextNumber(after: controller.runs) }
+        var number: Int? { record.map(\.number) ?? controller.nextRunNumber }
     }
 
     var body: some View {
@@ -236,7 +236,7 @@ struct RunsList: View {
             ForEach(entries) { entry in
                 PlaceRow(isSelected: chosen == entry.id) {
                     if entry.record == nil {
-                        services.selectedFlow = entry.controller
+                        services.show(entry.controller)
                     } else {
                         chosen = chosen == entry.id ? nil : entry.id
                     }
@@ -348,7 +348,7 @@ private struct RunPeek: View {
             }
             DSDivider()
             Button {
-                services.selectedFlow = controller
+                services.show(controller)
                 controller.view(run: record.id)
             } label: { Text("Show on the canvas").frame(maxWidth: .infinity) }
                 .buttonStyle(.ds(.secondary, wide: true))

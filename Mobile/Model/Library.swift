@@ -55,7 +55,7 @@ extension RemoteClient {
         settings.search = ""
         settings.flowMenu = nil
         if let name = hit.card {
-            canvas.wantedCard = (hit.flowID, name)
+            canvas.wantedCard = (hit.flowID, nil, name)
         }
         if mirror.openFlowID != hit.flowID || mirror.openFlowWentAway {
             open(hit.flowID)
@@ -68,7 +68,7 @@ extension RemoteClient {
     func showWantedCard() {
         guard let wanted = canvas.wantedCard, let flow = mirror.snapshot?.flow, flow.id == wanted.flowID else { return }
         canvas.wantedCard = nil
-        guard let card = flow.cards.first(where: { $0.name == wanted.name }) else { return }
+        guard let card = flow.cards.first(where: { $0.id == wanted.id }) ?? flow.cards.first(where: { $0.name == wanted.name }) else { return }
         canvas.select(.card(card.id))
         canvas.centre(onCard: card.id)
     }

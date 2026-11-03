@@ -87,7 +87,7 @@ struct WorkplaceForm: View {
                 Spacer()
                 Button("Open \(outer.flow.name)") {
                     done()
-                    AppServices.shared.selectedFlow = outer
+                    AppServices.shared.show(outer)
                 }
                 .buttonStyle(.panel(.outline))
             }

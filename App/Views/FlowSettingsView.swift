@@ -76,7 +76,7 @@ struct FlowSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(top, id: \.flow.id) { outer in
                         Button {
-                            services.selectedFlow = outer
+                            services.show(outer)
                             outer.showsFlowSettings = true
                         } label: {
                             Text("The limit is set on \(outer.flow.name): \(Nesting.levels(outer.ownSubflowLimit))")

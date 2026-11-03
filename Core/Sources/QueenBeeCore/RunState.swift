@@ -240,8 +240,10 @@ public struct RunRecord: Codable, Identifiable, Equatable, Sendable {
 
     /// The number the next run of a flow gets, after `runs`: one past the highest so far, or past their count
     /// when none of them has a number yet.
-    public static func nextNumber(after runs: [RunRecord]) -> Int {
-        (runs.compactMap(\.number).max() ?? runs.count) + 1
+    /// `floor` is the highest number the flow has ever given, kept apart from the runs so clearing them doesn't
+    /// bring the numbers back.
+    public static func nextNumber(after runs: [RunRecord], floor: Int = 0) -> Int {
+        max(runs.compactMap(\.number).max() ?? runs.count, floor) + 1
     }
 
     public var cost: Usage { (usage ?? [:]).values.reduce(Usage(), +) }

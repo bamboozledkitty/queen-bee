@@ -483,6 +483,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             savePlace()
             return
         }
+        // A card asked for before this canvas was on screen is zoomed to now.
+        if let controller { AppServices.shared.canvasAppeared(for: controller) }
         if TestHarness.isEnabled, LaunchArguments.floats {
             window.level = .floating
             window.orderFrontRegardless()

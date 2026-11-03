@@ -385,7 +385,7 @@ public actor Engine {
         if let card = flow.card(held.cardID) {
             var message = held.message
             if let text, !Self.isBlank(text) { message.text = text }
-            if card.kind == .approval { message.approvedBy = card.name } else { message.fromName = card.name; message.fromStart = false }
+            if card.kind == .approval { message.approvedBy = card.name } else { message.fromName = card.name; message.fromStart = false; message.approvedBy = nil }
             output.log.append("\(Self.title(card)) → \(portLabel(port))")
             output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: port))
             await send(message, from: card, port: port, in: flow, state: &state, output: &output)
@@ -628,6 +628,7 @@ public actor Engine {
 
         case .prompt:
             var rewritten = message
+            rewritten.approvedBy = nil // the text is new, so an earlier Approval no longer vouches for it
             rewritten.text = Checks.fillTemplate(card.template ?? "", message: message.text, from: message.fromName)
             return ("out", rewritten)
 

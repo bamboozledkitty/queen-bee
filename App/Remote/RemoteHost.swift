@@ -571,7 +571,7 @@ final class RemoteHost {
                 let outer = nesting.outerFlows(of: id)
                 return RemoteFlowSummary(id: id, name: controller.flow.name, isSubflow: controller.flow.isSubflow == true,
                                          activity: controller.activity, parentID: outer.count == 1 ? outer[0] : nil,
-                                         pinned: services.pinnedFlowIDs.contains(id), cardNames: Remote.listedNames(of: controller.flow),
+                                         pinned: services.isPinned(controller), cardNames: Remote.listedNames(of: controller.flow),
                                          sharedID: shared.contains(id) ? true : nil)
             }, browser: Self.browserState(of: project, browser: found))
         // What a role holds, so a device can say when a card has drifted from it, with the start of its instructions and a
@@ -601,7 +601,7 @@ final class RemoteHost {
                 let isShared: Bool? = shared.contains(flowID) ? true : nil
                 if controller.isRunning {
                     runs.append(RemoteRunEntry(flowID: flowID, flowName: name, projectID: projectID, projectName: project.name, runID: nil,
-                                               number: RunRecord.nextNumber(after: controller.runs), outcome: nil, summary: "Running",
+                                               number: controller.nextRunNumber, outcome: nil, summary: "Running",
                                                handOffs: controller.handOffs, started: nil, sharedID: isShared))
                 }
                 for record in controller.runs {

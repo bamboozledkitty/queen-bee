@@ -45,7 +45,7 @@ extension RemoteClient {
     /// A tap on a schedule: its flow opens, with its Start card in the middle of the canvas, as the Mac's does.
     func openSchedule(_ entry: RemoteScheduleEntry) {
         guard entry.sharedID != true else { return }
-        canvas.wantedCard = (entry.flowID, entry.cardName)
+        canvas.wantedCard = (entry.flowID, entry.cardID, entry.cardName)
         if mirror.openFlowID != entry.flowID || mirror.openFlowWentAway {
             open(entry.flowID)
         } else {

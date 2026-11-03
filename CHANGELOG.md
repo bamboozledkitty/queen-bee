@@ -34,7 +34,11 @@ All notable changes to Queen Bee are listed here. The format follows
 - The menu bar shows "Queen Bee", with its space.
 - Two flows with the same id in different projects, as when a flow file is copied, no longer get mixed up: picking one opens that one, only its row is selected, and both show in the iPad's list of flows. Run and schedule rows on the iPad and iPhone say which project they are from when more than one is open.
 - The note that Claude Code may be asking whether to trust the folder sits above the terminal, so the question it points to stays in view.
-- After an Approval card, the End card's log names the Approval card as where the answer came from.
+- After an Approval card, the End card's log names the Approval card as where the answer came from, unless a Script or Prompt card changed the answer after it.
+- Run numbers keep counting after Clear log, and aren't used twice.
+- Deleting or closing the flow on screen no longer takes you away from Needs you, Runs or Schedules.
+- Pinning a flow that was copied into another open project pins only that copy, and closing one project no longer stops the other project's copy from hearing from its agents.
+- On a device, tapping a schedule opens its own Start card when the flow has more than one with the same name.
 - A schedule's time and the hour picker follow your Mac's 12- or 24-hour setting.
 - The inspector no longer covers the card it shows, new cards land where you can see them, and the minimap draws a folded group as one card. The earlier-run note says which run it is.
 - Inspector menus are named for VoiceOver ("Role", "Model"), and icons that only decorate are no longer read out.

@@ -109,6 +109,33 @@ import Testing
         #expect(done.log.contains { $0.hasSuffix("\"Sent\" got the final answer from Sender") }, "\(done.log)")
     }
 
+    @Test func theEndCardsLogNamesTheScriptThatCameAfterAnApproval() async throws {
+        // Start → Writer → Gate (Approval) → Check (Script) → Done (End).
+        var flow = try flow(.approval)
+        var check = CardPatch()
+        check.command = "npm test"
+        try flow.addCard(kind: .script, name: "Check", patch: check)
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "Gate", port: "approved", to: "Check")
+        try flow.addLink(from: "Check", port: "pass", to: "Done")
+        let engine = Engine(judge: ScriptedJudge())
+        let hold = try await reachGate(flow, engine)
+        let approved = await engine.holdResolved(flow: flow, holdID: hold.id, port: "approved", text: nil)
+        let scriptHold = try #require(approved.holds.first)
+        let out = await engine.holdResolved(flow: flow, holdID: scriptHold.id, port: "pass", text: "12 passed")
+        #expect(out.log.contains { $0.hasSuffix("\"Done\" got the final answer from Check") }, "\(out.log)")
+    }
+
+    @Test func anApprovalStraightToAnEndCardIsStillNamed() async throws {
+        var flow = try flow(.approval)
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "Gate", port: "approved", to: "Done")
+        let engine = Engine(judge: ScriptedJudge())
+        let hold = try await reachGate(flow, engine)
+        let out = await engine.holdResolved(flow: flow, holdID: hold.id, port: "approved", text: nil)
+        #expect(out.log.contains { $0.hasSuffix("\"Done\" got the final answer from Gate") }, "\(out.log)")
+    }
+
     @Test func rejectingTakesTheOtherOutputAndCanEndTheRun() async throws {
         let flow = try flow(.approval)
         let engine = Engine(judge: ScriptedJudge())

@@ -23,7 +23,7 @@ struct SidebarView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                    let pinned = services.allFlows.filter { services.pinnedFlowIDs.contains($0.flow.id) && matches($0) }
+                    let pinned = services.allFlows.filter { services.isPinned($0) && matches($0) }
                     if !pinned.isEmpty {
                         header("Pinned")
                         ForEach(pinned, id: \.objectID) { row(for: $0) }
@@ -60,17 +60,7 @@ struct SidebarView: View {
 
             footer
         }
-        .confirmationDialog("Move \"\(deleting?.flow.name ?? "")\" to the Trash?",
-                            isPresented: .init(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-            Button("Move to Trash", role: .destructive) {
-                if let deleting, !deleting.project.delete(deleting, toTrash: true) {
-                    deleting.banner = "Couldn't move \"\(deleting.flow.name)\" to the Trash, so it is still here."
-                }
-                deleting = nil
-            }
-        } message: {
-            Text("Its agents are stopped and the flow's file goes to the Trash, so you can put it back from there with its run history. What the agents said stays in Claude Code's history.")
-        }
+        .movesToTrash($deleting)
     }
 
     /// What is going on across every flow: what waits on you, the runs, the schedules, and the devices.
@@ -260,8 +250,7 @@ struct SidebarView: View {
                         services.enter(controller, from: outer)
                         controller.showWholeFlowSoon()
                     } else {
-                        services.selectedFlow = controller
-                        services.place = .flow
+                        services.show(controller)
                     }
                 } label: {
                     NavRow(controller.flow.name, selected: selected) {
@@ -281,7 +270,7 @@ struct SidebarView: View {
         }
         .contextMenu {
             Button("Rename") { draftName = controller.flow.name; renaming = controller }
-            Button(services.pinnedFlowIDs.contains(id) ? "Unpin" : "Pin") { services.togglePin(id) }
+            Button(services.isPinned(controller) ? "Unpin" : "Pin") { services.togglePin(controller) }
             Button("Stop Its Agents") { controller.shutDown() }
             Divider()
             Button("Move to Trash…", role: .destructive) { deleting = controller }

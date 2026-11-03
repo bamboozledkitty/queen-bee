@@ -37,6 +37,9 @@ nonisolated struct RunHistory: Codable, Sendable {
     var runs: [RunRecord]?
     /// The whole text of the latest run's messages that `messages` keeps cut short, by message id.
     var wholeMessages: [String: String]?
+    /// The highest run number the flow has given, so numbers aren't reused after the log is cleared.
+    /// Nil in a file from before it was kept.
+    var lastRunNumber: Int?
 }
 
 /// One open flow: the graph, its sessions, and its runs. Every change to the graph goes
@@ -404,9 +407,17 @@ final class FlowController: ToolHost {
         for (id, text) in history.wholeMessages ?? [:] { if let id = UUID(uuidString: id) { wholeMessages[id] = text } }
         wholeMessages = CarriedMessages.kept(wholeMessages, for: messages)
         runs = history.runs ?? []
+        highestRunNumber = max(history.lastRunNumber ?? 0, runs.compactMap(\.number).max() ?? 0)
         // What was loaded is earlier runs; the orchestrator is only told about new ones.
         runLogStart = log.count
     }
+
+    /// The highest run number this flow has given. Kept with the history, not worked out from the runs, which
+    /// clearing the log empties.
+    @ObservationIgnored private var highestRunNumber = 0
+
+    /// The number the next run gets: never one the flow has used, even after its log was cleared.
+    var nextRunNumber: Int { RunRecord.nextNumber(after: runs, floor: highestRunNumber) }
 
     private func scheduleHistorySave() {
         historyTask?.cancel()
@@ -430,7 +441,8 @@ final class FlowController: ToolHost {
         for (id, text) in CarriedMessages.kept(wholeMessages, for: latestMessages) { whole[id.uuidString] = text }
         let history = RunHistory(log: log, results: latest?.results ?? results, marks: latest?.marks ?? marks,
                                  linkPasses: latest?.linkPasses ?? linkPasses, handOffs: latest?.handOffs ?? handOffs,
-                                 messages: latestMessages, runs: runs, wholeMessages: whole.isEmpty ? nil : whole)
+                                 messages: latestMessages, runs: runs, wholeMessages: whole.isEmpty ? nil : whole,
+                                 lastRunNumber: highestRunNumber)
         // Encoding and writing can take a while for a long log, so neither holds up the canvas. The writes can
         // finish in any order, so each takes a ticket now and one never lands on top of a newer one.
         let url = historyURL
@@ -579,7 +591,8 @@ final class FlowController: ToolHost {
         let record = RunRecord(id: run.id, started: run.started, ended: Date(), outcome: outcome, command: run.command,
                                log: Array(log.dropFirst(runLogStart)), results: results, marks: marks, linkPasses: linkPasses,
                                messages: messages, handOffs: handOffs, ending: ending,
-                               number: RunRecord.nextNumber(after: runs))
+                               number: nextRunNumber)
+        highestRunNumber = record.number ?? highestRunNumber
         runs.append(record)
         if runs.count > Self.keptRuns { runs.removeFirst(runs.count - Self.keptRuns) }
         // The messages a link carried are kept for the newest few runs only; older runs keep their path and answers.
@@ -1322,33 +1335,27 @@ final class FlowController: ToolHost {
 
     /// Every agent, and the orchestrator unless it is left out. A new agent that hasn't been started yet is left
     /// waiting, as it was.
-    func restartAllAgents(withOrchestrator: Bool = true) {
-        restart(flow.cards.filter { $0.kind == .agent && !(heldBack.contains($0.id) && session(forCard: $0.id).state == .notStarted) },
-                orchestrator: withOrchestrator,
-                saying: withOrchestrator ? "Restarted every agent and the orchestrator" : "Restarted every agent, leaving the orchestrator as it was")
-    }
+    func restartAllAgents(withOrchestrator: Bool = true) { restartFromMac(.all(withOrchestrator: withOrchestrator)) }
 
-    func restartSelectedAgents() {
-        let agents = selectedAgents
-        restart(agents, orchestrator: false, saying: agents.count == 1 ? "Restarted \(agents[0].name)" : "Restarted \(agents.count) agents")
-    }
+    func restartSelectedAgents() { restartFromMac(.cards(Array(selection.cardIDs))) }
 
     /// The agents with settings waiting to be used, and the orchestrator if the flow's details changed under it.
-    func restartAgentsAwaitingRestart() {
-        let agents = agentsAwaitingRestart
-        let orchestrator = orchestratorNeedsRestart
-        let line = agents.isEmpty ? "Restarted the orchestrator with the flow's new details"
-            : agents.count == 1 ? "Restarted \(agents[0].name) with its new settings" : "Restarted \(agents.count) agents with their new settings"
-        restart(agents, orchestrator: orchestrator, saying: orchestrator && !agents.isEmpty ? line + ", and the orchestrator" : line)
+    func restartAgentsAwaitingRestart() { restartFromMac(.awaitingNewSettings) }
+
+    /// The Mac's menu: the same agents and words as a device's command, capitalised, and it asks first when one is busy.
+    private func restartFromMac(_ which: RemoteRestart) {
+        guard case .plan(let agents, let orchestrator, let line) = restartPlan(which) else { return }
+        restart(agents, orchestrator: orchestrator, saying: line.prefix(1).uppercased() + line.dropFirst())
     }
 
-    /// A paired device's Restart menu. It names its own cards, since the Mac's selection is the person's at the Mac,
-    /// and it has asked its own person about agents in the middle of a task, so the Mac does not stop to ask. Nil when
-    /// it was done, otherwise why not, in words the device shows. The Mac has already checked that the device may control.
-    func restartAgents(_ which: RemoteRestart, byDevice name: String) -> String? {
-        guard canRestartAgents else {
-            return asksForWorkplace ? "Choose where this flow works on your Mac first." : "This flow's agents can't be restarted just now."
-        }
+    private enum RestartPlan {
+        case plan(agents: [Card], orchestrator: Bool, line: String)
+        case refused(String)
+    }
+
+    /// Which agents a restart covers and what the log says of it, in lower case so the Mac can capitalise it and a
+    /// device can follow its name with it. One place, so the Mac's menu and a device's command never differ.
+    private func restartPlan(_ which: RemoteRestart) -> RestartPlan {
         let agents: [Card]
         var withOrchestrator = false
         var line: String
@@ -1359,19 +1366,33 @@ final class FlowController: ToolHost {
             line = orchestrator ? "restarted every agent and the orchestrator" : "restarted every agent, leaving the orchestrator as it was"
         case .cards(let ids):
             agents = flow.cards.filter { $0.kind == .agent && ids.contains($0.id) }
-            guard !agents.isEmpty else { return "None of those agents is in this flow any more." }
+            guard !agents.isEmpty else { return .refused("None of those agents is in this flow any more.") }
             line = agents.count == 1 ? "restarted \(agents[0].name)" : "restarted \(agents.count) agents"
         case .awaitingNewSettings:
             agents = agentsAwaitingRestart
             withOrchestrator = orchestratorNeedsRestart
-            guard !agents.isEmpty || withOrchestrator else { return "No agent is waiting to use new settings." }
+            guard !agents.isEmpty || withOrchestrator else { return .refused("No agent is waiting to use new settings.") }
             line = agents.isEmpty ? "restarted the orchestrator with the flow's new details"
                 : agents.count == 1 ? "restarted \(agents[0].name) with its new settings" : "restarted \(agents.count) agents with their new settings"
             if withOrchestrator, !agents.isEmpty { line += ", and the orchestrator" }
         }
-        guard !agents.isEmpty || withOrchestrator else { return "There is no agent to restart." }
-        restart(agents, orchestrator: withOrchestrator, askFirst: false, saying: "\(name) \(line)", fromDevice: true)
-        return nil
+        guard !agents.isEmpty || withOrchestrator else { return .refused("There is no agent to restart.") }
+        return .plan(agents: agents, orchestrator: withOrchestrator, line: line)
+    }
+
+    /// A paired device's Restart menu. It names its own cards, since the Mac's selection is the person's at the Mac,
+    /// and it has asked its own person about agents in the middle of a task, so the Mac does not stop to ask. Nil when
+    /// it was done, otherwise why not, in words the device shows. The Mac has already checked that the device may control.
+    func restartAgents(_ which: RemoteRestart, byDevice name: String) -> String? {
+        guard canRestartAgents else {
+            return asksForWorkplace ? "Choose where this flow works on your Mac first." : "This flow's agents can't be restarted just now."
+        }
+        switch restartPlan(which) {
+        case .refused(let why): return why
+        case .plan(let agents, let orchestrator, let line):
+            restart(agents, orchestrator: orchestrator, askFirst: false, saying: "\(name) \(line)", fromDevice: true)
+            return nil
+        }
     }
 
     /// Restarts `agents`, and the orchestrator too when asked, each keeping its conversation so far. Asks first
