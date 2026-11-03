@@ -22,10 +22,10 @@ import Testing
         }
     }
 
-    /// Faint text is read as words (counts, times, placeholders), so it needs 4.5:1 on the surfaces text rests on.
+    /// Faint text is read as words (counts, times, placeholders), so it needs 4.5:1 on every surface and wash.
     @Test(arguments: Shade.Mode.allCases)
     func faintTextIsReadableOnRestingSurfaces(mode: Shade.Mode) {
-        for (groundName, ground) in Self.grounds.filter({ ["chrome", "panel", "raised", "overlay"].contains($0.0) }) {
+        for (groundName, ground) in Self.grounds {
             let ratio = Palette.textFaint.contrast(with: ground, in: mode)
             #expect(ratio >= 4.5, "textFaint on \(groundName) in \(mode) is \(ratio)")
         }

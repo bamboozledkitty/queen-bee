@@ -153,9 +153,7 @@ struct RunPicker: View {
 
     static func label(for date: Date) -> String {
         // The system's own time format (12 or 24 hour), with a short date when it isn't today.
-        Calendar.current.isDateInToday(date)
-            ? date.formatted(date: .omitted, time: .shortened)
-            : date.formatted(date: .abbreviated, time: .shortened)
+        RunClock.moment(date)
     }
 
     var body: some View {
@@ -205,7 +203,7 @@ private struct LogList: View {
                     }
                     ForEach(controller.shownLog) { line in
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
-                            Text(line.date.formatted(date: .omitted, time: .standard))
+                            Text(RunClock.time(line.date, seconds: true))
                                 .foregroundStyle(Theme.inkSecondary.ui)
                             Text(line.text)
                                 .foregroundStyle(Theme.ink.ui)

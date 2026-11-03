@@ -5,7 +5,7 @@ import Testing
     @Test func theCanvasKeepsTheMacsCardSizes() {
         // The iPad and iPhone canvas is drawn in these, at the desk size, so a card matches the Mac's.
         #expect(TextRole.headline.desk == 13 && TextRole.headline.weight == .semibold)
-        #expect(TextRole.captionLabel.desk == 11.5 && TextRole.captionLabel.weight == .medium)
+        #expect(TextRole.captionLabel.desk == 12 && TextRole.captionLabel.weight == .medium)
         #expect(TextRole.figure.desk == 11 && TextRole.figure.weight == .medium)
         #expect(TextRole.mono.desk == 12)
     }

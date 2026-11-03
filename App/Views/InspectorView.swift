@@ -6,7 +6,7 @@ import QueenBeeDesign
 /// card gets the same three parts: a header that names it, rows for what it is set to, and a
 /// footer with what you can do to it.
 struct InspectorView: View {
-    static let width: CGFloat = 300
+    static let width: CGFloat = 320
     let controller: FlowController
 
     var body: some View {
@@ -192,7 +192,7 @@ private struct CardSettings: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, DS.Space.m)
                     .padding(.vertical, DS.Space.tight)
-                    .background(Theme.liveTint.ui)
+                    .liveRule()
                     .overlay(alignment: .top) { rule }
                     .transition(.opacity)
             }
@@ -494,7 +494,7 @@ private struct ApprovalReview: View {
                     .help("Send the message on along the Rejected link, with your reason ahead of it if you gave one")
                 Spacer()
                 Button(draft == hold.text ? "Approve" : "Approve edited") { controller.approve(hold.id, text: draft) }
-                    .buttonStyle(.panel(.live))
+                    .buttonStyle(.panel(.filled))
                     .help("Send the message on along the Approved link")
             }
         }
@@ -502,7 +502,7 @@ private struct ApprovalReview: View {
         .padding(.horizontal, DS.Space.m)
         .padding(.vertical, DS.Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.liveTint.ui)
+        .liveRule()
         .overlay(alignment: .top) { rule }
         .onAppear { draft = hold.text }
     }
@@ -544,7 +544,7 @@ private struct ScriptReview: View {
         .padding(.horizontal, DS.Space.m)
         .padding(.vertical, DS.Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.liveTint.ui)
+        .liveRule()
         .overlay(alignment: .top) { rule }
     }
 }
@@ -625,7 +625,7 @@ private struct TriggerSettings: View {
                 .foregroundStyle(Theme.liveInk.ui)
                 .padding(.horizontal, DS.Space.m)
                 .padding(.vertical, DS.Space.tight)
-                .background(Theme.liveTint.ui)
+                .liveRule()
                 .overlay(alignment: .top) { rule }
             }
         }
@@ -948,6 +948,16 @@ private struct EditorField: View {
                     .onChange(of: draft) { if draft != text { commit(draft) } }
                     .onChange(of: text) { if text != draft { draft = text } }
             }
+        }
+    }
+}
+
+
+extension View {
+    /// Marks a block that is waiting on the person: the panel's own surface, with a thin orange rule down its leading edge.
+    fileprivate func liveRule() -> some View {
+        overlay(alignment: .leading) {
+            Theme.live.ui.frame(width: DS.Stroke.focus)
         }
     }
 }

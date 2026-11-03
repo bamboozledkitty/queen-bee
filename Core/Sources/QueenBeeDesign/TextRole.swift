@@ -93,7 +93,7 @@ public struct TextRole: Sendable, Hashable {
     /// The screen's title: "Needs you", a flow's name in its header on the phone.
     public static let largeTitle = TextRole(desk: 22, touch: 30, weight: .bold, tracking: -0.5)
     /// A panel's or a sheet's title: the selected card's name in the inspector.
-    public static let title = TextRole(desk: 17, touch: 22, weight: .semibold, tracking: -0.3)
+    public static let title = TextRole(desk: 16, touch: 22, weight: .semibold, tracking: -0.3)
     /// A name in a row or a card's title bar.
     public static let headline = TextRole(desk: 13, touch: 16, weight: .semibold)
     /// A sentence.
@@ -101,20 +101,20 @@ public struct TextRole: Sendable, Hashable {
     /// A control's text: buttons, tabs, sidebar rows, menu items.
     public static let label = TextRole(desk: 13, touch: 15, weight: .medium)
     /// Small print: a time, a hint under a field.
-    public static let caption = TextRole(desk: 11.5, touch: 13)
+    public static let caption = TextRole(desk: 12, touch: 13)
     /// A first-run screen's name, above its first sentence.
     public static let display = TextRole(desk: 24, touch: 28, weight: .medium)
     /// A short heading on a touch screen: an empty state's title, a settings page's title.
     public static let heading = TextRole(desk: 14, touch: 17, weight: .medium)
     /// A word on a card or in a pill that has to stand out from the small print around it: a state, a name.
-    public static let captionLabel = TextRole(desk: 11.5, touch: 13, weight: .medium)
+    public static let captionLabel = TextRole(desk: 12, touch: 13, weight: .medium)
     /// The title of a sheet or a first-run step, between a headline and a panel's title.
-    public static let subtitle = TextRole(desk: 16, touch: 19, weight: .medium, tracking: -0.2)
+    public static let subtitle = TextRole(desk: 16, touch: 19, weight: .semibold, tracking: -0.3)
     /// Fine print under a row: a count, a hint beside a control.
     public static let footnote = TextRole(desk: 11, touch: 12)
     public static let footnoteLabel = TextRole(desk: 11, touch: 12, weight: .medium)
     /// The smallest print: the labels inside a drawn preview, which are never the only place something is said.
-    public static let micro = TextRole(desk: 10, touch: 11, weight: .medium)
+    public static let micro = TextRole(desk: 11, touch: 11, weight: .medium)
     /// The small heading over a group: "Pinned", a project's name, "Properties".
     public static let sectionHeader = TextRole(desk: 12, touch: 13, weight: .medium)
     /// Ids, paths, branches, costs.

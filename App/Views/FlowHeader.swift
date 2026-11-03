@@ -2,7 +2,7 @@ import QueenBeeCore
 import QueenBeeDesign
 import SwiftUI
 
-/// The strip across the top of the inset panel: where you are (project › flow), and what you can do with the
+/// The strip across the top of the flow: where you are (project › flow), and what you can do with the
 /// flow (answer what waits on you, choose where it works, run or stop it, show the side panel).
 struct FlowHeader: View {
     let controller: FlowController?
@@ -154,21 +154,23 @@ struct FlowHeader: View {
                 .buttonStyle(.ds(.live))
                 .help("Stop the run (⌘.)")
         } else {
-            HStack(spacing: DS.Space.xxs) {
+            let several = controller.startCards.count > 1
+            HStack(spacing: 0) {
                 Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill") }
-                    .buttonStyle(.ds(.primary))
+                    .buttonStyle(.ds(.primary, joined: several ? .trailing : .none))
                     .disabled(!controller.canRun)
                     .help(runHelp(controller))
-                if controller.startCards.count > 1 {
+                if several {
                     // Several Start cards: say which one. A plain click on Run uses the selected one, or the first.
+                    // The arrow is the other half of the Run button, as the Restart button's arrow is inside it.
                     Menu {
                         ForEach(controller.startCards) { start in
                             Button("Run from \(start.name)") { Task { await controller.run(startCardID: start.id) } }
                         }
-                    } label: { Image(systemName: "chevron.down") }
+                    } label: { Image(systemName: "chevron.down").dsIcon(DS.IconSize.xs, .semibold) }
                         .menuStyle(.button)
                         .menuIndicator(.hidden)
-                        .buttonStyle(.dsIcon)
+                        .buttonStyle(.ds(.primary, joined: .leading))
                         .fixedSize()
                         .disabled(!controller.canRun)
                         .accessibilityLabel("Run from…")
@@ -228,23 +230,37 @@ private struct RestartMenuButton: View {
     }
 }
 
-/// The tabs under the header: the flow's canvas, and its settings.
-struct FlowTabs: View {
+/// The way to the flow's settings, floating in the canvas's top right corner: a gear that says "Settings" when
+/// the pointer is on it. It opens them in a sheet over the canvas.
+struct FlowSettingsButton: View {
     let controller: FlowController
-
-    private enum Tab: Hashable { case canvas, settings }
+    @State private var isHovering = false
 
     var body: some View {
-        HStack {
-            PillTabs([.init(Tab.canvas, "Canvas"), .init(Tab.settings, "Settings")], selection: Binding(
-                get: { controller.showsFlowSettings ? .settings : .canvas },
-                set: { tab in
-                    if tab == .settings { controller.select(.none) }
-                    controller.showsFlowSettings = tab == .settings
-                }))
-            Spacer()
+        Button {
+            controller.select(.none)
+            controller.showsFlowSettings = true
+        } label: {
+            HStack(spacing: DS.Space.xs) {
+                Image(systemName: "gearshape")
+                    .dsIcon(DS.IconSize.l, .medium)
+                if isHovering {
+                    Text("Settings")
+                        .textRole(.label)
+                        .fixedSize()
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+                }
+            }
+            .foregroundStyle((isHovering ? Palette.text : Palette.textMuted).color)
+            .padding(.horizontal, DS.Space.s)
+            .frame(minWidth: DS.Size.bar, minHeight: DS.Size.bar)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, DS.Space.m)
-        .frame(height: DS.Size.tabRow)
+        .buttonStyle(.plain)
+        .floatingPanel()
+        .onHover { isHovering = $0 }
+        .animation(Theme.Motion.standard, value: isHovering)
+        .accessibilityLabel("Flow settings")
+        .help("The flow's settings")
     }
 }

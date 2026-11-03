@@ -3247,7 +3247,7 @@ def scenario_panels():
         # Measured as the room with the banner was: with the panel left alone. On an iPhone the panel is a
         # sheet that comes up over the canvas's foot, and asking for a page of it brings it up.
         without_banner = room(play(3))
-        check("when nothing is waiting the banner goes, and the canvas has its room back", p.get("needsYou") == [] and without_banner > with_banner + 100,
+        check("when nothing is waiting the banner goes, and the canvas has its room back", p.get("needsYou") == [] and without_banner > with_banner + 30,
               f"{without_banner:.0f} points clear, {with_banner:.0f} with the banner")
         check("the run that ended is listed first, and is the one on show",
               [(r["id"], r["outcome"], r["cost"], r["onShow"]) for r in p.get("runs", [])][:1] == [("run00003", "finished", "$0.37", True)]

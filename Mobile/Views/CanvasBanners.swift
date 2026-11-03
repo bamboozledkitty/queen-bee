@@ -37,80 +37,38 @@ struct CanvasBanners: View {
     }
 }
 
-/// The cards waiting on the person, in canvas order. Tapping one goes to it. When this device may answer,
-/// each has its card's buttons under it, at full size however small the card is on screen. An agent waiting
-/// in its terminal has a button that opens the terminal. What can't be answered from here is said in the last line.
+/// One line over the canvas saying that a card is waiting on the person, with a button that goes to it. The
+/// decision itself is asked once, on the card and in its details, and not here a third time. With several waiting
+/// the line names the first, in canvas order, and counts the rest; the Needs you list has them all.
 private struct NeedsYouBanner: View {
     @Environment(RemoteClient.self) private var client
     let waiting: [WaitingCard]
-    /// More than this many and the rest are counted, so the banner never covers the canvas it points at.
-    private static let most = 4
 
     var body: some View {
-        let abilities = client.abilities
-        VStack(alignment: .leading, spacing: 0) {
-            Label(waiting.count == 1 ? "1 needs you" : "\(waiting.count) need you", systemImage: "hand.raised")
-                .textRole(.label)
-                .foregroundStyle(Theme.liveInk.ui)
-                .padding(.horizontal, Theme.Space.m)
-                .frame(maxWidth: .infinity, minHeight: DS.Size.rowCompact, alignment: .leading)
-                .background(Theme.liveTint.ui)
-                .accessibilityAddTraits(.isHeader)
-            ForEach(waiting.prefix(Self.most)) { card in
-                Hairline()
-                Button { client.go(to: card) } label: {
-                    HStack(spacing: Theme.Space.s) {
-                        Image(systemName: CanvasGeometry.icon(for: card.kind))
-                            .dsIcon(DS.IconSize.xl)
-                            .frame(width: DS.Size.iconSlotWide)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: DS.Space.xxs) {
-                            Text(card.name).textRole(.label).lineLimit(1)
-                            Text(card.reason).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
-                                .multilineTextAlignment(.leading)
-                        }
-                        Spacer(minLength: Theme.Space.s)
-                        Image(systemName: "scope").dsIcon(DS.IconSize.xl).foregroundStyle(Theme.inkSecondary.ui)
-                            .accessibilityHidden(true)
-                    }
-                    .foregroundStyle(Theme.ink.ui)
-                    .padding(.horizontal, Theme.Space.m)
-                    .padding(.vertical, DS.Space.tight)
-                    .frame(maxWidth: .infinity, minHeight: Theme.Touch.target, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(card.name). \(card.reason).")
-                .accessibilityHint("Goes to this card on the canvas.")
-                if let buttons = abilities.cards[card.id] {
-                    PressButtons(buttons: buttons, about: card.name)
-                        .padding(.horizontal, Theme.Space.m)
-                        .padding(.bottom, Theme.Space.s)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                } else if abilities.inTerminal.contains(card.id), client.terminals.sizes[card.id] != nil {
-                    OpenTerminalButton(cardID: card.id, name: card.name)
-                        .padding(.horizontal, Theme.Space.m)
-                        .padding(.bottom, Theme.Space.s)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
+        if let first = waiting.first {
+            let others = waiting.count - 1
+            let summary = "\(first.name)\(others > 0 ? " and \(others) more" : "") · waiting for you"
+            HStack(spacing: Theme.Space.s) {
+                Text(summary)
+                    .textRole(.label)
+                    .foregroundStyle(Theme.liveInk.ui)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Go to") { client.go(to: first) }
+                    .buttonStyle(.panel(.outline))
+                    .accessibilityLabel("Go to \(first.name)")
+                    .accessibilityHint("Goes to this card on the canvas, where it can be answered.")
             }
-            let more = waiting.count > Self.most ? "And \(waiting.count - Self.most) more." : nil
-            let last = [more, abilities.answerLine].compactMap { $0 }.joined(separator: " ")
-            if !last.isEmpty {
-                Hairline()
-                Text(last)
-                    .textRole(.caption)
-                    .foregroundStyle(Theme.inkSecondary.ui)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Theme.Space.m)
-                    .padding(.vertical, Theme.Space.s)
-            }
+            .padding(.leading, Theme.Space.m)
+            .padding(.trailing, Theme.Space.m)
+            .frame(maxWidth: .infinity, minHeight: Theme.Touch.target, alignment: .leading)
+            .liveRule()
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .floatingPanel()
+            .accessibilityElement(children: .contain)
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-        .floatingPanel()
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.live.ui, lineWidth: Theme.Stroke.card))
     }
-
 }
 
 /// For an agent that is waiting on the person in its terminal: opens the terminal full screen with the keys

@@ -18,7 +18,7 @@ struct PressButtons: View {
         HStack(spacing: Theme.Space.s) {
             ForEach(buttons) { button in
                 Button(button.title) { client.press(button.press) }
-                    .buttonStyle(.panel(button.isMain ? .live : .outline))
+                    .buttonStyle(.panel(button.isMain ? .filled : .outline))
                     .disabled(!button.isEnabled)
                     .accessibilityLabel(about.isEmpty ? button.title : "\(button.title), \(about)")
                     .accessibilityHint(button.hint)
@@ -45,19 +45,27 @@ struct CanvasFoot: View {
                     .transition(.opacity)
             }
             EditBar()
+            // When the connection is well and has nothing to explain, a phone folds it into a dot beside the buttons
+            // rather than spend a bar of its own on it. Otherwise it keeps its strip, where the help can be read.
+            let status = ConnectionStatus(client)
+            let folds = status.isConnected && !status.hasHelp
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .bottom, spacing: Theme.Space.m) {
                     ConnectionBar(showSettings: showSettings)
                     Spacer(minLength: 0)
                     CanvasMore()
-                    RunBar(abilities: abilities)
+                    RunBar(abilities: abilities, showSettings: showSettings)
                 }
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     HStack(alignment: .bottom, spacing: Theme.Space.s) {
-                        RunBar(abilities: abilities)
+                        RunBar(abilities: abilities, showSettings: showSettings)
                         CanvasMore()
+                        if folds {
+                            Spacer(minLength: 0)
+                            ConnectionBar(showSettings: showSettings, isCompact: true)
+                        }
                     }
-                    ConnectionBar(showSettings: showSettings)
+                    if !folds { ConnectionBar(showSettings: showSettings) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -69,22 +77,28 @@ struct CanvasFoot: View {
 
 /// Run and Stop, as the Mac's toolbar has them: Run when nothing is going, Stop while a run is. The Mac's
 /// Run takes no words of its own, and neither does this one: a run starts with what its Start card says.
-/// When this device may only watch, one line here says how to change that, and there are no buttons.
+/// When this device may only watch, one short line here says so, with a button that opens the settings, where how
+/// to change that is written. There are no run buttons.
 struct RunBar: View {
     @Environment(RemoteClient.self) private var client
     let abilities: Abilities
+    let showSettings: () -> Void
 
     var body: some View {
         if let hint = abilities.hint {
-            Text(hint)
-                .textRole(.caption)
-                .foregroundStyle(Theme.inkSecondary.ui)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: DS.Size.noteWidth, alignment: .leading)
-                .padding(.horizontal, Theme.Space.m)
-                .padding(.vertical, Theme.Space.s)
-                .frame(minHeight: Theme.Touch.target)
-                .floatingPanel()
+            HStack(spacing: Theme.Space.xs) {
+                Text("Watching only")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                    .lineLimit(1)
+                    .padding(.leading, Theme.Space.s)
+                Button("Settings", action: showSettings)
+                    .buttonStyle(.panel(.quiet))
+                    .accessibilityHint(hint)
+            }
+            .padding(Theme.Space.xs)
+            .floatingPanel()
+            .accessibilityElement(children: .contain)
         } else if !abilities.bar.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
             // The bar's note has a line of its own above the buttons, on a phone and on an iPad: beside them it is a
@@ -241,7 +255,7 @@ struct HoldAnswer: View {
                         .accessibilityHint(draft == nil ? "Lets you change the message before approving it." : "Puts the message back as it was.")
                     let edited = draft.map { $0 != hold.text } ?? false
                     Button(edited ? "Approve edited" : "Approve") { client.press(.approve(holdID: hold.id, text: draft ?? hold.text)) }
-                        .buttonStyle(.panel(.live))
+                        .buttonStyle(.panel(.filled))
                         .disabled(buttons.contains { !$0.isEnabled })
                         .accessibilityHint("Sends the message on along the Approved link.")
                 }
@@ -251,7 +265,7 @@ struct HoldAnswer: View {
                 ForEach(buttons) { button in
                     if button.isMain { Spacer(minLength: 0) }
                     Button(button.title) { client.press(button.press) }
-                        .buttonStyle(.panel(button.isMain ? .live : .outline))
+                        .buttonStyle(.panel(button.isMain ? .filled : .outline))
                         .disabled(!button.isEnabled)
                         .accessibilityHint(button.hint)
                 }

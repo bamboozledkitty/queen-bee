@@ -15,9 +15,8 @@ enum PanelTab: String, CaseIterable {
     }
 }
 
-/// The app's one window, in Linear's frame: the sidebar sits on the window's own colour, and the flow sits in a
-/// rounded panel inset from the window's edges, with its header and tabs along the top and the side panel
-/// down its right.
+/// The app's one window, flat from edge to edge: the sidebar sits on the window's own colour, a hairline away
+/// from the flow, which has its header and tabs along the top and the side panel down its right.
 struct WorkspaceView: View {
     static let gap = DS.Space.m
 
@@ -36,14 +35,13 @@ struct WorkspaceView: View {
                     SidebarView()
                         .frame(width: DS.Size.sidebarWidth)
                         .transition(.move(edge: .leading).combined(with: .opacity))
+                    DSDivider(vertical: true)
                 }
                 Group {
                     if services.place == .flow { panel } else { PlaceView(place: services.place, showsSidebar: $showsSidebar) }
                 }
-                    .insetPanel()
-                    .padding(.vertical, DS.Size.panelInset)
-                    .padding(.trailing, DS.Size.panelInset)
-                    .padding(.leading, showsSidebar ? 0 : DS.Size.panelInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Palette.panel.color)
             }
             .ignoresSafeArea()
 
@@ -101,15 +99,11 @@ struct WorkspaceView: View {
         .frame(minWidth: 900, minHeight: 560)
     }
 
-    /// The inset panel: the header, the tabs, and the flow with the side panel beside it.
+    /// The flow: the header, and the flow with the side panel beside it.
     private var panel: some View {
         VStack(spacing: 0) {
             FlowHeader(controller: services.current, showsSidebar: $showsSidebar, showsPanel: $showsPanel)
             DSDivider()
-            if let controller = services.current {
-                FlowTabs(controller: controller)
-                DSDivider()
-            }
             HStack(spacing: 0) {
                 ZStack {
                     if let controller = services.current {
@@ -125,17 +119,10 @@ struct WorkspaceView: View {
                         .environment(\.orchestratorIsShowing, showsPanel && tab == .orchestrator)
                         .padding(Self.gap)
                         .id(controller.objectID)
-                        if controller.showsFlowSettings {
-                            // Over the canvas rather than in its place, so the agents' terminals keep their views.
-                            ScrollView {
-                                FlowSettingsView(controller: controller)
-                                    .frame(maxWidth: FlowSettingsView.pageWidth)
-                                    .padding(DS.Space.xl)
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .background(Palette.panel.color)
-                            .transition(.opacity)
-                        }
+                        FlowSettingsButton(controller: controller)
+                            .padding(Self.gap)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .id(controller.objectID)
                     } else if services.projects.isEmpty {
                         WelcomeView()
                     } else {
@@ -153,7 +140,14 @@ struct WorkspaceView: View {
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
-            .animation(Theme.Motion.standard, value: services.current?.showsFlowSettings)
+        }
+        // A sheet over the canvas, so the flow stays where it was behind it.
+        .sheet(isPresented: Binding(get: { services.current?.showsFlowSettings == true },
+                                    set: { if !$0 { services.current?.showsFlowSettings = false } })) {
+            if let controller = services.current {
+                FlowSettingsSheet(controller: controller)
+                    .presentationBackground(Palette.panel.color)
+            }
         }
     }
 
@@ -200,7 +194,9 @@ struct CanvasControls: View {
             .overlay(alignment: .topLeading) { PaletteView(controller: controller) }
             .overlay(alignment: .topTrailing) {
                 if controller.selection != .none {
+                    // Under the settings button, which has this corner.
                     InspectorView(controller: controller)
+                        .padding(.top, DS.Size.bar + DS.Space.s)
                         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
                 }
             }

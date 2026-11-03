@@ -187,7 +187,13 @@ private struct FlowRow: View {
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .padding(.leading, CGFloat(max(0, depth - 1)) * DS.Size.treeIndent)
             } else {
-                StatusDot(flow.activity.tone, size: DS.Size.dotTouch).frame(width: DS.Size.iconSlot)
+                // The pill says the state in words when it has any to say, so the dot would say it twice. Its place
+                // stays, so the names keep their line.
+                if flow.activity.words != nil && flow.activity != .running {
+                    Color.clear.frame(width: DS.Size.iconSlot, height: DS.Size.dotTouch).accessibilityHidden(true)
+                } else {
+                    StatusDot(flow.activity.tone, size: DS.Size.dotTouch).frame(width: DS.Size.iconSlot)
+                }
             }
             VStack(alignment: .leading, spacing: DS.Space.xxs) {
                 Text(flow.name)

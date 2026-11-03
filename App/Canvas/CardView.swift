@@ -80,6 +80,7 @@ final class TitleBarView: NSView {
 final class BadgeLabel: NSView {
     enum Tone { case plain, live, pass, fail }
 
+    private static let height: CGFloat = 18
     private let label = NSTextField(labelWithString: "")
     private(set) var tone: Tone = .plain
 
@@ -88,7 +89,7 @@ final class BadgeLabel: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 9
+        layer?.cornerRadius = Self.height / 2  // a capsule
         label.font = TextRole.captionLabel.nsFont()
         addSubview(label)
     }
@@ -107,8 +108,8 @@ final class BadgeLabel: NSView {
         }
         label.sizeToFit()
         // A pill: round ends, and room either side of the words.
-        setFrameSize(NSSize(width: label.frame.width + (tone == .plain ? 4 : 14), height: 18))
-        label.setFrameOrigin(NSPoint(x: tone == .plain ? 2 : 7, y: (18 - label.frame.height) / 2))
+        setFrameSize(NSSize(width: label.frame.width + (tone == .plain ? 4 : 14), height: Self.height))
+        label.setFrameOrigin(NSPoint(x: tone == .plain ? 2 : 7, y: (Self.height - label.frame.height) / 2))
         needsDisplay = true
     }
 
@@ -282,7 +283,8 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         if shows != (old < Self.overviewBelow) {
             overview.layer?.ease("opacity", to: Float(shows ? 1 : 0), duration: Theme.Motion.standardDuration)
         }
-        // The overview's type is sized to read the same on screen whatever the zoom.
+        // The overview's type is sized to read the same on screen whatever the zoom (never smaller than its normal size);
+        // a card too narrow for it truncates with an ellipsis.
         if shows { needsLayout = true }
     }
 
@@ -343,13 +345,19 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         overview.frame = body.bounds
         if overview.isShowing {
             let scale = 1 / max(zoom, 0.01)
-            overviewName.font = TextRole.headline.nsFont(scale: min(44.0 / 13, scale))
-            overviewDetail.font = TextRole.captionLabel.nsFont(scale: min(32 / 11.5, scale))
+            overviewName.font = TextRole.headline.nsFont(scale: scale)
+            overviewDetail.font = TextRole.captionLabel.nsFont(scale: scale)
             let width = max(0, overview.bounds.width - 24)
-            let nameHeight = min(overviewName.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
-            let detailHeight = overviewDetail.intrinsicContentSize.height
-            let top = max(4, (overview.bounds.height - nameHeight - detailHeight - 4) / 2)
+            let room = max(0, overview.bounds.height - 8)
+            let fullName = overviewName.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height
+            // A card too short for both lines keeps its name and lets the detail go, rather than cutting it in half.
+            let detailHeight = overviewDetail.stringValue.isEmpty ? 0 : overviewDetail.intrinsicContentSize.height
+            let showsDetail = detailHeight > 0 && min(fullName, room * 0.6) + 4 + detailHeight <= room
+            let nameHeight = showsDetail ? min(fullName, room * 0.6) : min(fullName, room)
+            let shown = nameHeight + (showsDetail ? 4 + detailHeight : 0)
+            let top = max(4, (overview.bounds.height - shown) / 2)
             overviewName.frame = NSRect(x: 12, y: top, width: width, height: nameHeight)
+            overviewDetail.isHidden = !showsDetail
             overviewDetail.frame = NSRect(x: 12, y: top + nameHeight + 4, width: width, height: detailHeight)
         }
 

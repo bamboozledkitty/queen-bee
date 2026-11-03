@@ -15,13 +15,23 @@ struct PlaceView: View {
                 Button { showsSidebar.toggle() } label: { Image(systemName: "sidebar.leading") }
                     .buttonStyle(.dsIcon)
                     .accessibilityLabel(showsSidebar ? "Hide projects" : "Show projects")
-                Image(systemName: icon).dsIcon(DS.IconSize.xl, .medium).foregroundStyle(Palette.textMuted.color)
-                Text(title).textRole(.body).fontWeight(.medium).foregroundStyle(Palette.text.color)
                 Spacer()
             }
             .padding(.leading, DS.Space.s)
             .padding(.trailing, DS.Space.m)
             .frame(height: DS.Size.header)
+            // The place's name is the page title, on the same left edge as its rows.
+            HStack(spacing: DS.Space.s) {
+                Image(systemName: icon).dsIcon(DS.IconSize.xl, .medium).foregroundStyle(Palette.textMuted.color)
+                Text(title).textRole(.title).foregroundStyle(Palette.text.color)
+                Spacer()
+            }
+            .padding(.horizontal, DS.Space.xl)
+            .padding(.bottom, DS.Space.m)
+            .frame(maxWidth: DS.Size.placeColumn)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
             DSDivider()
             switch place {
             case .needsYou: NeedsYouList()
@@ -56,22 +66,19 @@ struct PlaceView: View {
 
 // MARK: Parts the places share
 
-/// The band over a group of rows: a mark, a name and how many.
+/// The label over a group of rows: a name and how many. Each row carries its own mark, so the label has none.
 private struct GroupHeader: View {
     let title: String
     let count: Int
-    let tone: StatusTone
 
     var body: some View {
         HStack(spacing: DS.Space.s) {
-            StatusDot(tone, size: 9)
-            Text(title).textRole(.body).fontWeight(.medium).foregroundStyle(Palette.text.color)
+            Text(title).textRole(.body).foregroundStyle(Palette.textMuted.color)
             Text("\(count)").textRole(.body).foregroundStyle(Palette.textFaint.color).monospacedDigit()
             Spacer()
         }
         .padding(.horizontal, DS.Space.xl)
         .frame(height: DS.Size.groupHeader)
-        .background(Palette.raised.color)
         .overlay(alignment: .bottom) { DSDivider() }
         .accessibilityAddTraits(.isHeader)
     }
@@ -156,7 +163,7 @@ private struct NeedsYouList: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    GroupHeader(title: "Waiting on you", count: waiting.count, tone: .live)
+                    GroupHeader(title: "Waiting on you", count: waiting.count)
                     // A card's id is only unique in its flow, and a copied flow keeps its cards' ids.
                     ForEach(waiting.map { WaitingRow(controller: $0.controller, card: $0.card) }) { entry in
                         PlaceRow { services.reveal(entry.controller, cardID: entry.card.id) } content: {
@@ -168,9 +175,15 @@ private struct NeedsYouList: View {
                             Text(asks(entry.card, in: entry.controller)).foregroundStyle(Palette.textMuted.color).lineLimit(1)
                             Spacer(minLength: DS.Space.s)
                             FlowTag(controller: entry.controller)
+                        } trailing: {
+                            // The same go-to-the-card the row does when clicked, in a column of its own.
+                            Button("Go to card") { services.reveal(entry.controller, cardID: entry.card.id) }
+                                .buttonStyle(.ds(.ghost))
                         }
                     }
                 }
+                .frame(maxWidth: DS.Size.placeColumn)
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -214,10 +227,12 @@ struct RunsList: View {
             HStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        group("Running", live, tone: .live)
-                        group("Stopped", stopped, tone: .fail)
-                        group("Done", done, tone: .pass)
+                        group("Running", live)
+                        group("Stopped", stopped)
+                        group("Done", done)
                     }
+                    .frame(maxWidth: DS.Size.placeColumn)
+                    .frame(maxWidth: .infinity)
                 }
                 .frame(maxWidth: .infinity)
                 if let id = chosen, let entry = (live + past).first(where: { $0.id == id }), let record = entry.record {
@@ -230,9 +245,9 @@ struct RunsList: View {
     }
 
     @ViewBuilder
-    private func group(_ title: String, _ entries: [Entry], tone: StatusTone) -> some View {
+    private func group(_ title: String, _ entries: [Entry]) -> some View {
         if !entries.isEmpty {
-            GroupHeader(title: title, count: entries.count, tone: tone)
+            GroupHeader(title: title, count: entries.count)
             ForEach(entries) { entry in
                 PlaceRow(isSelected: chosen == entry.id) {
                     if entry.record == nil {
@@ -254,6 +269,7 @@ struct RunsList: View {
                     }
                     Text(entry.record.map { RunPicker.label(for: $0.started) } ?? "now")
                         .textRole(.caption)
+                        .monospacedDigit()
                         .foregroundStyle(Palette.textFaint.color)
                         .frame(width: 84, alignment: .trailing)
                 }
@@ -304,13 +320,6 @@ private struct RunPeek: View {
     let close: () -> Void
     private var services: AppServices { AppServices.shared }
 
-    /// The time in the person's own format, with the day when it isn't today.
-    private static func time(of date: Date) -> String {
-        Calendar.current.isDateInToday(date)
-            ? date.formatted(date: .omitted, time: .shortened)
-            : date.formatted(date: .abbreviated, time: .shortened)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DS.Space.s) {
@@ -335,8 +344,9 @@ private struct RunPeek: View {
                 LazyVStack(alignment: .leading, spacing: DS.Space.s) {
                     ForEach(record.log) { line in
                         HStack(alignment: .firstTextBaseline, spacing: DS.Space.m) {
-                            Text(Self.time(of: line.date))
+                            Text(RunClock.moment(line.date))
                                 .textRole(.monoCaption)
+                                .monospacedDigit()
                                 .foregroundStyle(Palette.textFaint.color)
                                 .lineLimit(1)
                                 .fixedSize()
@@ -385,9 +395,11 @@ private struct SchedulesList: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    group("On", on, tone: .pass)
-                    group("Off", off, tone: .neutral)
+                    group("On", on)
+                    group("Off", off)
                 }
+                .frame(maxWidth: DS.Size.placeColumn)
+                .frame(maxWidth: .infinity)
             }
             .confirmationDialog("Turn on this schedule?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
                                 titleVisibility: .visible, presenting: confirming) { entry in
@@ -409,9 +421,9 @@ private struct SchedulesList: View {
     }
 
     @ViewBuilder
-    private func group(_ title: String, _ entries: [Entry], tone: StatusTone) -> some View {
+    private func group(_ title: String, _ entries: [Entry]) -> some View {
         if !entries.isEmpty {
-            GroupHeader(title: title, count: entries.count, tone: tone)
+            GroupHeader(title: title, count: entries.count)
             ForEach(entries) { entry in
                 let armed = entry.controller.isArmed(entry.card)
                 PlaceRow(action: { AppServices.shared.reveal(entry.controller, cardID: entry.card.id) }) {
@@ -423,7 +435,7 @@ private struct SchedulesList: View {
                     Text("from \(entry.card.name)").foregroundStyle(Palette.textMuted.color).lineLimit(1)
                     Spacer(minLength: DS.Space.s)
                     if armed, let next = entry.controller.nextFires[entry.card.id] {
-                        Text("Next \(RunPicker.label(for: next))").textRole(.caption).foregroundStyle(Palette.textMuted.color)
+                        Text("Next \(RunPicker.label(for: next))").textRole(.caption).monospacedDigit().foregroundStyle(Palette.textMuted.color)
                     }
                     FlowTag(controller: entry.controller)
                 } trailing: {
@@ -450,7 +462,7 @@ private struct DevicesPlace: View {
         Form { RemoteSettingsSection() }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
-            .frame(maxWidth: 640)
+            .frame(maxWidth: DS.Size.placeColumn)
             .frame(maxWidth: .infinity)
     }
 }

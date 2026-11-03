@@ -63,6 +63,8 @@ struct ConnectionPill: View {
     @Environment(RemoteClient.self) private var client
     /// Leaves the Mac's name out, for where it is already written beside the pill.
     var isBrief = false
+    /// Only the dot, for where there is no room for the words. They are still what VoiceOver says.
+    var isDotOnly = false
 
     var body: some View {
         let status = ConnectionStatus(client)
@@ -71,10 +73,12 @@ struct ConnectionPill: View {
                 .fill(dot(for: status).ui)
                 .frame(width: DS.Size.dot, height: DS.Size.dot)
                 .accessibilityHidden(true)
-            Text(isBrief && status.isConnected ? "Connected" : status.text)
-                .textRole(.footnoteLabel)
-                .foregroundStyle(Theme.ink.ui)
-                .lineLimit(1)
+            if !isDotOnly || !status.isConnected {
+                Text(isBrief && status.isConnected ? "Connected" : status.text)
+                    .textRole(.footnoteLabel)
+                    .foregroundStyle(Theme.ink.ui)
+                    .lineLimit(1)
+            }
         }
         .dsAnimation(DS.Motion.standard, value: status)
         .accessibilityElement(children: .combine)

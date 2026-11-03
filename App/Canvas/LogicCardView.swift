@@ -54,6 +54,7 @@ private final class PortRowView: NSView {
 final class LogicCardView: CardView {
     private let summaryLabel = NSTextField(wrappingLabelWithString: "")
     private let warningLabel = NSTextField(labelWithString: "")
+    private let warningGlyph = NSImageView()
     private var portRows: [PortRowView] = []
 
     override init(card: Card) {
@@ -63,9 +64,14 @@ final class LogicCardView: CardView {
         summaryLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(summaryLabel)
         warningLabel.font = TextRole.captionLabel.nsFont()
-        warningLabel.textColor = Theme.Canvas.failText
+        // An unfinished card is a note, not a failure: muted words, with a small red mark. Full red is for a failed run.
+        warningLabel.textColor = Theme.Canvas.textMuted
         warningLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(warningLabel)
+        warningGlyph.image = NSImage(systemSymbolName: "exclamationmark.circle", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: DS.IconSize.s, weight: .medium))
+        warningGlyph.contentTintColor = Theme.Canvas.fail
+        content.addSubview(warningGlyph)
     }
 
     override func update(card new: Card, context: CardContext) {
@@ -78,6 +84,7 @@ final class LogicCardView: CardView {
         summaryLabel.textColor = progress != nil ? Theme.Canvas.liveText : context.result != nil ? Theme.Canvas.text : Theme.Canvas.textMuted
         warningLabel.stringValue = context.warning ?? ""
         warningLabel.isHidden = context.warning == nil
+        warningGlyph.isHidden = warningLabel.isHidden
 
         let named = ports(of: new).count > 1 ? ports(of: new) : []
         if portRows.count != named.count {
@@ -113,7 +120,9 @@ final class LogicCardView: CardView {
         let warningHeight: CGFloat = warningLabel.isHidden ? 0 : 15
         let summaryHeight = max(0, content.bounds.height - foot - warningHeight - 12)
         summaryLabel.frame = NSRect(x: 10, y: 6, width: w - 20, height: summaryHeight)
-        warningLabel.frame = NSRect(x: 10, y: 6 + summaryHeight, width: w - 20, height: 15)
+        let glyph = DS.IconSize.s + 2
+        warningGlyph.frame = NSRect(x: 10, y: 6 + summaryHeight + (15 - glyph) / 2, width: glyph, height: glyph)
+        warningLabel.frame = NSRect(x: 10 + glyph + 4, y: 6 + summaryHeight, width: max(0, w - 24 - glyph), height: 15)
         for (i, row) in portRows.enumerated() {
             row.frame = NSRect(x: 1, y: content.bounds.height - foot + CGFloat(i) * CanvasGeometry.portRowHeight,
                                width: w - 2, height: CanvasGeometry.portRowHeight)

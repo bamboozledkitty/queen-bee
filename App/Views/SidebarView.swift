@@ -257,7 +257,12 @@ struct SidebarView: View {
                         if controller.flow.isSubflow == true {
                             Image(systemName: "arrow.turn.down.right").dsIcon(DS.IconSize.xs, .semibold)
                         } else {
-                            StatusDot(tone(of: controller))
+                            // Needs you and Stopped say so in words beside the name, so they get no dot as well.
+                            if controller.activity == .needsYou || controller.activity == .failed {
+                                Color.clear
+                            } else {
+                                StatusDot(tone(of: controller))
+                            }
                         }
                     } trailing: {
                         activity(of: controller)

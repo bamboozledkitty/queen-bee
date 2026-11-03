@@ -57,13 +57,15 @@ private struct ExpandedTerminal: Identifiable {
 struct ConnectionBar: View {
     @Environment(RemoteClient.self) private var client
     let showSettings: () -> Void
+    /// Only a dot for the connection while it is well, to sit beside other buttons rather than in a bar of its own.
+    var isCompact = false
     @State private var asksToPairAgain = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                ConnectionPill()
-                    .padding(.horizontal, Theme.Space.m)
+                ConnectionPill(isDotOnly: isCompact)
+                    .padding(.horizontal, isCompact ? Theme.Space.s : Theme.Space.m)
                 Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: Theme.Touch.target)
                 Button(action: showSettings) {
                     Image(systemName: "gearshape")

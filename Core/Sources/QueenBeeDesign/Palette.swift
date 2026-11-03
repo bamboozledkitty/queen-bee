@@ -35,11 +35,10 @@ public enum Palette {
     /// What is read: titles, names, values.
     public static let text = Shade(0x1F3A5F, 0xCFE0F5)
     /// What explains: labels, descriptions, times, icons at rest.
-    public static let textMuted = Shade(0x546A88, 0x8AA3C2)
+    public static let textMuted = Shade(0x44597A, 0xA9BDD6)
     /// What can be passed over: placeholders, things that can't be used yet, counts and times. It reaches 4.5:1
-    /// on the chrome, the panel, a raised surface and an overlay, so it is readable on every surface text rests
-    /// on. On a hover or selected wash, use `textMuted`.
-    public static let textFaint = Shade(0x5B708E, 0x7B94B3)
+    /// on every surface and wash, and stays a step quieter than `textMuted`.
+    public static let textFaint = Shade(0x52677F, 0x8DA5C3)
 
     // MARK: Accent
 

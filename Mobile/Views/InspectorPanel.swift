@@ -189,7 +189,8 @@ private struct TabButton: View {
     }
 }
 
-/// The pages that share a tab, side by side: the one on show is inked in.
+/// The pages that share a tab, side by side: the one on show is filled in the colour of what is selected, as the
+/// Mac's tabs under a view's header are.
 private struct PageSwitch: View {
     let pages: [PanelPage]
     let counts: [PanelPage: Int]
@@ -197,30 +198,11 @@ private struct PageSwitch: View {
     let pick: (PanelPage) -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(pages) { page in
-                let isOn = page == selected, count = counts[page] ?? 0
-                Button { pick(page) } label: {
-                    HStack(spacing: DS.Space.tight) {
-                        Text(page.title).textRole(.label)
-                        if count > 0 { Text("\(count)").textRole(.footnote).opacity(0.75) }
-                    }
-                    .lineLimit(1)
-                    .foregroundStyle((isOn ? Theme.surface : Theme.ink).ui)
-                    .frame(maxWidth: .infinity, minHeight: Theme.Touch.target)
-                    .background(isOn ? Theme.ink.ui : .clear)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(count > 0 ? "\(page.title), \(count)" : page.title)
-                .accessibilityAddTraits(isOn ? [.isSelected] : [])
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.outline.ui, lineWidth: Theme.Stroke.card))
-        .dsAnimation(DS.Motion.quick, value: selected)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isTabBar)
+        PillTabs(pages.map { PillTabs<PanelPage>.Tab($0, $0.title, count: (counts[$0] ?? 0) > 0 ? counts[$0] : nil) },
+                 selection: Binding { selected } set: { pick($0) })
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isTabBar)
     }
 }
 

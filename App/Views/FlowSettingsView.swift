@@ -2,7 +2,33 @@ import QueenBeeCore
 import QueenBeeDesign
 import SwiftUI
 
-/// Settings that belong to a whole flow, shown as a page under the flow's Settings tab.
+/// The flow's settings in a sheet over the canvas, with Done to close it. Esc closes it too.
+struct FlowSettingsSheet: View {
+    let controller: FlowController
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Flow Settings").textRole(.title)
+                Spacer()
+                Button("Done") { controller.showsFlowSettings = false }
+                    .buttonStyle(.ds(.primary))
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, DS.Space.xl)
+            .padding(.vertical, DS.Space.l)
+            DSDivider()
+            ScrollView {
+                FlowSettingsView(controller: controller)
+                    .padding(DS.Space.xl)
+            }
+        }
+        .frame(width: FlowSettingsView.pageWidth + 2 * DS.Space.xl)
+        .frame(minHeight: 360, idealHeight: 620, maxHeight: 760)
+    }
+}
+
+/// Settings that belong to a whole flow.
 struct FlowSettingsView: View {
     /// How wide the page's column is. Wider than this and the lines are too long to read.
     static let pageWidth: CGFloat = 520
@@ -76,6 +102,7 @@ struct FlowSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(top, id: \.flow.id) { outer in
                         Button {
+                            controller.showsFlowSettings = false
                             services.show(outer)
                             outer.showsFlowSettings = true
                         } label: {

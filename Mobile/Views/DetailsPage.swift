@@ -1,6 +1,7 @@
 import QueenBeeCore
 import QueenBeeDesign
 import SwiftUI
+import UIKit
 
 /// The details of what is selected, as a page of their own: pushed over the panel beside the canvas, with the
 /// way back to the tab under them, or in a sheet over the canvas on an iPhone, with Close.
@@ -230,7 +231,8 @@ private struct DetailsView: View {
                 }
             }
             // A device that may control the Mac is told how at the foot of the page, where Edit is.
-            if !abilities.canAct {
+            // On an iPad the canvas beside it already says "Watching only", so it is not said again here.
+            if !abilities.canAct && UIDevice.current.userInterfaceIdiom != .pad {
                 Hairline()
                 Text(Details.changes)
                     .textRole(.caption)
@@ -308,7 +310,7 @@ struct ItemView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.Space.l)
                 .padding(.vertical, Theme.Space.m)
-                .background(Theme.liveTint.ui)
+                .liveRule()
         case .warning:
             Label(item.label, systemImage: "exclamationmark.triangle")
                 .textRole(.label)
@@ -335,7 +337,7 @@ struct ItemView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.Space.l)
                 .padding(.vertical, Theme.Space.m)
-                .background(Theme.liveTint.ui)
+                .liveRule()
         case .waiting:
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Text(item.label)
@@ -362,7 +364,17 @@ struct ItemView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.Space.l)
             .padding(.vertical, Theme.Space.m)
-            .background(Theme.liveTint.ui)
+            .liveRule()
+        }
+    }
+}
+
+extension View {
+    /// Marks something that is waiting on the person: a thin rule in the live colour down its leading edge, on the
+    /// page's own surface. The words in it are in the live text colour.
+    func liveRule() -> some View {
+        overlay(alignment: .leading) {
+            Rectangle().fill(Theme.live.ui).frame(width: DS.Stroke.focus).accessibilityHidden(true)
         }
     }
 }

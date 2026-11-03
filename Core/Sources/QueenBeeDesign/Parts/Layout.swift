@@ -1,18 +1,5 @@
 import SwiftUI
 
-/// The rounded panel the content of the window sits in, raised off the chrome by a hairline rather than a shadow.
-public struct InsetPanel: ViewModifier {
-    public init() {}
-
-    public func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous)
-        content
-            .background(Palette.panel.color, in: shape)
-            .clipShape(shape)
-            .overlay(shape.strokeBorder(Palette.hairline.color, lineWidth: DS.Stroke.hairline))
-    }
-}
-
 /// Something raised on the panel: a card, a group of properties, a menu.
 public struct RaisedSurface: ViewModifier {
     var radius: CGFloat
@@ -32,8 +19,6 @@ public struct RaisedSurface: ViewModifier {
 }
 
 extension View {
-    public func insetPanel() -> some View { modifier(InsetPanel()) }
-
     public func raisedSurface(radius: CGFloat = DS.Radius.l, ground: Shade = Palette.raised) -> some View {
         modifier(RaisedSurface(radius: radius, ground: ground))
     }

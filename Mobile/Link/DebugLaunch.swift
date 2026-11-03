@@ -647,7 +647,7 @@ enum DebugLaunch {
             "bar": titles(abilities.bar),
             "barNote": abilities.barNote ?? NSNull(),
             "cards": byName(abilities.cards),
-            // The banner shows a waiting card's own buttons under its line.
+            // The buttons of each waiting card the banner points to; the banner itself only goes to the card.
             "banner": Dictionary(waitingCards.compactMap { card in abilities.cards[card.id].map { (card.name, titles($0)) } }) { first, _ in first },
             "details": details,
             "answerLine": abilities.answerLine ?? NSNull(),

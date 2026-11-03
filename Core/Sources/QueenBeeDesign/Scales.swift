@@ -73,6 +73,8 @@ public enum DS {
         public static let listRow: CGFloat = 40
         /// A list's group header on the Mac.
         public static let groupHeader: CGFloat = 36
+        /// The widest a place's list or page is drawn on the Mac, centred, so a name and its time stay close.
+        public static let placeColumn: CGFloat = 880
         /// The header across the top of the inset panel.
         public static let header: CGFloat = 44
         /// The row of pill tabs under it.
@@ -109,8 +111,6 @@ public enum DS {
         /// The number between a stepper's buttons, and each button.
         public static let stepValue: CGFloat = 22
         public static let stepButton: CGFloat = 18
-        /// How far the inset panel sits in from the window's edges.
-        public static let panelInset: CGFloat = 8
     }
 
     /// Timing, the same on every device.

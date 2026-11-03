@@ -48,7 +48,7 @@ struct LogPage: View {
                     }
                     ForEach(lines) { line in
                         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                            Text(Clock.time(line.date)).foregroundStyle(Theme.inkSecondary.ui)
+                            Text(Clock.time(line.date)).monospacedDigit().foregroundStyle(Theme.inkSecondary.ui)
                             Text(line.text)
                                 .foregroundStyle(Theme.ink.ui)
                                 .textSelection(.enabled)
@@ -236,13 +236,16 @@ struct CostPage: View {
     let sheet: CostSheet
     let flowName: String
 
+    /// The line with the largest share, whose bar is inked darker than the rest.
+    private static func top(of lines: [CostSheet.Line]) -> String? { lines.max { $0.share < $1.share }?.id }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xl) {
                 PanelSection(title: sheet.runTitle) {
                     if let lines = sheet.runLines, let total = sheet.runTotal {
                         ForEach(lines) { line in
-                            CostLine(line: line)
+                            CostLine(line: line, isTop: Self.top(of: lines) == line.id, showsBar: lines.count > 1)
                             Hairline()
                         }
                         TotalLine(label: sheet.runSoFar ? "This run so far" : "This run", usage: total)
@@ -261,7 +264,7 @@ struct CostPage: View {
                             .padding(Theme.Space.m)
                     } else {
                         ForEach(sheet.sessions) { line in
-                            CostLine(line: line)
+                            CostLine(line: line, isTop: Self.top(of: sheet.sessions) == line.id, showsBar: sheet.sessions.count > 1)
                             Hairline()
                         }
                         TotalLine(label: "In all", usage: sheet.total)
@@ -272,7 +275,8 @@ struct CostPage: View {
                         ForEach(sheet.subflows) { sub in
                             Button { client.open(sub.id) } label: {
                                 CostLine(line: CostSheet.Line(id: sub.id, name: sub.name, icon: "arrow.turn.down.right", usage: sub.usage, share: sub.share),
-                                         indent: CGFloat(sub.depth) * 14, opens: true)
+                                         indent: CGFloat(sub.depth) * 14, opens: true,
+                                         isTop: sheet.subflows.max { $0.share < $1.share }?.id == sub.id, showsBar: sheet.subflows.count > 1)
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint("Opens \(sub.name), to see its own breakdown.")
@@ -316,6 +320,10 @@ private struct CostLine: View {
     var indent: CGFloat = 0
     /// A chevron, for a line that opens its flow.
     var opens = false
+    /// Whether it is the biggest of its list. Only that one bar is inked, and a list of one has no bar: a share of
+    /// the whole that is all of it says nothing.
+    var isTop = false
+    var showsBar = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.tight) {
@@ -328,12 +336,14 @@ private struct CostLine: View {
             }
             .foregroundStyle(Theme.ink.ui)
             Text(line.usage.tokenCount).textRole(.monoCaption).foregroundStyle(Theme.inkSecondary.ui).padding(.leading, DS.Size.iconSlotWide + Theme.Space.s)
+            if showsBar {
             GeometryReader { space in
-                Rectangle().fill(Theme.ink.ui)
+                Rectangle().fill((isTop ? Palette.text : Palette.textFaint).color)
                     .frame(width: max(line.usage.isZero ? 0 : DS.Size.meter, space.size.width * min(1, max(0, line.share))), height: DS.Size.meter)
             }
             .frame(height: DS.Size.meter)
             .accessibilityHidden(true)
+            }
         }
         .padding(.leading, indent)
         .padding(Theme.Space.m)

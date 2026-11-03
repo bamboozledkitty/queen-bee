@@ -466,12 +466,17 @@ class CardView: UIView {
         overview.frame = body.bounds
         if zoom < Self.overviewBelow {
             let scale = 1 / max(zoom, 0.01)
-            overviewName.font = Theme.cardName(min(44, Theme.Size.cardName * scale))
-            overviewDetail.font = Theme.cardLabel(min(32, 10 * scale))
+            // The canvas is shrunk by `zoom`, so the type grows by its inverse: the name reads at 13 points and the
+            // detail at 11 on the screen however far out the canvas is. Too long for the card, it is cut short.
+            overviewName.font = Theme.cardName(Theme.Size.cardName * scale)
+            overviewDetail.font = Theme.cardLabel(Theme.Size.figure * scale)
             let width = max(0, overview.bounds.width - 24)
             let nameHeight = min(overviewName.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
             let detailHeight = overviewDetail.intrinsicContentSize.height
-            let top = max(4, (overview.bounds.height - nameHeight - detailHeight - 4) / 2)
+            // A card too small to hold both lines on screen keeps its name and drops the detail, rather than cutting it in half.
+            let fits = nameHeight + detailHeight + 4 + 8 <= overview.bounds.height
+            overviewDetail.isHidden = !fits
+            let top = max(4, (overview.bounds.height - nameHeight - (fits ? detailHeight + 4 : 0)) / 2)
             overviewName.frame = CGRect(x: 12, y: top, width: width, height: nameHeight)
             overviewDetail.frame = CGRect(x: 12, y: top + nameHeight + 4, width: width, height: detailHeight)
         }

@@ -15,17 +15,22 @@ public struct DSButtonStyle: ButtonStyle {
         case live
     }
 
+    /// The side a button meets another on, as the two halves of a split button: Run, and its arrow for Run from.
+    public enum Joint: Sendable { case none, leading, trailing }
+
     public var kind: Kind
     /// As wide as the space it is given.
     public var isWide: Bool
+    public var joint: Joint
 
-    public init(_ kind: Kind = .secondary, wide: Bool = false) {
+    public init(_ kind: Kind = .secondary, wide: Bool = false, joined joint: Joint = .none) {
         self.kind = kind
         self.isWide = wide
+        self.joint = joint
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        DSButton(configuration: configuration, kind: kind, isWide: isWide)
+        DSButton(configuration: configuration, kind: kind, isWide: isWide, joint: joint)
     }
 }
 
@@ -33,21 +38,36 @@ private struct DSButton: View {
     let configuration: ButtonStyleConfiguration
     let kind: DSButtonStyle.Kind
     let isWide: Bool
+    let joint: DSButtonStyle.Joint
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.density) private var density
     @State private var isHovered = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: density == .desk ? DS.Radius.s : DS.Radius.m, style: .continuous)
+        let radius = density == .desk ? DS.Radius.s : DS.Radius.m
+        // The side that meets the other half is square, so the two read as one button.
+        let shape = UnevenRoundedRectangle(topLeadingRadius: joint == .leading ? 0 : radius,
+                                           bottomLeadingRadius: joint == .leading ? 0 : radius,
+                                           bottomTrailingRadius: joint == .trailing ? 0 : radius,
+                                           topTrailingRadius: joint == .trailing ? 0 : radius,
+                                           style: .continuous)
         configuration.label
             .textRole(.label)
             .lineLimit(1)
             .foregroundStyle(foreground.color)
-            .padding(.horizontal, density == .desk ? 10 : DS.Space.l)
+            .padding(.horizontal, joint == .leading ? DS.Space.s : density == .desk ? 10 : DS.Space.l)
             .frame(maxWidth: isWide ? .infinity : nil,
                    minHeight: density == .desk ? DS.Size.control : DS.Size.touchTarget)
             .background(background.color, in: shape)
             .overlay(shape.strokeBorder(border.color, lineWidth: DS.Stroke.hairline))
+            .overlay(alignment: .leading) {
+                // A faint line where the halves meet.
+                if joint == .leading {
+                    Rectangle().fill(foreground.color.opacity(0.3))
+                        .frame(width: DS.Stroke.hairline)
+                        .padding(.vertical, DS.Space.xs)
+                }
+            }
             .opacity(configuration.isPressed && isEnabled ? 0.75 : 1)
             .contentShape(shape)
             .onHover { isHovered = $0 }
@@ -92,8 +112,9 @@ private struct DSButton: View {
 }
 
 extension ButtonStyle where Self == DSButtonStyle {
-    public static func ds(_ kind: DSButtonStyle.Kind = .secondary, wide: Bool = false) -> DSButtonStyle {
-        DSButtonStyle(kind, wide: wide)
+    public static func ds(_ kind: DSButtonStyle.Kind = .secondary, wide: Bool = false,
+                          joined joint: DSButtonStyle.Joint = .none) -> DSButtonStyle {
+        DSButtonStyle(kind, wide: wide, joined: joint)
     }
 }
 
