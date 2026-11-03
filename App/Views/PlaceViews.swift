@@ -413,7 +413,16 @@ private struct SchedulesList: View {
             }
             .confirmationDialog("Turn on this schedule?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
                                 titleVisibility: .visible, presenting: confirming) { entry in
-                Button("Turn on") { entry.controller.setTrigger(entry.trigger, onCard: entry.card.id) }
+                Button("Turn on") {
+                    // The person agreed to the command and the schedule they were shown. If either changed while the
+                    // question was open, it is asked again with what the card says now, rather than turned on.
+                    guard let now = entry.controller.flow.card(entry.card.id), let trigger = now.trigger else { return }
+                    guard now.command == entry.card.command, trigger == entry.trigger else {
+                        Task { @MainActor in confirming = Entry(controller: entry.controller, card: now, trigger: trigger) }
+                        return
+                    }
+                    entry.controller.setTrigger(trigger, onCard: now.id)
+                }
                 Button("Cancel", role: .cancel) {}
             } message: { entry in
                 Text(consequence(of: entry))
