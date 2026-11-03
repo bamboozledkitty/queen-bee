@@ -75,6 +75,15 @@ public enum DS {
         public static let groupHeader: CGFloat = 36
         /// The widest a place's list or page is drawn on the Mac, centred, so a name and its time stay close.
         public static let placeColumn: CGFloat = 880
+        /// The log of a run, opened beside the list of runs on the Mac.
+        public static let placePeek: CGFloat = 380
+        /// The widest the few lines a place says when it is empty are set.
+        public static let emptyText: CGFloat = 380
+        /// A run's number, and when it started, at the two ends of its row, in columns so they line up.
+        public static let runNumberColumn: CGFloat = 40
+        public static let runTimeColumn: CGFloat = 84
+        /// A small rounded tag with a flow's name in it.
+        public static let tag: CGFloat = 22
         /// How tall a sheet of settings is on the Mac: the shortest it is let get, what it opens at, and the tallest.
         public static let sheetMinHeight: CGFloat = 360
         public static let sheetHeight: CGFloat = 620

@@ -128,7 +128,7 @@ private struct FlowTag: View {
             .foregroundStyle(Palette.textMuted.color)
             .lineLimit(1)
             .padding(.horizontal, DS.Space.s)
-            .frame(height: 22)
+            .frame(height: DS.Size.tag)
             .overlay(Capsule().strokeBorder(Palette.hairlineStrong.color))
     }
 }
@@ -143,7 +143,7 @@ private struct EmptyPlace: View {
         VStack(spacing: DS.Space.m) {
             Image(systemName: symbol).dsIcon(DS.IconSize.hero, .light).foregroundStyle(Palette.textFaint.color)
             Text(title).textRole(.headline).foregroundStyle(Palette.text.color)
-            Text(text).textRole(.body).foregroundStyle(Palette.textMuted.color).multilineTextAlignment(.center).frame(maxWidth: 380)
+            Text(text).textRole(.body).foregroundStyle(Palette.textMuted.color).multilineTextAlignment(.center).frame(maxWidth: DS.Size.emptyText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -202,8 +202,6 @@ private struct NeedsYouList: View {
 /// Every flow's runs, the ones going now first, then the ones that stopped, then the ones that finished.
 /// Choosing one shows its log beside the list.
 struct RunsList: View {
-    /// How wide the peek at a past run is, beside the list.
-    private static let peekWidth: CGFloat = 380
     @State private var chosen: String?
     private var services: AppServices { AppServices.shared }
 
@@ -230,7 +228,7 @@ struct RunsList: View {
             GeometryReader { space in
                 // The list keeps the page title's left edge when the peek opens, and gives up width on its right,
                 // unless that would leave it under half its usual width.
-                let listWidth = space.size.width - (peeked == nil ? 0 : Self.peekWidth + DS.Stroke.hairline)
+                let listWidth = space.size.width - (peeked == nil ? 0 : DS.Size.placePeek + DS.Stroke.hairline)
                 let inset = min(max(0, (space.size.width - DS.Size.placeColumn) / 2), max(0, listWidth - DS.Size.placeColumn / 2))
                 HStack(spacing: 0) {
                     ScrollView {
@@ -247,7 +245,7 @@ struct RunsList: View {
                     if let peeked {
                         DSDivider(vertical: true)
                         RunPeek(controller: peeked.0.controller, record: peeked.1) { chosen = nil }
-                            .frame(width: Self.peekWidth)
+                            .frame(width: DS.Size.placePeek)
                     }
                 }
             }
@@ -269,7 +267,7 @@ struct RunsList: View {
                     Text(entry.number.map { "#\($0)" } ?? "")
                         .textRole(.monoCaption)
                         .foregroundStyle(Palette.textFaint.color)
-                        .frame(width: 40, alignment: .leading)
+                        .frame(width: DS.Size.runNumberColumn, alignment: .leading)
                     outcomeMark(entry.record)
                     Text(entry.controller.flow.name).foregroundStyle(Palette.text.color).lineLimit(1)
                     Text(detail(entry)).foregroundStyle(Palette.textMuted.color).lineLimit(1)
@@ -281,7 +279,7 @@ struct RunsList: View {
                         .textRole(.caption)
                         .monospacedDigit()
                         .foregroundStyle(Palette.textFaint.color)
-                        .frame(width: 84, alignment: .trailing)
+                        .frame(width: DS.Size.runTimeColumn, alignment: .trailing)
                 }
             }
         }
