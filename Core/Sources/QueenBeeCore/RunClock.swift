@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// How a run's time of day is written: the hour and minute in the person's own style, so a 24-hour region reads
 /// "13:10" and a 12-hour one "1:10 PM". A log line adds the seconds, and a moment on another day adds its date.
@@ -14,12 +15,22 @@ public enum RunClock {
             : format(date, template: "dMMMjmm", calendar: calendar, locale: locale)
     }
 
+    /// One formatter per way of writing, made the first time it is asked for: a log can ask hundreds of times a redraw.
+    private static let formatters = Mutex<[String: DateFormatter]>([:])
+
     private static func format(_ date: Date, template: String, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = DateFormatter.dateFormat(fromTemplate: template, options: 0, locale: locale) ?? "HH:mm"
-        return formatter.string(from: date)
+        let key = [template, locale.identifier, "\(calendar.identifier)", calendar.timeZone.identifier].joined(separator: "|")
+        return formatters.withLock { made in
+            let formatter = made[key] ?? {
+                let formatter = DateFormatter()
+                formatter.locale = locale
+                formatter.calendar = calendar
+                formatter.timeZone = calendar.timeZone
+                formatter.dateFormat = DateFormatter.dateFormat(fromTemplate: template, options: 0, locale: locale) ?? "HH:mm"
+                made[key] = formatter
+                return formatter
+            }()
+            return formatter.string(from: date)
+        }
     }
 }

@@ -369,16 +369,6 @@ struct ItemView: View {
     }
 }
 
-extension View {
-    /// Marks something that is waiting on the person: a thin rule in the live colour down its leading edge, on the
-    /// page's own surface. The words in it are in the live text colour.
-    func liveRule() -> some View {
-        overlay(alignment: .leading) {
-            Rectangle().fill(Theme.live.ui).frame(width: DS.Stroke.focus).accessibilityHidden(true)
-        }
-    }
-}
-
 /// Text that may run long: instructions, a message, an answer. It can be selected and copied. Past a few
 /// lines it is cut short, with a button to read all of it.
 struct LongText: View {

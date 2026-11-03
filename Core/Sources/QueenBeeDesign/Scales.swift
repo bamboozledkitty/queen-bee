@@ -75,6 +75,10 @@ public enum DS {
         public static let groupHeader: CGFloat = 36
         /// The widest a place's list or page is drawn on the Mac, centred, so a name and its time stay close.
         public static let placeColumn: CGFloat = 880
+        /// How tall a sheet of settings is on the Mac: the shortest it is let get, what it opens at, and the tallest.
+        public static let sheetMinHeight: CGFloat = 360
+        public static let sheetHeight: CGFloat = 620
+        public static let sheetMaxHeight: CGFloat = 760
         /// The header across the top of the inset panel.
         public static let header: CGFloat = 44
         /// The row of pill tabs under it.

@@ -33,6 +33,8 @@ final class AppServices {
             // The place is left only by a person's choice (`show`). A fallback, such as the next flow after one is
             // deleted, keeps the person where they are.
             guard selectedFlow !== oldValue else { return }
+            // The settings sheet belongs to the flow on screen. Left open on one that went, it would come back by itself.
+            oldValue?.showsFlowSettings = false
             // Going into a sub-flow sets the trail first. Any other change of flow starts a new one.
             if flowTrail.last !== selectedFlow { flowTrail = selectedFlow.map { [$0] } ?? [] }
             selectedFlow?.open()

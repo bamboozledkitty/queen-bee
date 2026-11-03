@@ -416,7 +416,7 @@ private struct AllowSheet: View {
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
         } action: {
-            Button("Allow and run") { client.confirm(ask) }.buttonStyle(.panel(.live))
+            Button("Allow and run") { client.confirm(ask) }.buttonStyle(.panel(.filled))
         }
     }
 }

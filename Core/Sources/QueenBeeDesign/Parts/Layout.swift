@@ -19,6 +19,14 @@ public struct RaisedSurface: ViewModifier {
 }
 
 extension View {
+    /// Marks a block that is waiting on the person: the surface it is on, with a thin rule in the live colour down
+    /// its leading edge, rather than a live fill. The words in it are in the live text colour.
+    public func liveRule() -> some View {
+        overlay(alignment: .leading) {
+            Rectangle().fill(Palette.live.color).frame(width: DS.Stroke.focus).accessibilityHidden(true)
+        }
+    }
+
     public func raisedSurface(radius: CGFloat = DS.Radius.l, ground: Shade = Palette.raised) -> some View {
         modifier(RaisedSurface(radius: radius, ground: ground))
     }

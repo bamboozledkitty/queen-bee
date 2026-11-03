@@ -39,29 +39,42 @@ struct CanvasBanners: View {
 
 /// One line over the canvas saying that a card is waiting on the person, with a button that goes to it. The
 /// decision itself is asked once, on the card and in its details, and not here a third time. With several waiting
-/// the line names the first, in canvas order, and counts the rest; the Needs you list has them all.
+/// the line names the first, in canvas order, and counts the rest; the Needs you list has them all. An agent waiting
+/// in its terminal gets the button that opens it, which is what answers it, and what can't be answered from here
+/// is said under the line.
 private struct NeedsYouBanner: View {
     @Environment(RemoteClient.self) private var client
     let waiting: [WaitingCard]
 
     var body: some View {
         if let first = waiting.first {
+            let abilities = client.abilities
             let others = waiting.count - 1
             let summary = "\(first.name)\(others > 0 ? " and \(others) more" : "") · waiting for you"
             HStack(spacing: Theme.Space.s) {
-                Text(summary)
-                    .textRole(.label)
-                    .foregroundStyle(Theme.liveInk.ui)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Go to") { client.go(to: first) }
-                    .buttonStyle(.panel(.outline))
-                    .accessibilityLabel("Go to \(first.name)")
-                    .accessibilityHint("Goes to this card on the canvas, where it can be answered.")
+                VStack(alignment: .leading, spacing: DS.Space.xxs) {
+                    Text(summary)
+                        .textRole(.label)
+                        .foregroundStyle(Theme.liveInk.ui)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let answerLine = abilities.answerLine {
+                        Text(answerLine).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if abilities.inTerminal.contains(first.id), client.terminals.sizes[first.id] != nil {
+                    OpenTerminalButton(cardID: first.id, name: first.name)
+                } else {
+                    Button("Go to") { client.go(to: first) }
+                        .buttonStyle(.panel(.outline))
+                        .accessibilityLabel("Go to \(first.name)")
+                        .accessibilityHint("Goes to this card on the canvas, where it can be answered.")
+                }
             }
             .padding(.leading, Theme.Space.m)
             .padding(.trailing, Theme.Space.m)
+            .padding(.vertical, DS.Space.xs)
             .frame(maxWidth: .infinity, minHeight: Theme.Touch.target, alignment: .leading)
             .liveRule()
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))

@@ -532,7 +532,7 @@ private struct ScriptReview: View {
                         .buttonStyle(.panel())
                     Spacer()
                     Button("Allow and run") { controller.allowScript(hold.id) }
-                        .buttonStyle(.panel(.live))
+                        .buttonStyle(.panel(.filled))
                         .help("Runs the command now. This card won't ask again unless the command changes.")
                 }
             } else {
@@ -952,12 +952,3 @@ private struct EditorField: View {
     }
 }
 
-
-extension View {
-    /// Marks a block that is waiting on the person: the panel's own surface, with a thin orange rule down its leading edge.
-    fileprivate func liveRule() -> some View {
-        overlay(alignment: .leading) {
-            Theme.live.ui.frame(width: DS.Stroke.focus)
-        }
-    }
-}

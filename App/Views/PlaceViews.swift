@@ -202,6 +202,8 @@ private struct NeedsYouList: View {
 /// Every flow's runs, the ones going now first, then the ones that stopped, then the ones that finished.
 /// Choosing one shows its log beside the list.
 struct RunsList: View {
+    /// How wide the peek at a past run is, beside the list.
+    private static let peekWidth: CGFloat = 380
     @State private var chosen: String?
     private var services: AppServices { AppServices.shared }
 
@@ -224,21 +226,29 @@ struct RunsList: View {
             EmptyPlace(symbol: "play.circle", title: "No runs yet",
                        text: "Each time a flow runs, from its Run button, a schedule or the orchestrator, it is listed here with what it did and what it cost.")
         } else {
-            HStack(spacing: 0) {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        group("Running", live)
-                        group("Stopped", stopped)
-                        group("Done", done)
+            let peeked = chosen.flatMap { id in (live + past).first { $0.id == id } }.flatMap { entry in entry.record.map { (entry, $0) } }
+            GeometryReader { space in
+                // The list keeps the page title's left edge when the peek opens, and gives up width on its right,
+                // unless that would leave it under half its usual width.
+                let listWidth = space.size.width - (peeked == nil ? 0 : Self.peekWidth + DS.Stroke.hairline)
+                let inset = min(max(0, (space.size.width - DS.Size.placeColumn) / 2), max(0, listWidth - DS.Size.placeColumn / 2))
+                HStack(spacing: 0) {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            group("Running", live)
+                            group("Stopped", stopped)
+                            group("Done", done)
+                        }
+                        .frame(width: max(0, min(DS.Size.placeColumn, listWidth - inset)))
+                        .padding(.leading, inset)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: DS.Size.placeColumn)
-                    .frame(maxWidth: .infinity)
-                }
-                .frame(maxWidth: .infinity)
-                if let id = chosen, let entry = (live + past).first(where: { $0.id == id }), let record = entry.record {
-                    DSDivider(vertical: true)
-                    RunPeek(controller: entry.controller, record: record) { chosen = nil }
-                        .frame(width: 380)
+                    .frame(width: max(0, listWidth))
+                    if let peeked {
+                        DSDivider(vertical: true)
+                        RunPeek(controller: peeked.0.controller, record: peeked.1) { chosen = nil }
+                            .frame(width: Self.peekWidth)
+                    }
                 }
             }
         }

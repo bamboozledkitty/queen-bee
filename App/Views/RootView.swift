@@ -146,6 +146,8 @@ struct WorkspaceView: View {
                                     set: { if !$0 { services.current?.showsFlowSettings = false } })) {
             if let controller = services.current {
                 FlowSettingsSheet(controller: controller)
+                    // Another flow's settings are a new page, not this one's fields carried over.
+                    .id(controller.objectID)
                     .presentationBackground(Palette.panel.color)
             }
         }

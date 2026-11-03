@@ -24,7 +24,7 @@ struct FlowSettingsSheet: View {
             }
         }
         .frame(width: FlowSettingsView.pageWidth + 2 * DS.Space.xl)
-        .frame(minHeight: 360, idealHeight: 620, maxHeight: 760)
+        .frame(minHeight: DS.Size.sheetMinHeight, idealHeight: DS.Size.sheetHeight, maxHeight: DS.Size.sheetMaxHeight)
     }
 }
 
