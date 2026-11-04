@@ -233,7 +233,7 @@ Task {
     case "dismissBanner": return .dismissBanner(flowID: flow)
     case "stopAgents": return .stopAgents(flowID: flow)
     case "revertSettings": return .revertSettings(flowID: flow, cardID: text("card"))
-    case "armSchedule": return .armSchedule(flowID: flow, cardID: text("card"), on: flag("on"))
+    case "armSchedule": return .armSchedule(flowID: flow, cardID: text("card"), on: flag("on"), shown: fields["shown"] as? String)
     case "restartAgents":
         // `which` is "all", "allExceptOrchestrator", "awaiting", or "cards" with `cards`.
         let which: RemoteRestart = switch text("which") {
@@ -393,16 +393,16 @@ while true {
              }])
         try? await connection.send(DeviceMessage.open(flowID: shared.flowID))
     case .opened(let snapshot):
-        say(["type": "opened", "name": snapshot.flow.name, "cards": snapshot.flow.cards.count,
+        say(["type": "opened", "flow": snapshot.flow.id, "name": snapshot.flow.name, "cards": snapshot.flow.cards.count,
              "cardIDs": Dictionary(snapshot.flow.cards.map { ($0.name, $0.id) }) { first, _ in first },
              "undo": snapshot.edit.undo ?? NSNull(), "redo": snapshot.edit.redo ?? NSNull(), "armed": snapshot.edit.armed,
-             "sessions": snapshot.run.sessions.mapValues(\.rawValue)])
+             "fingerprints": snapshot.edit.scheduleFingerprints ?? [:], "sessions": snapshot.run.sessions.mapValues(\.rawValue)])
     case .flow(_, let revision, let flow):
         say(["type": "flow", "revision": revision, "efforts": flow.cards.map { $0.effort ?? "" }, "cards": flow.cards.count,
              "links": flow.links.count])
     case .edit(let id, let state):
         say(["type": "edit", "flow": id, "undo": state.undo ?? NSNull(), "redo": state.redo ?? NSNull(), "armed": state.armed,
-             "nextFires": state.nextFires.count])
+             "nextFires": state.nextFires.count, "fingerprints": state.scheduleFingerprints ?? [:]])
     case .run(let id, let state):
         say(["type": "run", "flow": id, "isRunning": state.isRunning, "sessions": state.sessions.mapValues(\.rawValue),
              "holds": state.holds.map { ["id": $0.id, "card": $0.cardID, "kind": $0.kind.rawValue, "needsAllow": $0.needsAllow,

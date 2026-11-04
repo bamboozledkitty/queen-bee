@@ -12,7 +12,8 @@ import QueenBeeCore
 /// orchestrator's tools made: a Script card's command written that way is asked about before it runs, and
 /// a change to what a scheduled flow does turns its schedules off. No edit here can name an agent's folder,
 /// pasting included, and none changes what this Mac's own window is showing or has selected. A schedule is
-/// only turned on by `armSchedule`, as by the Mac's own "Turn on", and never by an edit.
+/// only turned on by `armSchedule`, as by the Mac's own "Turn on", and never by an edit. Nor is it turned on when
+/// its command or schedule is no longer what the device showed the person.
 ///
 /// A role saved or updated from a device can't hold a permission mode that skips checks, and changing a role
 /// changes no card that has it. The Mac marks it as the device's, keeps what it held before, and asks the person
@@ -424,13 +425,19 @@ enum RemoteCommands {
                 try $0.updateCard(cardID, patch: patch)
             }
 
-        case .armSchedule(_, let cardID, let on):
+        case .armSchedule(_, let cardID, let on, let shown):
             guard let card = controller.flow.card(cardID) else { return cardGone }
             guard card.kind == .start else { return "Only a Start card has a schedule." }
             guard let trigger = card.trigger else {
                 return "\(called(cardID)) has no schedule to turn \(on ? "on" : "off"). Choose when it runs first."
             }
             guard on != controller.isArmed(card) else { return nil }
+            // The person agreed to the command and the schedule the device showed them. If either has changed since,
+            // nothing is turned on: the device shows what the card says now and asks again. A device that doesn't
+            // say what it showed is taken as before.
+            if on, !ScheduleShown.matches(shown, card) {
+                return "The command or schedule of \(called(cardID)) changed after it was shown here. Look at it again, then turn it on."
+            }
             // The Mac's own "Turn on": agreed to for what the card starts with now. A change from a device to what
             // the flow does turns it off again.
             if on { controller.setTrigger(trigger, onCard: cardID) } else { controller.turnScheduleOff(onCard: cardID) }

@@ -118,6 +118,10 @@ public enum RemoteFeature {
     /// `RemoteRunState.workplace`. Each end says it in its first message: a device never sends the new command to a Mac
     /// that hasn't said it, as that Mac couldn't read it, and a Mac sends the new message only to a device that has.
     public static let overview = "overview"
+    /// The Mac checks a schedule turned on from a device against what the device showed: it sends a fingerprint of each
+    /// Start card in `RemoteEditState.scheduleFingerprints`, and the device sends back the one it showed as `shown` in
+    /// `RemoteCommand.armSchedule`. A Mac that hasn't said this sends none, so the device sends none.
+    public static let scheduleCheck = "scheduleCheck"
 }
 
 /// The first thing a device sends on a new connection.
@@ -358,9 +362,15 @@ public struct RemoteEditState: Codable, Equatable, Sendable {
     public var armed: [String]
     /// When the clock next starts a run from each of those, by card id. A schedule that waits on a file has none.
     public var nextFires: [String: Date]
+    /// What the Mac checks a device's "Turn on" against, for each Start card with a schedule, by card id: see
+    /// `ScheduleShown`. The device sends back the one it had when it asked, and never makes one of its own. Nil from
+    /// a Mac without `RemoteFeature.scheduleCheck`.
+    public var scheduleFingerprints: [String: String]?
 
-    public init(undo: String? = nil, redo: String? = nil, armed: [String] = [], nextFires: [String: Date] = [:]) {
+    public init(undo: String? = nil, redo: String? = nil, armed: [String] = [], nextFires: [String: Date] = [:],
+                scheduleFingerprints: [String: String]? = nil) {
         self.undo = undo; self.redo = redo; self.armed = armed; self.nextFires = nextFires
+        self.scheduleFingerprints = scheduleFingerprints
     }
 }
 
@@ -722,7 +732,11 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     /// A Start card's "Turn on", or turning its schedule off and leaving it set. Turned on, the schedule runs the
     /// flow with nobody watching, on what the flow does now. A later change from a device to what the flow
     /// does turns it off again.
-    case armSchedule(flowID: String, cardID: String, on: Bool)
+    ///
+    /// `shown` is the card's fingerprint in `RemoteEditState.scheduleFingerprints` as the device had it when the
+    /// person was asked. A Mac that has `RemoteFeature.scheduleCheck` turns nothing on when the card's command or
+    /// schedule has changed since, and says so. Nil from a device that doesn't send it, and for turning one off.
+    case armSchedule(flowID: String, cardID: String, on: Bool, shown: String? = nil)
     /// The header's Restart menu: all the flow's agents, some of them, or the ones with new settings waiting. Each keeps its
     /// conversation so far. Only to a Mac that has said `RemoteFeature.overview`.
     case restartAgents(flowID: String, which: RemoteRestart)
@@ -782,7 +796,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
              .duplicate(let id, _), .tidy(let id), .group(let id, _, _), .ungroup(let id, _), .renameGroup(let id, _, _),
              .foldGroup(let id, _, _), .patchCard(let id, _, _), .setFlowOption(let id, _), .renameFlow(let id, _),
              .deleteFlow(let id), .undo(let id), .redo(let id), .runFromStart(let id, _), .retry(let id, _), .clearLog(let id),
-             .dismissBanner(let id), .stopAgents(let id), .revertSettings(let id, _), .armSchedule(let id, _, _), .restartAgents(let id, _), .paste(let id, _, _),
+             .dismissBanner(let id), .stopAgents(let id), .revertSettings(let id, _), .armSchedule(let id, _, _, _), .restartAgents(let id, _), .paste(let id, _, _),
              .addRoleCard(let id, _, _, _), .newSubflow(let id, _, _), .pin(let id, _), .saveRole(let id, _, _), .updateRole(_, let id, _),
              .browser(let id, _, _): id
         case .newFlow, .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: nil

@@ -7,29 +7,63 @@ import SwiftUI
 /// into. Each sends one command, and waits for the Mac's answer before it can be pressed again.
 
 /// "Turn on" or "Turn off" for a Start card's schedule. The lines above it say whether it is on and when it next runs.
+/// "Turn on" asks first, as the Mac's Schedules do, with the command and the schedule it will run on. What it showed
+/// goes to the Mac with the command: if the card has changed since, nothing is turned on and it asks again. What to
+/// ask and when is `ScheduleQuestion`'s.
 struct ScheduleSwitch: View {
     @Environment(RemoteClient.self) private var client
     let cardID: String
     let isOn: Bool
+    @State private var question = ScheduleQuestion()
 
     var body: some View {
-        let command = client.armCommand(cardID, on: !isOn)
         HStack(spacing: Theme.Space.s) {
             Text(isOn ? "Runs by itself while it is on." : "Turned on here, it runs by itself, with nobody watching.")
                 .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Theme.Space.s)
-            Button(isOn ? "Turn off" : "Turn on") { Task { await client.armSchedule(cardID, on: !isOn) } }
-                .buttonStyle(.panel(isOn ? .outline : .live))
-                .fixedSize()
-                .disabled(command.map(client.isSending) ?? true)
-                .accessibilityHint(isOn ? "Turns the schedule off on your Mac. It stays set, to turn on again."
-                                        : "Turns the schedule on on your Mac, for the flow as it is now.")
+            Button(isOn ? "Turn off" : "Turn on") {
+                if isOn { Task { await client.armSchedule(cardID, on: false) } } else { question.ask(current, fingerprint: fingerprint) }
+            }
+            .buttonStyle(.panel(isOn ? .outline : .live))
+            .fixedSize()
+            .disabled(client.mirror.snapshot == nil || client.isArming(cardID))
+            .accessibilityHint(isOn ? "Turns the schedule off on your Mac. It stays set, to turn on again."
+                                    : "Asks first, then turns the schedule on on your Mac, for the flow as it is now.")
         }
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
         .frame(minHeight: Theme.Touch.target)
+        .confirmationDialog("Turn on this schedule?", isPresented: Binding(get: { question.open != nil }, set: { if !$0 { question.close() } }),
+                            titleVisibility: .visible, presenting: question.open) { shown in
+            Button("Turn on") { Task { await turnOn(shown) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { shown in
+            Text(shown.card.trigger.map {
+                ScheduleShown.consequence(of: shown.card, trigger: $0, flow: client.mirror.snapshot?.flow.name ?? "The flow",
+                                          onDevice: true, macChecks: client.mirror.macChecksSchedules)
+            } ?? "")
+        }
+        .onChange(of: question.open == nil) { askAgain() }
+        .onDisappear { question = ScheduleQuestion() }
+    }
+
+    /// The card as this device has it now.
+    private var current: Card? { client.mirror.snapshot?.flow.card(cardID) }
+    /// The fingerprint the Mac sent with it.
+    private var fingerprint: String? { client.scheduleFingerprint(cardID) }
+
+    private func turnOn(_ shown: ScheduleQuestion.Shown) async {
+        guard question.turnOn(shown, now: current) else { return askAgain() }
+        guard await client.armSchedule(cardID, on: true, shown: shown.fingerprint) != nil else { return }
+        question.refused(shown, now: current, fingerprint: fingerprint)
+        askAgain()
+    }
+
+    /// On the next turn, so the question isn't lost in the closing of the one before.
+    private func askAgain() {
+        Task { @MainActor in _ = question.askAgain(now: current, fingerprint: fingerprint) }
     }
 }
 

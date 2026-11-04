@@ -190,8 +190,9 @@ enum DebugCannedRun {
 
         client.debugOutbox = { id, command in answer(client, id, command) }
         client.debugTake(.welcome(RemoteWelcome(version: Remote.version, macName: "Example Mac", canControl: UserDefaults.standard.bool(forKey: "qbControl"),
-                                                    // `-qbOldMac 1` is a Mac from before the lists across flows, the Restart menu and the branch chip.
-                                                    features: UserDefaults.standard.bool(forKey: "qbOldMac") ? nil : [RemoteFeature.overview])))
+                                                    // `-qbOldMac 1` is a Mac from before the lists across flows, the Restart menu, the branch chip
+                                                    // and checking a schedule turned on against what was shown.
+                                                    features: UserDefaults.standard.bool(forKey: "qbOldMac") ? nil : [RemoteFeature.overview, RemoteFeature.scheduleCheck])))
         var summary = RemoteFlowSummary(id: flowID, name: flow.name, isSubflow: false, activity: .needsYou)
         // Others beside it, so the list of flows has every kind of row. Only the first can be opened, unless `-qbParity 1`.
         func other(_ n: Int, _ name: String, _ activity: FlowActivity = .quiet, isSubflow: Bool = false) -> RemoteFlowSummary {

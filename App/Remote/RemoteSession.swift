@@ -238,8 +238,15 @@ final class RemoteSession {
 
     /// Tells the device what became of a command. A step of a drag that isn't the last is never answered:
     /// there are twenty a second, and the last one says how the drag went.
+    ///
+    /// Before a refusal, what has changed in the open flow is sent, rather than when the next flush comes round, so
+    /// the device has what turned the command down by the time it hears. A schedule's "Turn on" turned down because
+    /// the card changed relies on it: the device asks again with what the card says then.
     private func answer(_ id: Int, _ command: RemoteCommand, _ refusal: String?) {
-        if command.isAnswered { send(.answer(id: id, refusal: refusal)) }
+        if command.isAnswered {
+            if refusal != nil { flushNow() }
+            send(.answer(id: id, refusal: refusal))
+        }
         Self.remember(id, command, device: device.id, epoch: epoch, refusal)
     }
 
@@ -252,7 +259,10 @@ final class RemoteSession {
 
     /// Tells the device what became of a command it sent again while the first was being done.
     func answerAgain(_ id: Int, _ command: RemoteCommand, _ refusal: String?) {
-        if command.isAnswered { send(.answer(id: id, refusal: refusal)) }
+        if command.isAnswered {
+            if refusal != nil { flushNow() }
+            send(.answer(id: id, refusal: refusal))
+        }
     }
 
     /// What the Mac answers a command it couldn't read.
@@ -397,7 +407,8 @@ final class RemoteSession {
         // never be asked about again, and the device's Undo would stay grey after its own move.
         _ = controller.undoRevision
         let edit = RemoteEditState(undo: manager.canUndo ? controller.undoTitle : nil, redo: manager.canRedo ? controller.redoTitle : nil,
-                                   armed: armed, nextFires: controller.nextFires.filter { armed.contains($0.key) })
+                                   armed: armed, nextFires: controller.nextFires.filter { armed.contains($0.key) },
+                                   scheduleFingerprints: ScheduleShown.fingerprints(of: controller.flow))
         return RemoteFlowSnapshot(flow: controller.flow, run: run, edit: edit, log: controller.log, messages: controller.messages,
                                   runs: controller.runs)
     }
@@ -418,6 +429,13 @@ final class RemoteSession {
             self?.flushTask = nil
             self?.flush()
         }
+    }
+
+    /// Sends what has changed now, and not when the flush that is waiting comes round.
+    private func flushNow() {
+        flushTask?.cancel()
+        flushTask = nil
+        flush()
     }
 
     private func flush() {

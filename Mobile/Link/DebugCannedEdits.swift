@@ -99,10 +99,13 @@ struct MadeUpEdits {
     /// Nil when it was done, or when it is none of these. Otherwise why not, in the real Mac's words.
     mutating func housekeeping(_ command: RemoteCommand) -> String? {
         switch command {
-        case .armSchedule(_, let cardID, let on):
+        case .armSchedule(_, let cardID, let on, let shown):
             guard let card = flow.card(cardID) else { return Self.cardGone }
             guard card.kind == .start else { return "Only a Start card has a schedule." }
             guard card.trigger != nil else { return "\(card.name) has no schedule to turn \(on ? "on" : "off"). Choose when it runs first." }
+            if on, !armed.contains(cardID), !ScheduleShown.matches(shown, card) {
+                return "The command or schedule of \(card.name) changed after it was shown here. Look at it again, then turn it on."
+            }
             if on, !armed.contains(cardID) { armed.append(cardID) }
             if !on { armed.removeAll { $0 == cardID } }
             return nil
@@ -171,7 +174,8 @@ struct MadeUpEdits {
             let now = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / 60).rounded(.down) * 60)
             if let next = flow.card(id)?.trigger?.nextFire(after: now) { fires[id] = next }
         }
-        return RemoteEditState(undo: undos.last.map { "Undo \($0.name)" }, redo: redos.last.map { "Redo \($0.name)" }, armed: armed, nextFires: fires)
+        return RemoteEditState(undo: undos.last.map { "Undo \($0.name)" }, redo: redos.last.map { "Redo \($0.name)" }, armed: armed, nextFires: fires,
+                               scheduleFingerprints: ScheduleShown.fingerprints(of: flow))
     }
 
     private func summary(_ id: String) -> RemoteFlowSummary? { library.projects.flatMap(\.flows).first { $0.id == id } }

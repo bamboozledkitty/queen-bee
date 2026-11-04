@@ -1282,8 +1282,19 @@ def remote_parity(app, device, send, ask, done, refused, since):
           and app.state(doors)["armed"] == [], str(app.state(doors)["armed"]))
     check("turning on a schedule that isn't there is refused", refused(ask("armSchedule", card=d["Done"], on=True), "Only a Start card"),
           str(device.seen[-1:]))
+    check("turning it on for a command or schedule other than the one the device showed is refused",
+          refused(ask("armSchedule", card=start, on=True, shown="not what the card says"), "changed after it was shown")
+          and app.state(doors)["armed"] == [], str(device.seen[-1:]))
+    def shown(card_id):
+        """The fingerprint the Mac last sent for a Start card of Doors, which a device sends back with Turn on."""
+        sent = [m for m in device.seen if m["type"] in ("edit", "opened") and m.get("flow") == doors]
+        return (sent[-1].get("fingerprints") or {}).get(card_id) if sent else None
+
+    check("the Mac sends a fingerprint of the Start card's command and schedule for a device to send back", shown(start) is not None,
+          str([m for m in device.seen if m["type"] == "edit"][-1:]))
     mark = len(device.seen)
-    check("it can turn the schedule on", done(ask("armSchedule", card=start, on=True)), str(device.seen[-1:]))
+    check("it can turn the schedule on, for what the device was shown", done(ask("armSchedule", card=start, on=True, shown=shown(start))),
+          str(device.seen[-1:]))
     s = app.state(doors)
     check("and the Mac has it on, and says which device turned it on", s["armed"] == ["Start"] and s["scheduled"] == 1
           and "Test device turned the schedule on for Start" in s["log"], f"{s['armed']} {s['log'][-3:]}")
@@ -4360,6 +4371,10 @@ def scenario_parity():
         s = play("edit:on;pick:Start;arm:Start:off;arm:Start:on;pick:none;pick:Start", *on,
                  also=lambda s: "arm" in rows_of(s) and next(r for r in settings(s)["rows"] if "arm" in r)["arm"] == "Turn off")
         check("and turned on again, when it says when it next runs", said(s)[3] is None and any(r.get("label", "").startswith("Next: ") for r in settings(s)["rows"]), str(did(s)))
+        s = play("edit:on;pick:Start;arm:Start:off;arm:Start:stale", *on,
+                 also=lambda s: "arm" in rows_of(s) and next(r for r in settings(s)["rows"] if "arm" in r)["arm"] == "Turn on")
+        check("turned on for a card that changed since it was shown, it is turned down and stays off",
+              "changed after it was shown" in (said(s)[-1] or ""), str(did(s)))
         s = play("openFlow:Monthly newsletter;arm:Start:on", *on)
         check("a Start card with no schedule has nothing to turn on", "has no schedule to turn on" in (said(s)[-1] or ""), str(did(s)))
         s = play("pick:Start", *on)

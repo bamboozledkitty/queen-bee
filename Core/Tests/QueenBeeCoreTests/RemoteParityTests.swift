@@ -34,6 +34,7 @@ import Testing
         .revertSettings(flowID: "f", cardID: "a"),
         .armSchedule(flowID: "f", cardID: "s", on: true),
         .armSchedule(flowID: "f", cardID: "s", on: false),
+        .armSchedule(flowID: "f", cardID: "s", on: true, shown: "0f"),
         .paste(flowID: "f", fragment: RemoteParityTests.fragment, at: RemotePoint(x: 100, y: 200)),
         .paste(flowID: "f", fragment: RemoteParityTests.fragment, at: nil),
         .addRoleCard(flowID: "f", roleID: "r", x: 300, y: 400),
@@ -77,8 +78,23 @@ import Testing
         #expect(arm["flowID"] as? String == "f")
         #expect(arm["cardID"] as? String == "s")
         #expect(arm["on"] as? Bool == true)
+        // Left out when there is none, so the command is what a Mac from before always read.
+        #expect(arm["shown"] == nil)
         let role = try #require(JSONSerialization.jsonObject(with: Remote.encode(RemoteCommand.updateRole(roleID: "r", flowID: "f", cardID: "a"))) as? [String: [String: String]])
         #expect(role["updateRole"] == ["roleID": "r", "flowID": "f", "cardID": "a"])
+    }
+
+    @Test func turningOnReadsBothWaysAcrossVersions() throws {
+        // A command from an older device, with no `shown`, reads as one that has none.
+        let old = Data(#"{"armSchedule":{"flowID":"f","cardID":"s","on":true}}"#.utf8)
+        #expect(try Remote.decode(RemoteCommand.self, from: old) == .armSchedule(flowID: "f", cardID: "s", on: true))
+        // A Mac from before reads the new command by the parts it knows and leaves `shown` aside.
+        struct OldArm: Decodable { let flowID: String; let cardID: String; let on: Bool }
+        struct OldCommand: Decodable { let armSchedule: OldArm }
+        let new = try Remote.encode(RemoteCommand.armSchedule(flowID: "f", cardID: "s", on: true, shown: "ab"))
+        let read = try Remote.decode(OldCommand.self, from: new)
+        #expect(read.armSchedule.cardID == "s" && read.armSchedule.on)
+        #expect(try Remote.decode(RemoteCommand.self, from: new) == .armSchedule(flowID: "f", cardID: "s", on: true, shown: "ab"))
     }
 
     @Test func onlyWhatChangesAFlowIsAnEdit() {
