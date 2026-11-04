@@ -209,7 +209,7 @@ nonisolated struct Details: Equatable {
             add(.note, "Claude reads each message and sends it down the branch it fits best. A message that fits none of them goes out Other.")
         case .prompt:
             add(.text, "Rewrite the message as", said(card.template))
-            add(.note, "{{message}} is where the incoming message goes, and {{from}} is the name of the card it came from. With no {{message}}, the message is added at the end.")
+            add(.note, "{{message}} is where the incoming message goes, and {{from}} is the name of the card it came from. With no {{message}}, the message is added at the end. When the message is JSON, {{message.title}} is just its title.")
         case .end:
             add(.row, "Save the answer to a file", (card.saveTo ?? "").isEmpty ? "Not saved" : card.saveTo ?? "")
             if let result = run.results[card.id] { add(.text, run.earlier == nil ? "Latest answer" : "Answer in this run", result) }

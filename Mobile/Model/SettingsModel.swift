@@ -410,6 +410,7 @@ nonisolated struct EditForm: Equatable {
         case .prompt:
             add(.template, "Rewrite the message as", .text(placeholder: "{{message}}", isMono: false))
             note("Write {{message}} where the incoming message should go, and {{from}} for the name of the card it came from. If you leave {{message}} out, the message is added at the end.")
+            note("When the message is JSON, {{message.title}} puts in just its title, and {{message.items.0.name}} the name of the first of its items. A field that isn't there stays as you wrote it.")
         case .end:
             add(.saveTo, "Save the answer to a file (optional)", .line(placeholder: "output/answer.md", lines: 2))
             if let answer = details.items.first(where: { $0.style == .text }) { rows.append(.item(answer)) }

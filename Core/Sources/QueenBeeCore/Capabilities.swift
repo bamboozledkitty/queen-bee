@@ -95,7 +95,8 @@ public enum Capabilities {
         case .prompt:
             CardCapability(.prompt,
                 does: "Rewrites the message from a template.",
-                settings: [SettingCapability("template", "The rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from.")])
+                settings: [SettingCapability("template", "The rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from. When the message is a JSON object or list, alone or in a code fence, {{message.title}} becomes one field of it, and {{message.items.0.name}} goes further in: a number picks from a list, counting from 0. A field holding text goes in as the text, one holding an object or a list as JSON, and one holding null as nothing.")],
+                notes: ["A template that uses no part of the message gets the whole message added at the end. A field that isn't in the message, or a field of a message that isn't JSON, is left as written, and if no part of the message was filled in, the whole message is added at the end too. Field names match exactly, capitals included; a name with a dot in it can't be reached."])
         case .loop:
             CardCapability(.loop,
                 does: "Checks the message. It goes out done when the check holds, again when it doesn't, and gave-up when max_tries is used up without the check holding.",

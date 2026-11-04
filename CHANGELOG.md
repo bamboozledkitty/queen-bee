@@ -6,6 +6,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A Prompt card can pick fields out of a message that is JSON: `{{message.title}}` puts in its title, and `{{message.items.0.name}}` the name of its first item. It works on JSON on its own or in a code fence, as agents usually write it, so simple reshaping no longer needs a Script card.
+
 ### Fixed
 
 - A Flow card whose flow is no longer in the project, for example because it went to the Trash, now warns "Its flow isn't in this project" on the canvas, in its settings and on a paired iPhone or iPad, and the orchestrator sees the warning too. Before, nothing said so until a run reached the card and went out Fail. Moving a flow to the Trash on the Mac now says which flows run it.

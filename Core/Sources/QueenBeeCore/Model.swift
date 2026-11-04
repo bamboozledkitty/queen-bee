@@ -116,7 +116,7 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     public var branches: [String]?
 
     // Prompt
-    /// The rewritten message; `{{message}}` and `{{from}}` are filled in.
+    /// The rewritten message; `{{message}}`, `{{from}}` and fields of a JSON message such as `{{message.title}}` are filled in.
     public var template: String?
 
     // End

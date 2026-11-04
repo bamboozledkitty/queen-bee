@@ -86,6 +86,7 @@ private struct CardSettings: View {
             case .prompt:
                 EditorField("Rewrite the message as", text: card.template ?? "") { v in patch { $0.template = v } }
                 note("Write {{message}} where the incoming message should go, and {{from}} for the name of the card it came from. If you leave {{message}} out, the message is added at the end.")
+                note("When the message is JSON, {{message.title}} puts in just its title, and {{message.items.0.name}} the name of the first of its items. A field that isn't there stays as you wrote it.")
             case .end:
                 LineField("Save the answer to a file (optional)", placeholder: "output/answer.md", text: card.saveTo ?? "") { v in patch { $0.saveTo = v } }
                 if let result = controller.results[card.id] {
