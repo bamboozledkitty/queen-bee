@@ -987,6 +987,12 @@ public enum ScheduleShown {
         return fingerprint(of: card) == shown
     }
 
+    /// The Mac's answer when the card has changed since it was shown, with the card's name as the log has it.
+    public static func changed(_ called: String) -> String { "The command or schedule of \(called) \(changedEnd)" }
+    /// Whether the Mac turned Turn on down because the card had changed, so the device asks again.
+    public static func isChanged(_ refusal: String) -> Bool { refusal.hasSuffix(changedEnd) }
+    private static let changedEnd = "changed after it was shown here. Look at it again, then turn it on."
+
     private struct Shown: Encodable {
         let command: String
         let trigger: Trigger

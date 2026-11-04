@@ -15,6 +15,10 @@ struct ScheduleSwitch: View {
     let isOn: Bool
     /// The card as the question showed it, while the question is open.
     @State private var confirming: Card?
+    /// The fingerprint of what the last question showed, when Turn on was turned down for a card that had changed.
+    /// The question is asked again once it is closed and this device has what the card says now, which can come
+    /// after the Mac's answer.
+    @State private var askAgainAfter: String?
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
@@ -42,6 +46,9 @@ struct ScheduleSwitch: View {
         } message: { shown in
             Text(consequence(of: shown))
         }
+        .onChange(of: current.flatMap(ScheduleShown.fingerprint)) { askAgain() }
+        .onChange(of: confirming == nil) { askAgain() }
+        .onDisappear { askAgainAfter = nil }
     }
 
     /// The card as this device has it now, when it still has a schedule.
@@ -52,12 +59,23 @@ struct ScheduleSwitch: View {
     /// The person agreed to the command and the schedule they were shown. If the card says something else now, here
     /// or on the Mac, it is asked again with what it says now rather than turned on.
     private func turnOn(_ shown: Card) async {
-        if let now = current, ScheduleShown.fingerprint(of: now) != ScheduleShown.fingerprint(of: shown) {
-            confirming = now
+        let was = ScheduleShown.fingerprint(of: shown)
+        if let now = current, ScheduleShown.fingerprint(of: now) != was {
+            askAgainAfter = was
+            askAgain()
             return
         }
-        guard await client.armSchedule(cardID, on: true, shown: shown) != nil else { return }
-        if let now = current, ScheduleShown.fingerprint(of: now) != ScheduleShown.fingerprint(of: shown) { confirming = now }
+        guard let refusal = await client.armSchedule(cardID, on: true, shown: shown), ScheduleShown.isChanged(refusal) else { return }
+        askAgainAfter = was
+        askAgain()
+    }
+
+    /// Asks again, once the question is closed and the card here is no longer what it showed. Shown on the next turn,
+    /// so it isn't lost in the closing of the one before.
+    private func askAgain() {
+        guard let was = askAgainAfter, confirming == nil, let now = current, ScheduleShown.fingerprint(of: now) != was else { return }
+        askAgainAfter = nil
+        Task { @MainActor in confirming = now }
     }
 
     /// What turning the schedule on will do, in the words the person needs to agree to it: the Mac's own.

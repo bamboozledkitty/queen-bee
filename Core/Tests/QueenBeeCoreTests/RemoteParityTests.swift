@@ -123,6 +123,17 @@ import Testing
         #expect(!ScheduleShown.matches(shown, gone))
     }
 
+    @Test func theFingerprintStaysTheSame() {
+        // A device a version behind or ahead makes this for the same card. If it changes, as it would with a field
+        // added to `Trigger`, Turn on from such a device is turned down every time: keep the old one working first.
+        #expect(ScheduleShown.fingerprint(of: Self.scheduled) == "7dcd8d169f00c0e0115225b747b3909e697162572a43367da97f5fc3c99285b0")
+    }
+
+    @Test func theMacSaysWhenTheCardChanged() {
+        #expect(ScheduleShown.isChanged(ScheduleShown.changed("“Go”")))
+        #expect(!ScheduleShown.isChanged("Only a Start card has a schedule."))
+    }
+
     @Test func noCommandIsAnEmptyOne() {
         var none = Self.scheduled
         none.command = nil
