@@ -99,7 +99,7 @@ struct MadeUpEdits {
     /// Nil when it was done, or when it is none of these. Otherwise why not, in the real Mac's words.
     mutating func housekeeping(_ command: RemoteCommand) -> String? {
         switch command {
-        case .armSchedule(_, let cardID, let on):
+        case .armSchedule(_, let cardID, let on, _):
             guard let card = flow.card(cardID) else { return Self.cardGone }
             guard card.kind == .start else { return "Only a Start card has a schedule." }
             guard card.trigger != nil else { return "\(card.name) has no schedule to turn \(on ? "on" : "off"). Choose when it runs first." }

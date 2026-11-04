@@ -233,7 +233,7 @@ Task {
     case "dismissBanner": return .dismissBanner(flowID: flow)
     case "stopAgents": return .stopAgents(flowID: flow)
     case "revertSettings": return .revertSettings(flowID: flow, cardID: text("card"))
-    case "armSchedule": return .armSchedule(flowID: flow, cardID: text("card"), on: flag("on"))
+    case "armSchedule": return .armSchedule(flowID: flow, cardID: text("card"), on: flag("on"), shown: fields["shown"] as? String)
     case "restartAgents":
         // `which` is "all", "allExceptOrchestrator", "awaiting", or "cards" with `cards`.
         let which: RemoteRestart = switch text("which") {

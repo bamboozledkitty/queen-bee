@@ -117,6 +117,7 @@ enum WireSamples {
             .newFlow(projectID: "p", name: "n"), .renameFlow(flowID: "f", name: "n"), .deleteFlow(flowID: "f"), .undo(flowID: "f"), .redo(flowID: "f"),
             .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "c"), .clearLog(flowID: "f"), .dismissBanner(flowID: "f"),
             .stopAgents(flowID: "f"), .revertSettings(flowID: "f", cardID: "c"), .armSchedule(flowID: "f", cardID: "c", on: true),
+            .armSchedule(flowID: "f", cardID: "c", on: true, shown: "s"),
             .restartAgents(flowID: "f", which: .all(withOrchestrator: false)), .restartAgents(flowID: "f", which: .cards(["c"])),
             .restartAgents(flowID: "f", which: .awaitingNewSettings),
             .paste(flowID: "f", fragment: fragment, at: point), .addRoleCard(flowID: "f", roleID: "r", x: 1, y: 2),
@@ -168,8 +169,9 @@ enum WireSamples {
     /// The shape of every message for each `Remote.version`. Apps on the same version connect without question,
     /// so a change to what they send each other has to be one an app built before it can still read.
     // Version 5 grew a message and a command, both sent only to an app that has said `RemoteFeature.overview`, and
-    // `RemoteRunState.workplace`, which is optional: an app from before reads all of it as it did.
-    static let fingerprints: [Int: String] = [5: "7a09bd04d52b55afec4f27be"]
+    // `RemoteRunState.workplace`, which is optional: an app from before reads all of it as it did. Then `shown` in
+    // `RemoteCommand.armSchedule`, also optional, and sent only to a Mac that has said `RemoteFeature.scheduleCheck`.
+    static let fingerprints: [Int: String] = [5: "7886a12bb3e937d68936a67c"]
 
     @Test func theWireFormatMatchesItsVersion() throws {
         let now = try WireSamples.fingerprint()

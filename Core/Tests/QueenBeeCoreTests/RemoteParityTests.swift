@@ -34,6 +34,7 @@ import Testing
         .revertSettings(flowID: "f", cardID: "a"),
         .armSchedule(flowID: "f", cardID: "s", on: true),
         .armSchedule(flowID: "f", cardID: "s", on: false),
+        .armSchedule(flowID: "f", cardID: "s", on: true, shown: "0f"),
         .paste(flowID: "f", fragment: RemoteParityTests.fragment, at: RemotePoint(x: 100, y: 200)),
         .paste(flowID: "f", fragment: RemoteParityTests.fragment, at: nil),
         .addRoleCard(flowID: "f", roleID: "r", x: 300, y: 400),
@@ -77,8 +78,75 @@ import Testing
         #expect(arm["flowID"] as? String == "f")
         #expect(arm["cardID"] as? String == "s")
         #expect(arm["on"] as? Bool == true)
+        // Left out when there is none, so the command is what a Mac from before always read.
+        #expect(arm["shown"] == nil)
         let role = try #require(JSONSerialization.jsonObject(with: Remote.encode(RemoteCommand.updateRole(roleID: "r", flowID: "f", cardID: "a"))) as? [String: [String: String]])
         #expect(role["updateRole"] == ["roleID": "r", "flowID": "f", "cardID": "a"])
+    }
+
+    // MARK: Turning a schedule on from a device
+
+    private static var scheduled: Card {
+        var start = card(.start, "Go")
+        start.command = "echo hi"
+        start.trigger = Trigger(kind: .daily, hour: 9, minute: 30)
+        return start
+    }
+
+    @Test func whatWasShownMatchesTheCardAsItWas() throws {
+        let card = Self.scheduled
+        let shown = try #require(ScheduleShown.fingerprint(of: card))
+        #expect(ScheduleShown.matches(shown, card))
+        // The card as the device has it, after the trip, gives the same fingerprint as the Mac's own.
+        #expect(ScheduleShown.fingerprint(of: try roundTrip(card)) == shown)
+        // Other settings and where it sits are not what the person agreed to.
+        var moved = card
+        moved.name = "Elsewhere"
+        moved.x = 900
+        #expect(ScheduleShown.matches(shown, moved))
+    }
+
+    @Test func aChangedCommandOrScheduleIsNotWhatWasShown() throws {
+        let shown = try #require(ScheduleShown.fingerprint(of: Self.scheduled))
+        var command = Self.scheduled
+        command.command = "rm -rf build"
+        #expect(!ScheduleShown.matches(shown, command))
+        var time = Self.scheduled
+        time.trigger?.hour = 10
+        #expect(!ScheduleShown.matches(shown, time))
+        var kind = Self.scheduled
+        kind.trigger = Trigger(kind: .interval, minutes: 1)
+        #expect(!ScheduleShown.matches(shown, kind))
+        var gone = Self.scheduled
+        gone.trigger = nil
+        #expect(ScheduleShown.fingerprint(of: gone) == nil)
+        #expect(!ScheduleShown.matches(shown, gone))
+    }
+
+    @Test func noCommandIsAnEmptyOne() {
+        var none = Self.scheduled
+        none.command = nil
+        var empty = Self.scheduled
+        empty.command = ""
+        #expect(ScheduleShown.fingerprint(of: none) == ScheduleShown.fingerprint(of: empty))
+    }
+
+    @Test func aDeviceThatSaysNothingIsTakenAsBefore() {
+        // An older device sends no `shown`. The Mac turns the schedule on as it always did: see SECURITY.md.
+        #expect(ScheduleShown.matches(nil, Self.scheduled))
+    }
+
+    @Test func turningOnReadsBothWaysAcrossVersions() throws {
+        // A command from an older device, with no `shown`, reads as one that has none.
+        let old = Data(#"{"armSchedule":{"flowID":"f","cardID":"s","on":true}}"#.utf8)
+        #expect(try Remote.decode(RemoteCommand.self, from: old) == .armSchedule(flowID: "f", cardID: "s", on: true))
+        // A Mac from before reads the new command by the parts it knows and leaves `shown` aside.
+        struct OldArm: Decodable { let flowID: String; let cardID: String; let on: Bool }
+        struct OldCommand: Decodable { let armSchedule: OldArm }
+        let new = try Remote.encode(RemoteCommand.armSchedule(flowID: "f", cardID: "s", on: true, shown: "ab"))
+        let read = try Remote.decode(OldCommand.self, from: new)
+        #expect(read.armSchedule.cardID == "s" && read.armSchedule.on)
+        #expect(try Remote.decode(RemoteCommand.self, from: new) == .armSchedule(flowID: "f", cardID: "s", on: true, shown: "ab"))
     }
 
     @Test func onlyWhatChangesAFlowIsAnEdit() {

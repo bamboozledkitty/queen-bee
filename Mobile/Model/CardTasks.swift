@@ -17,15 +17,24 @@ extension RemoteClient {
 
     // MARK: Schedules
 
-    /// A Start card's "Turn on", or turning its schedule off and leaving it set.
-    func armCommand(_ cardID: String, on: Bool) -> RemoteCommand? {
-        forOpenFlow { .armSchedule(flowID: $0, cardID: cardID, on: on) }
+    /// A Start card's "Turn on", for the card as the person was shown it, or turning its schedule off and leaving it
+    /// set. `shown` is nil for the card as this device has it now. To a Mac that checks, "Turn on" says what was
+    /// shown, and the Mac turns nothing on if the card's command or schedule has changed since.
+    func armCommand(_ cardID: String, on: Bool, shown: Card? = nil) -> RemoteCommand? {
+        let card = shown ?? mirror.snapshot?.flow.card(cardID)
+        let fingerprint = on && mirror.macChecksSchedules ? card.flatMap(ScheduleShown.fingerprint) : nil
+        return forOpenFlow { .armSchedule(flowID: $0, cardID: cardID, on: on, shown: fingerprint) }
     }
 
     @discardableResult
-    func armSchedule(_ cardID: String, on: Bool) async -> String? {
-        guard let command = armCommand(cardID, on: on) else { return Self.notConnected }
+    func armSchedule(_ cardID: String, on: Bool, shown: Card? = nil) async -> String? {
+        guard let command = armCommand(cardID, on: on, shown: shown) else { return Self.notConnected }
         return await perform(command: command)
+    }
+
+    /// Whether a schedule's "Turn on" or "Turn off" has been sent and not yet answered.
+    func isArming(_ cardID: String) -> Bool {
+        mirror.waiting.values.contains { if case .armSchedule(_, cardID, _, _) = $0 { true } else { false } }
     }
 
     // MARK: Roles

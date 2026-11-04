@@ -1282,6 +1282,9 @@ def remote_parity(app, device, send, ask, done, refused, since):
           and app.state(doors)["armed"] == [], str(app.state(doors)["armed"]))
     check("turning on a schedule that isn't there is refused", refused(ask("armSchedule", card=d["Done"], on=True), "Only a Start card"),
           str(device.seen[-1:]))
+    check("turning it on for a command or schedule other than the one the device showed is refused",
+          refused(ask("armSchedule", card=start, on=True, shown="not what the card says"), "changed after it was shown")
+          and app.state(doors)["armed"] == [], str(device.seen[-1:]))
     mark = len(device.seen)
     check("it can turn the schedule on", done(ask("armSchedule", card=start, on=True)), str(device.seen[-1:]))
     s = app.state(doors)

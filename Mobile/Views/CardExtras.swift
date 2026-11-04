@@ -7,29 +7,67 @@ import SwiftUI
 /// into. Each sends one command, and waits for the Mac's answer before it can be pressed again.
 
 /// "Turn on" or "Turn off" for a Start card's schedule. The lines above it say whether it is on and when it next runs.
+/// "Turn on" asks first, as the Mac's Schedules do, with the command and the schedule it will run on. What it showed
+/// goes to the Mac with the command: if the card has changed since, nothing is turned on and it asks again.
 struct ScheduleSwitch: View {
     @Environment(RemoteClient.self) private var client
     let cardID: String
     let isOn: Bool
+    /// The card as the question showed it, while the question is open.
+    @State private var confirming: Card?
 
     var body: some View {
-        let command = client.armCommand(cardID, on: !isOn)
         HStack(spacing: Theme.Space.s) {
             Text(isOn ? "Runs by itself while it is on." : "Turned on here, it runs by itself, with nobody watching.")
                 .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Theme.Space.s)
-            Button(isOn ? "Turn off" : "Turn on") { Task { await client.armSchedule(cardID, on: !isOn) } }
-                .buttonStyle(.panel(isOn ? .outline : .live))
-                .fixedSize()
-                .disabled(command.map(client.isSending) ?? true)
-                .accessibilityHint(isOn ? "Turns the schedule off on your Mac. It stays set, to turn on again."
-                                        : "Turns the schedule on on your Mac, for the flow as it is now.")
+            Button(isOn ? "Turn off" : "Turn on") {
+                if isOn { Task { await client.armSchedule(cardID, on: false) } } else { confirming = current }
+            }
+            .buttonStyle(.panel(isOn ? .outline : .live))
+            .fixedSize()
+            .disabled(client.armCommand(cardID, on: !isOn) == nil || client.isArming(cardID))
+            .accessibilityHint(isOn ? "Turns the schedule off on your Mac. It stays set, to turn on again."
+                                    : "Asks first, then turns the schedule on on your Mac, for the flow as it is now.")
         }
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
         .frame(minHeight: Theme.Touch.target)
+        .confirmationDialog("Turn on this schedule?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                            titleVisibility: .visible, presenting: confirming) { shown in
+            Button("Turn on") { Task { await turnOn(shown) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { shown in
+            Text(consequence(of: shown))
+        }
+    }
+
+    /// The card as this device has it now, when it still has a schedule.
+    private var current: Card? {
+        client.mirror.snapshot?.flow.card(cardID).flatMap { $0.trigger == nil ? nil : $0 }
+    }
+
+    /// The person agreed to the command and the schedule they were shown. If the card says something else now, here
+    /// or on the Mac, it is asked again with what it says now rather than turned on.
+    private func turnOn(_ shown: Card) async {
+        if let now = current, ScheduleShown.fingerprint(of: now) != ScheduleShown.fingerprint(of: shown) {
+            confirming = now
+            return
+        }
+        guard await client.armSchedule(cardID, on: true, shown: shown) != nil else { return }
+        if let now = current, ScheduleShown.fingerprint(of: now) != ScheduleShown.fingerprint(of: shown) { confirming = now }
+    }
+
+    /// What turning the schedule on will do, in the words the person needs to agree to it: the Mac's own.
+    private func consequence(of card: Card) -> String {
+        let command = (card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let shown = command.count > 300 ? String(command.prefix(300)) + "…" : command
+        let begins = shown.isEmpty ? "with no command" : "with this command: \(shown)"
+        let when = card.trigger?.summary(in: .current) ?? "On its schedule"
+        let flow = client.mirror.snapshot?.flow.name ?? "the flow"
+        return "\(when), \(flow) runs from \(card.name) with nobody watching, starting \(begins)\nQueen Bee has to be open on your Mac for it to run."
     }
 }
 

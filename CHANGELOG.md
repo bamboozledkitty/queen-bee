@@ -27,6 +27,7 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Fixed
 
+- On the iPad and iPhone, Turn on for a Start card's schedule now asks first, showing when it runs and the command it starts with, as the Mac does. If the card's command or schedule changes before you answer, the Mac turns nothing on and the device asks again with what the card says now.
 - Picking a card in Needs you or Schedules zooms to it again when its flow was already the one open.
 - Sidebar rows and the add-card list can be used with the keyboard and VoiceOver, and the arrows on menu buttons are no longer read out as separate buttons.
 - The Start, Restart and Retry buttons on an agent card no longer let the terminal's text show through, and while an agent is slow to start the card says Claude Code may be asking whether to trust the folder.
