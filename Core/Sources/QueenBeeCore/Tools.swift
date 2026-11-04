@@ -26,13 +26,15 @@ public struct FlowSnapshot: Sendable {
     public var armedStartIDs: Set<String>
     /// Warnings the app adds to the wiring warnings, by card id.
     public var extraWarnings: [String: String]
+    /// Every flow in the project by id and name, this one included, so a Flow card whose flow has gone can say so.
+    public var projectFlows: [(id: String, name: String)]
 
     public init(flow: Flow, agents: [String: AgentStatus], isRunning: Bool, otherFlows: [String] = [], subflowLevelsLeft: Int = 3,
                 subflows: [(name: String, depth: Int)] = [], innerFlowNames: [String: String] = [:],
-                armedStartIDs: Set<String> = [], extraWarnings: [String: String] = [:]) {
+                armedStartIDs: Set<String> = [], extraWarnings: [String: String] = [:], projectFlows: [(id: String, name: String)] = []) {
         self.flow = flow; self.agents = agents; self.isRunning = isRunning; self.otherFlows = otherFlows
         self.subflowLevelsLeft = subflowLevelsLeft; self.subflows = subflows; self.innerFlowNames = innerFlowNames
-        self.armedStartIDs = armedStartIDs; self.extraWarnings = extraWarnings
+        self.armedStartIDs = armedStartIDs; self.extraWarnings = extraWarnings; self.projectFlows = projectFlows
     }
 }
 
@@ -185,9 +187,9 @@ public enum Tools {
     // MARK: get_flow
 
     /// Built field by field rather than encoded from `Flow`, so session ids can never leak into it.
-    private static func describe(_ snapshot: FlowSnapshot) -> JSONValue {
+    static func describe(_ snapshot: FlowSnapshot) -> JSONValue {
         let flow = snapshot.flow
-        let found = warnings(for: flow).merging(snapshot.extraWarnings) { own, _ in own }
+        let found = warnings(for: flow, among: snapshot.projectFlows).merging(snapshot.extraWarnings) { own, _ in own }
         func text(_ value: String?) -> JSONValue { value.map(JSONValue.string) ?? .null }
 
         let cards = flow.cards.map { card -> JSONValue in

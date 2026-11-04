@@ -42,6 +42,11 @@ public struct Nesting: Sendable {
 
     /// The flow a reference names: by id, else by name ignoring case, never the flow itself.
     public static func resolve(_ ref: String?, in flows: [Flow], excluding own: String) -> String? {
+        resolve(ref, among: flows.map { (id: $0.id, name: $0.name) }, excluding: own)
+    }
+
+    /// The same, over flows known only by id and name, which is how a paired device knows them.
+    public static func resolve(_ ref: String?, among flows: [(id: String, name: String)], excluding own: String) -> String? {
         guard let ref = ref?.trimmingCharacters(in: .whitespacesAndNewlines), !ref.isEmpty else { return nil }
         let others = flows.filter { $0.id != own }
         return (others.first { $0.id == ref } ?? others.first { $0.name.caseInsensitiveCompare(ref) == .orderedSame })?.id

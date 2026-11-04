@@ -198,7 +198,8 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var workplaceRefusal: String?
 
     private var services: AppServices { AppServices.shared }
-    var warnings: [String: String] { QueenBeeCore.warnings(for: flow) }
+    /// The wiring warnings, and a Flow card's when the flow it runs is no longer in the project.
+    var warnings: [String: String] { QueenBeeCore.warnings(for: flow, among: project.flowNames) }
     var liveLinkIDs: Set<String> { liveLinks.values.reduce(into: Set<String>()) { $0.formUnion($1) } }
 
     /// Agent cards whose session is waiting on the person, in canvas order.
@@ -2169,6 +2170,14 @@ final class FlowController: ToolHost {
         nesting.problem(placing: inner.flow.id, in: flow.id)
     }
 
+    /// For the Move to Trash dialog: what becomes of the flows whose Flow cards run this one. Nil when none do.
+    var runByOthersLine: String? {
+        let names = nesting.outerFlows(of: flow.id).compactMap(project.controller).map { "\"\($0.flow.name)\"" }
+        guard !names.isEmpty else { return nil }
+        let one = names.count == 1
+        return "\(Self.namesList(names)) \(one ? "runs" : "run") it, so \(one ? "its Flow card" : "their Flow cards") will fail until you put it back or choose another flow."
+    }
+
     /// Why this flow can't be given another sub-flow of its own, or nil if it can.
     var newSubflowProblem: String? { nesting.problemAddingSubflow(to: flow.id) }
 
@@ -2502,7 +2511,8 @@ final class FlowController: ToolHost {
                             subflows: subflows().map { (name: $0.controller.flow.name, depth: $0.depth) },
                             innerFlowNames: innerNames,
                             armedStartIDs: Set(flow.cards.filter { $0.kind == .start && isArmed($0) }.map(\.id)),
-                            extraWarnings: nestingWarnings)
+                            extraWarnings: nestingWarnings,
+                            projectFlows: project.flowNames)
     }
 
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T {

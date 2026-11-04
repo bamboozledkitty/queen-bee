@@ -120,9 +120,12 @@ private struct CardSettings: View {
                 let everyOther = controller.project.controllers.filter { $0 !== controller }
                 // Only flows that fit: not ones that would run this flow in turn, or nest too deep.
                 let others = everyOther.filter { $0 === inner || controller.nestingProblem(placing: $0) == nil }
+                // A flow that has gone keeps its place in the menu, so the card doesn't look as if it ran nothing.
+                let ref = (card.flowRef ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let gone = inner == nil && !ref.isEmpty ? [(value: ref, label: "A flow that isn't in this project")] : []
                 row("Runs") {
-                    MenuField(options: [(value: "", label: "Nothing yet")] + others.map { (value: $0.flow.id, label: $0.flow.name) },
-                              selection: inner?.flow.id ?? "") { v in patch { $0.flowRef = v } }
+                    MenuField(options: [(value: "", label: "Nothing yet")] + gone + others.map { (value: $0.flow.id, label: $0.flow.name) },
+                              selection: inner?.flow.id ?? ref) { v in patch { $0.flowRef = v } }
                 }
                 if let inner, let problem = controller.nestingProblem(placing: inner) {
                     Label(problem, systemImage: "exclamationmark.triangle")

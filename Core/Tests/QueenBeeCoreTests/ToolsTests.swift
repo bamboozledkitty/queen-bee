@@ -138,6 +138,24 @@ actor FakeHost: ToolHost {
         #expect(json["is_running"] == false)
     }
 
+    @Test func getFlowSaysWhenAFlowCardsFlowHasGone() async throws {
+        var flow = Flow(name: "Outer")
+        try flow.addCard(kind: .agent, name: "Writer")
+        var patch = CardPatch()
+        patch.flowRef = "Inner"
+        let card = try flow.addCard(kind: .flow, name: "Review", patch: patch)
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "Writer", to: "Review")
+        try flow.addLink(from: "Review", port: "done", to: "Done")
+        func warning(among flows: [(id: String, name: String)]) throws -> JSONValue? {
+            let snapshot = FlowSnapshot(flow: flow, agents: [:], isRunning: false, projectFlows: flows)
+            let json = try JSONValue.parse(Data(Tools.describe(snapshot).text().utf8))
+            return json["cards"]?.arrayValue?.first { $0["id"] == .string(card.id) }?["warning"]
+        }
+        #expect(try warning(among: [(id: flow.id, name: flow.name), (id: "i", name: "Inner")]) == nil)
+        #expect(try warning(among: [(id: flow.id, name: flow.name)]) == "Its flow isn't in this project")
+    }
+
     @Test func addCardTakesAKindAndItsSettings() async throws {
         let host = FakeHost()
         let agent = await Tools.call(name: "add_card", arguments: [

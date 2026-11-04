@@ -231,7 +231,8 @@ nonisolated struct Details: Equatable {
                 add(.note, "A run stops here and waits for you. On your Mac you can edit the message, then approve or reject it.")
             }
         case .flow:
-            add(.row, "Runs", CanvasContent.innerFlow(of: card, in: siblings, excluding: flow.id)?.name ?? "Nothing yet")
+            let chosen = !(card.flowRef ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            add(.row, "Runs", CanvasContent.innerFlow(of: card, in: siblings, excluding: flow.id)?.name ?? (chosen ? "A flow that isn't in this project" : "Nothing yet"))
             add(.note, "This card runs a whole flow as one step. The message that arrives here goes to that flow's Input, and what reaches its Output comes back out Done. If it stops early or fails, the message goes out Fail.")
             if let hold { add(.waiting, "Running \(hold.command)…") }
         case .script:
@@ -251,7 +252,7 @@ nonisolated struct Details: Equatable {
             }
         }
 
-        if let warning = QueenBeeCore.warnings(for: flow)[card.id] { add(.warning, warning) }
+        if let warning = QueenBeeCore.warnings(for: flow, among: siblings.map { (id: $0.id, name: $0.name) })[card.id] { add(.warning, warning) }
         if run.marks[card.id]?.failed == true, !run.isRunning { add(.stopped, "The run stopped here.") }
     }
 
