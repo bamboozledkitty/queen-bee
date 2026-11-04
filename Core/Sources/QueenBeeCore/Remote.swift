@@ -118,9 +118,9 @@ public enum RemoteFeature {
     /// `RemoteRunState.workplace`. Each end says it in its first message: a device never sends the new command to a Mac
     /// that hasn't said it, as that Mac couldn't read it, and a Mac sends the new message only to a device that has.
     public static let overview = "overview"
-    /// The Mac checks a schedule turned on from a device against what the device showed: `shown` in
-    /// `RemoteCommand.armSchedule`. A device sends `shown` only to a Mac that has said this, though one that hasn't
-    /// would read the command and leave `shown` aside.
+    /// The Mac checks a schedule turned on from a device against what the device showed: it sends a fingerprint of each
+    /// Start card in `RemoteEditState.scheduleFingerprints`, and the device sends back the one it showed as `shown` in
+    /// `RemoteCommand.armSchedule`. A Mac that hasn't said this sends none, so the device sends none.
     public static let scheduleCheck = "scheduleCheck"
 }
 
@@ -362,9 +362,15 @@ public struct RemoteEditState: Codable, Equatable, Sendable {
     public var armed: [String]
     /// When the clock next starts a run from each of those, by card id. A schedule that waits on a file has none.
     public var nextFires: [String: Date]
+    /// What the Mac checks a device's "Turn on" against, for each Start card with a schedule, by card id: see
+    /// `ScheduleShown`. The device sends back the one it had when it asked, and never makes one of its own. Nil from
+    /// a Mac without `RemoteFeature.scheduleCheck`.
+    public var scheduleFingerprints: [String: String]?
 
-    public init(undo: String? = nil, redo: String? = nil, armed: [String] = [], nextFires: [String: Date] = [:]) {
+    public init(undo: String? = nil, redo: String? = nil, armed: [String] = [], nextFires: [String: Date] = [:],
+                scheduleFingerprints: [String: String]? = nil) {
         self.undo = undo; self.redo = redo; self.armed = armed; self.nextFires = nextFires
+        self.scheduleFingerprints = scheduleFingerprints
     }
 }
 
@@ -727,9 +733,9 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     /// flow with nobody watching, on what the flow does now. A later change from a device to what the flow
     /// does turns it off again.
     ///
-    /// `shown` is `ScheduleShown.fingerprint(of:)` for the card as the device showed it when the person chose
-    /// "Turn on". A Mac that has `RemoteFeature.scheduleCheck` turns nothing on when the card's command or schedule
-    /// has changed since, and says so. Nil from a device that doesn't send it, and for turning one off.
+    /// `shown` is the card's fingerprint in `RemoteEditState.scheduleFingerprints` as the device had it when the
+    /// person was asked. A Mac that has `RemoteFeature.scheduleCheck` turns nothing on when the card's command or
+    /// schedule has changed since, and says so. Nil from a device that doesn't send it, and for turning one off.
     case armSchedule(flowID: String, cardID: String, on: Bool, shown: String? = nil)
     /// The header's Restart menu: all the flow's agents, some of them, or the ones with new settings waiting. Each keeps its
     /// conversation so far. Only to a Mac that has said `RemoteFeature.overview`.
@@ -964,39 +970,6 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     static let offCanvas = "That is off the edge of the canvas."
     static let tooMany = "That is too many at once."
     static let tooBig = "That is too much to send from a device in one go. Try fewer cards, or less text."
-}
-
-/// What the person was shown of a Start card when they chose to turn its schedule on: the command it starts with
-/// and when it runs. The device sends it with `RemoteCommand.armSchedule`, and the Mac turns the schedule on only
-/// if the card says the same now, as the Mac's own "Turn on this schedule?" does.
-public enum ScheduleShown {
-    /// One fingerprint for the card's command and its schedule. A card with no command counts as one with an empty
-    /// command, as the Mac shows it. Nil for a card with no schedule, which has nothing to turn on.
-    public static func fingerprint(of card: Card) -> String? {
-        guard let trigger = card.trigger else { return nil }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
-        guard let data = try? encoder.encode(Shown(command: card.command ?? "", trigger: trigger)) else { return nil }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// Whether the card says what the person was shown. Nil for `shown` is a device that didn't say what it showed,
-    /// which is taken as it always was: see `SECURITY.md`.
-    public static func matches(_ shown: String?, _ card: Card) -> Bool {
-        guard let shown else { return true }
-        return fingerprint(of: card) == shown
-    }
-
-    /// The Mac's answer when the card has changed since it was shown, with the card's name as the log has it.
-    public static func changed(_ called: String) -> String { "The command or schedule of \(called) \(changedEnd)" }
-    /// Whether the Mac turned Turn on down because the card had changed, so the device asks again.
-    public static func isChanged(_ refusal: String) -> Bool { refusal.hasSuffix(changedEnd) }
-    private static let changedEnd = "changed after it was shown here. Look at it again, then turn it on."
-
-    private struct Shown: Encodable {
-        let command: String
-        let trigger: Trigger
-    }
 }
 
 /// What a device sends to the pairing listener.

@@ -171,9 +171,11 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
     waits behind the device's edits sent before it, so it is agreed to for the flow as they left it. A Script card's
     command a device wrote is still held for Allow on the Mac when a scheduled run reaches it.
   - **A schedule is only turned on from a device for the command and schedule it showed.** **Turn on** on a device
-    first asks, showing when the schedule runs and the command it starts with, and sends the Mac a fingerprint of
-    both. If the Start card's command or schedule has changed since, from the Mac, the orchestrator or another
-    device, the Mac turns nothing on and says so, and the device asks again with what the card says now. An older
+    first asks, showing when the schedule runs and the command it starts with, and sends back the fingerprint of
+    both that the Mac sent with the card it showed. Only the Mac makes fingerprints, so the two ends can't disagree
+    on how. If the Start card's command or schedule has changed since, from the Mac, the
+    orchestrator or another device, the Mac turns nothing on and says so, and the device asks again with what the
+    card says now. An older
     device that sends no fingerprint is taken as before: the Mac turns the schedule on for what the card says when
     the command arrives. Update the app on the device to have it checked.
   - **A permission mode that skips permission checks cannot be set**, as nowhere else.

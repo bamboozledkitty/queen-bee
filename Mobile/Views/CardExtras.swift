@@ -8,17 +8,13 @@ import SwiftUI
 
 /// "Turn on" or "Turn off" for a Start card's schedule. The lines above it say whether it is on and when it next runs.
 /// "Turn on" asks first, as the Mac's Schedules do, with the command and the schedule it will run on. What it showed
-/// goes to the Mac with the command: if the card has changed since, nothing is turned on and it asks again.
+/// goes to the Mac with the command: if the card has changed since, nothing is turned on and it asks again. What to
+/// ask and when is `ScheduleQuestion`'s.
 struct ScheduleSwitch: View {
     @Environment(RemoteClient.self) private var client
     let cardID: String
     let isOn: Bool
-    /// The card as the question showed it, while the question is open.
-    @State private var confirming: Card?
-    /// The fingerprint of what the last question showed, when Turn on was turned down for a card that had changed.
-    /// The question is asked again once it is closed and this device has what the card says now, which can come
-    /// after the Mac's answer.
-    @State private var askAgainAfter: String?
+    @State private var question = ScheduleQuestion()
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
@@ -28,64 +24,46 @@ struct ScheduleSwitch: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Theme.Space.s)
             Button(isOn ? "Turn off" : "Turn on") {
-                if isOn { Task { await client.armSchedule(cardID, on: false) } } else { confirming = current }
+                if isOn { Task { await client.armSchedule(cardID, on: false) } } else { question.ask(current, fingerprint: fingerprint) }
             }
             .buttonStyle(.panel(isOn ? .outline : .live))
             .fixedSize()
-            .disabled(client.armCommand(cardID, on: !isOn) == nil || client.isArming(cardID))
+            .disabled(client.mirror.snapshot == nil || client.isArming(cardID))
             .accessibilityHint(isOn ? "Turns the schedule off on your Mac. It stays set, to turn on again."
                                     : "Asks first, then turns the schedule on on your Mac, for the flow as it is now.")
         }
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.s)
         .frame(minHeight: Theme.Touch.target)
-        .confirmationDialog("Turn on this schedule?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
-                            titleVisibility: .visible, presenting: confirming) { shown in
+        .confirmationDialog("Turn on this schedule?", isPresented: Binding(get: { question.open != nil }, set: { if !$0 { question.close() } }),
+                            titleVisibility: .visible, presenting: question.open) { shown in
             Button("Turn on") { Task { await turnOn(shown) } }
             Button("Cancel", role: .cancel) {}
         } message: { shown in
-            Text(consequence(of: shown))
+            Text(shown.card.trigger.map {
+                ScheduleShown.consequence(of: shown.card, trigger: $0, flow: client.mirror.snapshot?.flow.name ?? "The flow",
+                                          onDevice: true, macChecks: client.mirror.macChecksSchedules)
+            } ?? "")
         }
-        .onChange(of: current.flatMap(ScheduleShown.fingerprint)) { askAgain() }
-        .onChange(of: confirming == nil) { askAgain() }
-        .onDisappear { askAgainAfter = nil }
+        .onChange(of: question.open == nil) { askAgain() }
+        .onDisappear { question = ScheduleQuestion() }
     }
 
-    /// The card as this device has it now, when it still has a schedule.
-    private var current: Card? {
-        client.mirror.snapshot?.flow.card(cardID).flatMap { $0.trigger == nil ? nil : $0 }
-    }
+    /// The card as this device has it now.
+    private var current: Card? { client.mirror.snapshot?.flow.card(cardID) }
+    /// The fingerprint the Mac sent with it.
+    private var fingerprint: String? { client.scheduleFingerprint(cardID) }
 
-    /// The person agreed to the command and the schedule they were shown. If the card says something else now, here
-    /// or on the Mac, it is asked again with what it says now rather than turned on.
-    private func turnOn(_ shown: Card) async {
-        let was = ScheduleShown.fingerprint(of: shown)
-        if let now = current, ScheduleShown.fingerprint(of: now) != was {
-            askAgainAfter = was
-            askAgain()
-            return
-        }
-        guard let refusal = await client.armSchedule(cardID, on: true, shown: shown), ScheduleShown.isChanged(refusal) else { return }
-        askAgainAfter = was
+    private func turnOn(_ shown: ScheduleQuestion.Shown) async {
+        guard question.turnOn(shown, now: current) else { return askAgain() }
+        guard await client.armSchedule(cardID, on: true, shown: shown.fingerprint) != nil else { return }
+        question.refused(shown, now: current, fingerprint: fingerprint)
         askAgain()
     }
 
-    /// Asks again, once the question is closed and the card here is no longer what it showed. Shown on the next turn,
-    /// so it isn't lost in the closing of the one before.
+    /// On the next turn, so the question isn't lost in the closing of the one before.
     private func askAgain() {
-        guard let was = askAgainAfter, confirming == nil, let now = current, ScheduleShown.fingerprint(of: now) != was else { return }
-        askAgainAfter = nil
-        Task { @MainActor in confirming = now }
-    }
-
-    /// What turning the schedule on will do, in the words the person needs to agree to it: the Mac's own.
-    private func consequence(of card: Card) -> String {
-        let command = (card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let shown = command.count > 300 ? String(command.prefix(300)) + "…" : command
-        let begins = shown.isEmpty ? "with no command" : "with this command: \(shown)"
-        let when = card.trigger?.summary(in: .current) ?? "On its schedule"
-        let flow = client.mirror.snapshot?.flow.name ?? "the flow"
-        return "\(when), \(flow) runs from \(card.name) with nobody watching, starting \(begins)\nQueen Bee has to be open on your Mac for it to run."
+        Task { @MainActor in _ = question.askAgain(now: current, fingerprint: fingerprint) }
     }
 }
 

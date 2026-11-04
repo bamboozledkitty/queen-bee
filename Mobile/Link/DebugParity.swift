@@ -17,7 +17,7 @@ import QueenBeeCore
 ///   mapTap:<x>,<y>                        a tap on the map, at a point of the map's own
 ///   callout:hand | callout:start          "Build it by hand" or "Start the orchestrator" in an empty flow's note
 ///   closeBanner                           the close button on the message at the top of the flow
-///   arm:<card>:on|off                     "Turn on" or "Turn off" for a Start card's schedule
+///   arm:<card>:on|off|stale               "Turn on" or "Turn off" for a Start card's schedule; stale turns on for a card changed since
 ///   role:<card>:<role>|none               pick a role for an agent, or None
 ///   askSaveRole:<card> | saveRole:<card>[:<name>]
 ///                                         "Save as a New Role…", asked, or with the name already given
@@ -116,7 +116,9 @@ enum DebugParity {
         case "arm":
             return {
                 guard parts.count > 2, let card = await card(parts[1]) else { return noSuch }
-                return await client.armSchedule(card.id, on: parts[2] == "on")
+                // "stale" is a Turn on for a card as it was before some change the Mac has and this device hasn't.
+                let shown = parts[2] == "stale" ? "stale" : client.scheduleFingerprint(card.id)
+                return await client.armSchedule(card.id, on: parts[2] != "off", shown: shown)
             }
         case "role":
             return {

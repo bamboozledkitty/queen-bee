@@ -59,7 +59,8 @@ enum WireSamples {
     }
 
     static var snapshot: RemoteFlowSnapshot {
-        RemoteFlowSnapshot(flow: flow, run: run, edit: RemoteEditState(undo: "Undo", redo: "Redo", armed: ["c1"], nextFires: ["c1": at]),
+        RemoteFlowSnapshot(flow: flow, run: run, edit: RemoteEditState(undo: "Undo", redo: "Redo", armed: ["c1"], nextFires: ["c1": at],
+                                                                          scheduleFingerprints: ["c1": "f"]),
                            log: [line], messages: ["l1": [message]], runs: [record])
     }
 
@@ -170,8 +171,9 @@ enum WireSamples {
     /// so a change to what they send each other has to be one an app built before it can still read.
     // Version 5 grew a message and a command, both sent only to an app that has said `RemoteFeature.overview`, and
     // `RemoteRunState.workplace`, which is optional: an app from before reads all of it as it did. Then `shown` in
-    // `RemoteCommand.armSchedule`, also optional, and sent only to a Mac that has said `RemoteFeature.scheduleCheck`.
-    static let fingerprints: [Int: String] = [5: "7886a12bb3e937d68936a67c"]
+    // `RemoteCommand.armSchedule` and `RemoteEditState.scheduleFingerprints`, both optional, for
+    // `RemoteFeature.scheduleCheck`.
+    static let fingerprints: [Int: String] = [5: "f935e9da0aff0c65df120477"]
 
     @Test func theWireFormatMatchesItsVersion() throws {
         let now = try WireSamples.fingerprint()

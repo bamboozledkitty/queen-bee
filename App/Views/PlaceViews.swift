@@ -415,7 +415,7 @@ private struct SchedulesList: View {
                     // The person agreed to the command and the schedule they were shown. If either changed while the
                     // question was open, it is asked again with what the card says now, rather than turned on.
                     guard let now = entry.controller.flow.card(entry.card.id), let trigger = now.trigger else { return }
-                    guard now.command == entry.card.command, trigger == entry.trigger else {
+                    guard ScheduleShown.same(now, entry.card), trigger == entry.trigger else {
                         Task { @MainActor in confirming = Entry(controller: entry.controller, card: now, trigger: trigger) }
                         return
                     }
@@ -430,11 +430,7 @@ private struct SchedulesList: View {
 
     /// What turning the schedule on will do, in the words the person needs to agree to it.
     private func consequence(of entry: Entry) -> String {
-        let command = (entry.card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let shown = command.count > 300 ? String(command.prefix(300)) + "…" : command
-        let begins = shown.isEmpty ? "with no command" : "with this command: \(shown)"
-        return "\(entry.trigger.summary(in: .current)), \(entry.controller.flow.name) runs from \(entry.card.name) with nobody watching, "
-            + "starting \(begins)\nQueen Bee has to be open for it to run."
+        ScheduleShown.consequence(of: entry.card, trigger: entry.trigger, flow: entry.controller.flow.name)
     }
 
     @ViewBuilder

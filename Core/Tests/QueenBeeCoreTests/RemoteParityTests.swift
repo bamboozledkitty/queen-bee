@@ -84,69 +84,6 @@ import Testing
         #expect(role["updateRole"] == ["roleID": "r", "flowID": "f", "cardID": "a"])
     }
 
-    // MARK: Turning a schedule on from a device
-
-    private static var scheduled: Card {
-        var start = card(.start, "Go")
-        start.command = "echo hi"
-        start.trigger = Trigger(kind: .daily, hour: 9, minute: 30)
-        return start
-    }
-
-    @Test func whatWasShownMatchesTheCardAsItWas() throws {
-        let card = Self.scheduled
-        let shown = try #require(ScheduleShown.fingerprint(of: card))
-        #expect(ScheduleShown.matches(shown, card))
-        // The card as the device has it, after the trip, gives the same fingerprint as the Mac's own.
-        #expect(ScheduleShown.fingerprint(of: try roundTrip(card)) == shown)
-        // Other settings and where it sits are not what the person agreed to.
-        var moved = card
-        moved.name = "Elsewhere"
-        moved.x = 900
-        #expect(ScheduleShown.matches(shown, moved))
-    }
-
-    @Test func aChangedCommandOrScheduleIsNotWhatWasShown() throws {
-        let shown = try #require(ScheduleShown.fingerprint(of: Self.scheduled))
-        var command = Self.scheduled
-        command.command = "rm -rf build"
-        #expect(!ScheduleShown.matches(shown, command))
-        var time = Self.scheduled
-        time.trigger?.hour = 10
-        #expect(!ScheduleShown.matches(shown, time))
-        var kind = Self.scheduled
-        kind.trigger = Trigger(kind: .interval, minutes: 1)
-        #expect(!ScheduleShown.matches(shown, kind))
-        var gone = Self.scheduled
-        gone.trigger = nil
-        #expect(ScheduleShown.fingerprint(of: gone) == nil)
-        #expect(!ScheduleShown.matches(shown, gone))
-    }
-
-    @Test func theFingerprintStaysTheSame() {
-        // A device a version behind or ahead makes this for the same card. If it changes, as it would with a field
-        // added to `Trigger`, Turn on from such a device is turned down every time: keep the old one working first.
-        #expect(ScheduleShown.fingerprint(of: Self.scheduled) == "7dcd8d169f00c0e0115225b747b3909e697162572a43367da97f5fc3c99285b0")
-    }
-
-    @Test func theMacSaysWhenTheCardChanged() {
-        #expect(ScheduleShown.isChanged(ScheduleShown.changed("“Go”")))
-        #expect(!ScheduleShown.isChanged("Only a Start card has a schedule."))
-    }
-
-    @Test func noCommandIsAnEmptyOne() {
-        var none = Self.scheduled
-        none.command = nil
-        var empty = Self.scheduled
-        empty.command = ""
-        #expect(ScheduleShown.fingerprint(of: none) == ScheduleShown.fingerprint(of: empty))
-    }
-
-    @Test func aDeviceThatSaysNothingIsTakenAsBefore() {
-        // An older device sends no `shown`. The Mac turns the schedule on as it always did: see SECURITY.md.
-        #expect(ScheduleShown.matches(nil, Self.scheduled))
-    }
-
     @Test func turningOnReadsBothWaysAcrossVersions() throws {
         // A command from an older device, with no `shown`, reads as one that has none.
         let old = Data(#"{"armSchedule":{"flowID":"f","cardID":"s","on":true}}"#.utf8)

@@ -436,7 +436,7 @@ enum RemoteCommands {
             // nothing is turned on: the device shows what the card says now and asks again. A device that doesn't
             // say what it showed is taken as before.
             if on, !ScheduleShown.matches(shown, card) {
-                return ScheduleShown.changed(called(cardID))
+                return "The command or schedule of \(called(cardID)) changed after it was shown here. Look at it again, then turn it on."
             }
             // The Mac's own "Turn on": agreed to for what the card starts with now. A change from a device to what
             // the flow does turns it off again.
