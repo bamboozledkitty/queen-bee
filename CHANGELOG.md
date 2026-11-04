@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-04
+
 ### Changed
 
 - In "Where this flow works", This folder no longer switches your folder's branch: agents work on whatever branch it has checked out. Flows set before keep working until you apply the form again. A worktree can be made on a new branch, started from any local branch, or on an existing local branch. The branch lists are searchable, and two branches whose names differ only by a slash or a dash (feature/foo and feature-foo) no longer share a worktree folder.
@@ -323,7 +325,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.6.0...v0.7.0
