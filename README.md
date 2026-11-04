@@ -30,6 +30,7 @@ Queen Bee starts Claude Code sessions as you and is not sandboxed. Read [SECURIT
 - Describe the flow you want to the orchestrator and it builds it, or add cards from the palette at the canvas's top-left. **Help → Welcome to Queen Bee** shows the walk-through again.
 - Drag from a dot on a card's right edge to another card to link them. Click a card's title to open its settings.
 - Write the Start card's message and press **Run**. Cards the run passes through get a check and a count, and travelled links turn green. The panel on the right has the orchestrator, the run log and what reached each End card. Every run is kept.
+- **Needs you**, **Runs**, **Schedules** and **Devices** at the top of the sidebar show, across every project, the cards waiting on you, every run with its log, every schedule, and your paired iPad and iPhone.
 
 Some cards worth knowing:
 
@@ -39,13 +40,13 @@ Some cards worth knowing:
 - **For each** sends a list through one item at a time and collects the results. **Loop until** goes out Gave up when it runs out of tries.
 - A **Start** card can run on a schedule or when a file changes, while Queen Bee is open.
 
-![A run stopped at an Approval card: the card's settings show the message with Approve and Reject, and the sidebar and toolbar say the flow needs you](docs/queen-bee-approval.png)
+![A run stopped at an Approval card: the card's settings show the message with Approve and Reject, and the sidebar and the header say the flow needs you](docs/queen-bee-approval.png)
 
 Also:
 
 - Turn on **Browser** in an agent's settings to give it a web browser beside its terminal. It uses Chrome, Chromium, Edge or Brave, or offers to download one.
-- In a git repository each flow works on one branch, in the project folder or in a worktree of its own. The branch chip in the title bar changes it.
-- A flow's settings (the sliders button) can stop a run once it has spent a set amount at API prices. Click the cost figure beside the zoom control for a breakdown.
+- In a git repository each flow works on one branch, in the project folder or in a worktree of its own. The branch chip in the header, beside Run, changes it.
+- A flow's settings (the **Settings** tab above the canvas) can stop a run once it has spent a set amount at API prices. Click the cost figure beside the zoom control for a breakdown.
 - Save an agent's settings as a **role** to reuse it in any flow.
 - **Group** (⌘G), **Tidy Up** (⇧⌘L), **Find** (⌘F) and **Undo** (⌘Z, which also undoes the orchestrator's changes). Right-click a card, a link or the canvas for a menu.
 

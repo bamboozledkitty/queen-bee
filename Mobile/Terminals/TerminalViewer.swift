@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 import UIKit
 
@@ -37,11 +38,11 @@ struct TerminalViewer: View {
         VStack(spacing: 0) {
             HStack(spacing: Theme.Space.m) {
                 Image(systemName: "terminal")
-                    .font(.system(size: 15, weight: .medium))
+                    .dsIcon(DS.IconSize.row)
                     .foregroundStyle(Theme.ink.ui)
                     .accessibilityHidden(true)
                 Text(caption.name)
-                    .dsMono(Theme.Touch.title, .medium)
+                    .textRole(.heading)
                     .foregroundStyle(Theme.ink.ui)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
@@ -268,12 +269,21 @@ private struct TerminalSlot: UIViewRepresentable {
     let size: CGSize
 
     func makeUIView(context: Context) -> TerminalSlotView { TerminalSlotView() }
-    func updateUIView(_ slot: TerminalSlotView, context: Context) { slot.hold(registry.view(for: key)) }
-    static func dismantleUIView(_ slot: TerminalSlotView, coordinator: ()) { slot.hold(nil) }
+    func updateUIView(_ slot: TerminalSlotView, context: Context) {
+        slot.join(registry, key: key)
+        slot.hold(registry.view(for: key))
+    }
+    static func dismantleUIView(_ slot: TerminalSlotView, coordinator: ()) { slot.leave() }
 }
 
+/// The place a terminal is drawn in a panel. There can be two at once for one session while the layout changes
+/// (turning the iPad, say), and the terminal is in only one view at a time, so a slot that goes away hands it
+/// to one that is staying.
 final class TerminalSlotView: UIView {
     private weak var mount: TerminalMount?
+    private weak var registry: TerminalRegistry?
+    private var key: String?
+    private(set) var isLeaving = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -282,6 +292,12 @@ final class TerminalSlotView: UIView {
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    func join(_ registry: TerminalRegistry, key: String) {
+        self.registry = registry
+        self.key = key
+        registry.add(slot: self, key: key)
+    }
 
     func hold(_ new: TerminalMount?) {
         if let new, new.superview !== self {
@@ -293,6 +309,25 @@ final class TerminalSlotView: UIView {
         }
         mount = new
         setNeedsLayout()
+    }
+
+    /// This slot is going away: whatever terminal it holds goes to another slot for the same session.
+    func leave() {
+        isLeaving = true
+        let held = mount
+        hold(nil)
+        if let key, held != nil { registry?.rehome(key: key) }
+    }
+
+    /// Takes the terminal if the slot that has it is not on screen.
+    func claimIfOrphaned() {
+        guard !isLeaving, window != nil, let key, let new = registry?.view(for: key) else { return }
+        if new.superview == nil || new.window == nil || new.superview === self { hold(new) }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { claimIfOrphaned() }
     }
 
     override func layoutSubviews() {

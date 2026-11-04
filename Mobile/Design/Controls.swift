@@ -1,15 +1,19 @@
+import QueenBeeDesign
 import SwiftUI
 
 /// The parts every screen is built from, drawn from the tokens so a button, a badge and a panel all look
 /// like parts of the same drawing. They mirror `App/Design/Controls.swift` and the panel and badge in the
 /// Mac's `Tokens.swift`, made big enough for a finger.
 
-/// The look of anything that sits on the paper: a surface and an ink outline, with no shadow.
+/// The look of anything that floats over the canvas or a list: a raised surface, a hairline and a soft shadow.
 struct FloatingPanel: ViewModifier {
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous)
         content
-            .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.ink.ui, lineWidth: Theme.Stroke.card))
+            .background(Palette.overlay.color, in: shape)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.hairline))
+            .shadow(color: .black.opacity(0.10), radius: 8, y: 2)
     }
 }
 
@@ -20,21 +24,21 @@ extension View {
     func fieldBox() -> some View {
         padding(.horizontal, Theme.Space.m)
             .padding(.vertical, Theme.Space.s)
-            .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
+            .background(Palette.raised.color, in: RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(Palette.hairlineStrong.color))
     }
 }
 
 /// A thin rule between two parts of a panel.
 struct Hairline: View {
-    var body: some View { Rectangle().fill(Theme.hairline.ui).frame(height: 1) }
+    var body: some View { Rectangle().fill(Theme.hairline.ui).frame(height: DS.Stroke.hairline) }
 }
 
 extension View {
     /// A rule down one side, from the top of the screen to the bottom, where a column meets the paper.
     func edgeRule(_ edge: HorizontalAlignment) -> some View {
         overlay(alignment: Alignment(horizontal: edge, vertical: .center)) {
-            Rectangle().fill(Theme.hairline.ui).frame(width: 1).ignoresSafeArea().accessibilityHidden(true)
+            Rectangle().fill(Theme.hairline.ui).frame(width: DS.Stroke.hairline).ignoresSafeArea().accessibilityHidden(true)
         }
     }
 }
@@ -47,15 +51,15 @@ struct Badge: View {
     var tone: Tone = .plain
 
     var body: some View {
-        HStack(spacing: 3) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .bold)).accessibilityHidden(true) }
+        HStack(spacing: DS.Space.xxs) {
+            if let symbol { Image(systemName: symbol).dsIcon(DS.IconSize.s, .bold).accessibilityHidden(true) }
             if !text.isEmpty { Text(text) }
         }
-        .dsMono(Theme.Touch.caption, .medium)
+        .textRole(.footnoteLabel)
         .foregroundStyle(foreground.ui)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(background.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+        .padding(.horizontal, tone == .plain ? DS.Space.s : DS.Space.snug)
+        .frame(minHeight: DS.Size.badgeTouch)
+        .background(background.ui, in: Capsule())
     }
 
     private var foreground: UIColor {
@@ -77,10 +81,10 @@ struct Badge: View {
     }
 }
 
-/// A button in a panel: an ink outline by default, quieter or louder by kind.
+/// A button in a panel: an ordinary button by default, quieter or louder by kind.
 struct PanelButtonStyle: ButtonStyle {
     enum Kind {
-        /// The usual button: ink text in an ink outline.
+        /// The usual button: a raised surface with an outline.
         case outline
         /// For an action that should stay out of the way: text only.
         case quiet
@@ -101,8 +105,18 @@ struct PanelButtonStyle: ButtonStyle {
     /// As wide as the space it is given, for the one button at the foot of a screen.
     var isWide = false
 
+    // The design system's buttons, so a panel's buttons look like every other button in the app. The buttons of a
+    // bar that has its own outline keep their own look.
+    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        PanelButton(configuration: configuration, kind: kind, isWide: isWide)
+        switch kind {
+        case .outline: DSButtonStyle(.secondary, wide: isWide).makeBody(configuration: configuration)
+        case .quiet: DSButtonStyle(.ghost, wide: isWide).makeBody(configuration: configuration)
+        case .filled, .run: DSButtonStyle(.primary, wide: isWide).makeBody(configuration: configuration)
+        case .danger: DSButtonStyle(.danger, wide: isWide).makeBody(configuration: configuration)
+        case .live, .stop: DSButtonStyle(.live, wide: isWide).makeBody(configuration: configuration)
+        case .tool, .toolOn: PanelButton(configuration: configuration, kind: kind, isWide: isWide)
+        }
     }
 }
 
@@ -114,7 +128,7 @@ private struct PanelButton: View {
 
     var body: some View {
         configuration.label
-            .dsMono(Theme.Touch.body, .medium)
+            .textRole(.label)
             .lineLimit(1)
             .foregroundStyle(foreground.ui)
             .padding(.horizontal, kind == .quiet || kind == .tool || kind == .toolOn ? Theme.Space.s : Theme.Space.l)
@@ -123,8 +137,8 @@ private struct PanelButton: View {
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(border.ui, lineWidth: Theme.Stroke.card))
             .opacity(configuration.isPressed && isEnabled ? 0.6 : 1)
             .contentShape(Rectangle())
-            .animation(Theme.Motion.quick, value: configuration.isPressed)
-            .animation(Theme.Motion.quick, value: isEnabled)
+            .dsAnimation(DS.Motion.quick, value: configuration.isPressed)
+            .dsAnimation(DS.Motion.quick, value: isEnabled)
     }
 
     // A button that can't be pressed is drawn as a faint outline of itself: no fill, no ink border, grey text.
@@ -171,7 +185,7 @@ extension ButtonStyle where Self == PanelButtonStyle {
     }
 }
 
-/// The drafting paper with its dot matrix: what the canvas is drawn on, and what stands behind every
+/// The canvas's ground with its dot matrix: what the canvas is drawn on, and what stands behind every
 /// full-screen message.
 struct Paper: View {
     var body: some View {
@@ -203,7 +217,7 @@ struct PanelSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             Text(title)
-                .dsMono(Theme.Touch.caption)
+                .textRole(.footnote)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 0) { content }
@@ -221,9 +235,9 @@ struct PanelRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-            Text(label).dsSans().foregroundStyle(Theme.ink.ui)
+            Text(label).textRole(.body).foregroundStyle(Theme.ink.ui)
             Spacer(minLength: Theme.Space.s)
-            Text(value).dsMono().foregroundStyle(Theme.inkSecondary.ui).multilineTextAlignment(.trailing)
+            Text(value).textRole(.body).foregroundStyle(Theme.inkSecondary.ui).multilineTextAlignment(.trailing)
         }
         .padding(.horizontal, Theme.Space.m)
         .frame(minHeight: Theme.Touch.target)
@@ -243,18 +257,18 @@ struct Plate<Actions: View>: View {
         VStack(spacing: Theme.Space.l) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 34, weight: .light))
+                    .dsIcon(DS.IconSize.empty, .light)
                     .foregroundStyle(Theme.ink.ui)
                     .accessibilityHidden(true)
             }
             VStack(spacing: Theme.Space.s) {
                 Text(title)
-                    .dsMono(Theme.Touch.heading, .medium)
+                    .textRole(.title)
                     .foregroundStyle(Theme.ink.ui)
                     .accessibilityAddTraits(.isHeader)
                 if !text.isEmpty {
                     Text(text)
-                        .dsSans()
+                        .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 }
             }
@@ -262,7 +276,7 @@ struct Plate<Actions: View>: View {
             actions
         }
         .padding(Theme.Space.xl)
-        .frame(maxWidth: 440)
+        .frame(maxWidth: DS.Size.plateWidth)
         .floatingPanel()
         .padding(Theme.Space.l)
     }

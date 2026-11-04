@@ -1,98 +1,102 @@
+import QueenBeeDesign
 import SwiftUI
 import UIKit
 
-/// The Flight plan design system, as the iPad and iPhone app uses it. These mirror `App/Design/Tokens.swift`
-/// value for value, so a flow looks the same on the device as it does on the Mac: drafting paper, ink
-/// lines, and one signal colour for whatever is live. Change a value there and change it here.
+/// The iPad and iPhone app's names for the design system in `QueenBeeDesign`, which the Mac app shares, so a
+/// flow looks the same on the device as it does on the Mac. Colours come from there and nowhere else.
 ///
 /// Colour carries meaning and nothing else. Ink is structure. Orange is live. Green is "the run passed
 /// through". Red is "it stopped here". Cobalt is selected or focused.
 nonisolated enum Theme {
     // MARK: Colour, as light and dark pairs
+    // The app's long-standing names for the roles in `Palette`, the same as the Mac's. New code can take `Palette` directly.
 
-    static let paper = pair(0xE3EAF1, 0x0F1B2B)
-    static let surface = pair(0xFFFFFF, 0x16263A)
-    static let bar = pair(0xF3F6FA, 0x1B2E46)
+    /// Behind a screen's content, and the canvas.
+    static let paper = Palette.panel.platform
+    /// A panel, a sheet, a list.
+    static let surface = Palette.overlay.platform
+    /// A strip or a row set off from what it sits on: a header, a field, a card.
+    static let bar = Palette.raised.platform
     /// Under a finger, where the Mac has the pointer over it.
-    static let barHover = pair(0xE7EDF4, 0x223955)
-    static let ink = pair(0x1F3A5F, 0xCFE0F5)
-    static let inkSecondary = pair(0x5A7190, 0x8AA3C2)
-    static let hairline = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.22, 0.2)
+    static let barHover = Palette.hover.platform
+    static let ink = Palette.text.platform
+    static let inkSecondary = Palette.textMuted.platform
+    static let hairline = Palette.hairline.platform
+    /// A line that has to be seen: around a control or a card.
+    static let outline = Palette.hairlineStrong.platform
     /// The canvas's dot matrix.
-    static let dot = pair(0x1F3A5F, 0xCFE0F5, alpha: 0.26, 0.2)
+    static let dot = Palette.canvasDot.platform
 
-    static let live = pair(0xFF6B2C, 0xFF8A4C)
-    static let liveTint = pair(0xFFE4D6, 0x4A2413)
-    static let liveInk = pair(0x8A3410, 0xFFC7A8)
-    static let passTint = pair(0xDDF3E4, 0x143524)
-    static let passInk = pair(0x17603A, 0x7FD6A0)
-    static let failTint = pair(0xFBE3E3, 0x4A1B1B)
-    static let failInk = pair(0xA32D2D, 0xF09595)
-    static let select = pair(0x2F6FED, 0x6EA0FF)
+    static let live = Palette.live.platform
+    static let liveTint = Palette.liveTint.platform
+    static let liveInk = Palette.liveText.platform
+    static let passTint = Palette.passTint.platform
+    static let passInk = Palette.passText.platform
+    static let failTint = Palette.failTint.platform
+    static let failInk = Palette.failText.platform
+    static let select = Palette.accent.platform
 
-    static let terminal = pair(0x10243D, 0x0A1420)
-    static let terminalInk = pair(0xCFE0F5, 0xCFE0F5)
-
-    private static func pair(_ light: Int, _ dark: Int, alpha lightAlpha: CGFloat = 1, _ darkAlpha: CGFloat = 1) -> UIColor {
-        UIColor { $0.userInterfaceStyle == .dark ? rgb(dark, darkAlpha) : rgb(light, lightAlpha) }
-    }
-
-    private static func rgb(_ hex: Int, _ alpha: CGFloat) -> UIColor {
-        UIColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
-    }
+    static let terminal = Palette.terminal.platform
+    static let terminalInk = Palette.terminalText.platform
 
     // MARK: Type
 
     /// Monospace, for anything that names or counts: card titles, ports, badges, flow names.
     /// A fixed size, for the canvas, which is zoomed rather than read at the system's text size.
-    static func mono(_ size: CGFloat = Size.body, _ weight: UIFont.Weight = .regular) -> UIFont {
+    static func mono(_ size: CGFloat = Size.terminal, _ weight: UIFont.Weight = .regular) -> UIFont {
         .monospacedSystemFont(ofSize: size, weight: weight)
     }
 
-    /// Sans, for anything read as a sentence: settings, help text, instructions.
-    static func sans(_ size: CGFloat = Size.body, _ weight: UIFont.Weight = .regular) -> UIFont {
+    /// Sans, for anything read as a sentence on the canvas.
+    static func sans(_ size: CGFloat = Size.label, _ weight: UIFont.Weight = .regular) -> UIFont {
         .systemFont(ofSize: size, weight: weight)
     }
 
-    /// The Mac's sizes, which is what the canvas is drawn in so a card matches the Mac's.
+    /// The sizes of the Mac's canvas and of its terminals, which is what the canvas here is drawn in so a card
+    /// matches the Mac's. They are the Mac's type roles at the Mac's size (never the larger touch size), so the two
+    /// can't drift. A card's name is semibold and the words on a card are medium, as on the Mac.
     enum Size {
-        static let caption: CGFloat = 11
-        static let body: CGFloat = 12
-        static let title: CGFloat = 13
-        static let heading: CGFloat = 15
+        /// A card's name in its title bar: `TextRole.headline`, 13 semibold.
+        static let cardName: CGFloat = TextRole.headline.desk
+        /// A word on a card: a state, a port, a summary. `TextRole.captionLabel`, 11.5 medium.
+        static let label: CGFloat = TextRole.captionLabel.desk
+        /// A figure on a card, and the run badge on its title bar: `TextRole.figure`, 11 medium.
+        static let figure: CGFloat = TextRole.figure.desk
+        /// A terminal's type: `TextRole.mono`, 12.
+        static let terminal: CGFloat = TextRole.mono.desk
     }
 
-    /// The same four steps for everything outside the canvas. A list held in the hand and tapped with a
-    /// finger needs bigger type than one read at a desk with a pointer. These grow with the person's text size.
+    /// A card's name, in the Mac's weight.
+    static func cardName(_ size: CGFloat = Size.cardName) -> UIFont { sans(size, .semibold) }
+    /// A word on a card, in the Mac's weight.
+    static func cardLabel(_ size: CGFloat = Size.label, _ weight: UIFont.Weight = .medium) -> UIFont { sans(size, weight) }
+
+    /// Outside the canvas, a list held in the hand and tapped with a finger takes its type from the roles
+    /// (`.textRole(.body)` and the rest), which are larger than the Mac's and grow with the person's text size.
     enum Touch {
-        static let caption: CGFloat = 12
-        static let body: CGFloat = 15
-        static let title: CGFloat = 17
-        static let heading: CGFloat = 22
         /// The least height of anything a finger is meant to hit.
-        static let target: CGFloat = 44
+        static let target: CGFloat = DS.Size.touchTarget
     }
 
     // MARK: Shape
 
     enum Space {
-        static let xs: CGFloat = 4
-        static let s: CGFloat = 8
-        static let m: CGFloat = 12
-        static let l: CGFloat = 16
-        static let xl: CGFloat = 24
+        static let xs: CGFloat = DS.Space.xs
+        static let s: CGFloat = DS.Space.s
+        static let m: CGFloat = DS.Space.m
+        static let l: CGFloat = DS.Space.l
+        static let xl: CGFloat = DS.Space.xl
     }
 
     enum Radius {
-        static let card: CGFloat = 3
-        static let badge: CGFloat = 2
+        static let card: CGFloat = DS.Radius.m
+        static let badge: CGFloat = DS.Radius.xs
     }
 
     enum Stroke {
-        static let card: CGFloat = 1
-        static let link: CGFloat = 1.5
-        static let selected: CGFloat = 2
+        static let card: CGFloat = DS.Stroke.hairline
+        static let link: CGFloat = DS.Stroke.link
+        static let selected: CGFloat = DS.Stroke.focus
     }
 
     /// The paper's dot matrix: one dot at every step, as on the Mac's canvas.
@@ -104,70 +108,22 @@ nonisolated enum Theme {
     // MARK: Motion
 
     enum Motion {
-        /// A press, anything tied to the finger.
-        static let quickDuration: TimeInterval = 0.15
-        /// Selecting, panels opening, a panel changing height.
-        static let standardDuration: TimeInterval = 0.25
-        /// The canvas moving: zoom, fit, going to a card.
-        static let travelDuration: TimeInterval = 0.3
-        /// One step of the dashes marching along a live link.
-        static let march: TimeInterval = 0.8
+        static let quickDuration = DS.Motion.quickDuration
+        static let standardDuration = DS.Motion.standardDuration
+        static let travelDuration = DS.Motion.travelDuration
+        static let march = DS.Motion.march
 
         /// False when the person has asked the device for less motion.
         @MainActor static var isAllowed: Bool { !UIAccessibility.isReduceMotionEnabled }
 
-        /// Springs with no bounce, so a change that is interrupted carries on from where it was.
-        /// Nil, which is no animation, with motion off.
-        @MainActor static var quick: Animation? { isAllowed ? .snappy(duration: quickDuration, extraBounce: 0) : nil }
-        @MainActor static var standard: Animation? { isAllowed ? .snappy(duration: standardDuration, extraBounce: 0) : nil }
+        /// For `withAnimation`, which can't take `.dsAnimation`: the design system's curves, or none, so the
+        /// change happens at once, when the person has asked for less motion. Views animate a value with `.dsAnimation(_:value:)`.
+        @MainActor static var quick: Animation? { DS.Motion.resolved(DS.Motion.quick, reduceMotion: !isAllowed) }
+        @MainActor static var standard: Animation? { DS.Motion.resolved(DS.Motion.standard, reduceMotion: !isAllowed) }
     }
 }
 
 extension UIColor {
     /// The same colour for SwiftUI views.
     nonisolated var ui: Color { Color(uiColor: self) }
-}
-
-extension Font {
-    /// Fixed sizes, for the canvas. Everything else uses `dsMono` and `dsSans` on a view, which grow with the text size.
-    static func dsMono(_ size: CGFloat = Theme.Size.body, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
-    }
-
-    static func dsSans(_ size: CGFloat = Theme.Size.body, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight)
-    }
-}
-
-/// One of the two faces at a size that follows the person's text size. Sentences grow all the way. Names and
-/// figures grow half as fast: they sit in rows and badges, where a name twice the size no longer fits.
-private struct ScaledType: ViewModifier {
-    @ScaledMetric private var scaled: CGFloat
-    private let base: CGFloat
-    private let weight: Font.Weight
-    private let isMono: Bool
-
-    init(size: CGFloat, weight: Font.Weight, isMono: Bool) {
-        _scaled = ScaledMetric(wrappedValue: size, relativeTo: .body)
-        base = size
-        self.weight = weight
-        self.isMono = isMono
-    }
-
-    func body(content: Content) -> some View {
-        content.font(isMono ? .system(size: base + (scaled - base) / 2, weight: weight, design: .monospaced)
-                            : .system(size: scaled, weight: weight))
-    }
-}
-
-extension View {
-    /// Monospace, for a name or a figure outside the canvas.
-    func dsMono(_ size: CGFloat = Theme.Touch.body, _ weight: Font.Weight = .regular) -> some View {
-        modifier(ScaledType(size: size, weight: weight, isMono: true))
-    }
-
-    /// Sans, for a sentence outside the canvas.
-    func dsSans(_ size: CGFloat = Theme.Touch.body, _ weight: Font.Weight = .regular) -> some View {
-        modifier(ScaledType(size: size, weight: weight, isMono: false))
-    }
 }

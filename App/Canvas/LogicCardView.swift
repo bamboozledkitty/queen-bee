@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
 
 /// One named output of a card: its name and how many times the run has left by it.
 /// The output taken last is tinted, so the run's latest turn is visible at a glance.
@@ -7,28 +8,31 @@ private final class PortRowView: NSView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
     private var isLatest = false
+    private var isRunning = false
 
     override var isFlipped: Bool { true }
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        nameLabel.font = Theme.mono(Theme.Size.caption, .medium)
+        nameLabel.font = TextRole.captionLabel.nsFont()
         nameLabel.alignment = .right
         nameLabel.lineBreakMode = .byTruncatingTail
-        countLabel.font = Theme.mono(Theme.Size.caption)
+        countLabel.font = TextRole.figure.nsFont(digits: true)
         addSubview(nameLabel)
         addSubview(countLabel)
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    func set(name: String, count: Int, isLatest: Bool) {
+    func set(name: String, count: Int, isLatest: Bool, isRunning: Bool) {
         nameLabel.stringValue = name
         countLabel.stringValue = count > 0 ? "\(count)" : ""
         self.isLatest = isLatest
-        nameLabel.textColor = isLatest ? Theme.liveInk : Theme.ink
-        countLabel.textColor = isLatest ? Theme.liveInk : Theme.inkSecondary
+        // Orange while the run is under way; once it has ended the path it took is green, like its links.
+        self.isRunning = isRunning
+        nameLabel.textColor = isLatest ? (isRunning ? Theme.Canvas.liveText : Theme.Canvas.passText) : Theme.Canvas.text
+        countLabel.textColor = isLatest ? (isRunning ? Theme.Canvas.liveText : Theme.Canvas.passText) : Theme.Canvas.textMuted
         needsDisplay = true
     }
 
@@ -41,7 +45,7 @@ private final class PortRowView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = isLatest ? Theme.liveTint.cgColor : NSColor.clear.cgColor
+        layer?.backgroundColor = isLatest ? (isRunning ? Theme.Canvas.liveTint : Theme.Canvas.passTint).cgColor : NSColor.clear.cgColor
     }
 }
 
@@ -50,18 +54,24 @@ private final class PortRowView: NSView {
 final class LogicCardView: CardView {
     private let summaryLabel = NSTextField(wrappingLabelWithString: "")
     private let warningLabel = NSTextField(labelWithString: "")
+    private let warningGlyph = NSImageView()
     private var portRows: [PortRowView] = []
 
     override init(card: Card) {
         super.init(card: card)
-        summaryLabel.font = Theme.sans(Theme.Size.body)
+        summaryLabel.font = TextRole.body.nsFont()
         summaryLabel.maximumNumberOfLines = 0
         summaryLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(summaryLabel)
-        warningLabel.font = Theme.mono(Theme.Size.caption, .medium)
-        warningLabel.textColor = Theme.failInk
+        warningLabel.font = TextRole.captionLabel.nsFont()
+        // An unfinished card is a note, not a failure: muted words, with a small red mark. Full red is for a failed run.
+        warningLabel.textColor = Theme.Canvas.textMuted
         warningLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(warningLabel)
+        warningGlyph.image = NSImage(systemSymbolName: "exclamationmark.circle", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: DS.IconSize.s, weight: .medium))
+        warningGlyph.contentTintColor = Theme.Canvas.fail
+        content.addSubview(warningGlyph)
     }
 
     override func update(card new: Card, context: CardContext) {
@@ -71,9 +81,10 @@ final class LogicCardView: CardView {
         // A schedule that came in the file, or came back with an undo, is off until the person turns it on.
         if new.kind == .start, new.trigger != nil, !context.isArmed { summary += " · off" }
         summaryLabel.stringValue = progress ?? context.result ?? summary
-        summaryLabel.textColor = progress != nil ? Theme.liveInk : context.result != nil ? Theme.ink : Theme.inkSecondary
+        summaryLabel.textColor = progress != nil ? Theme.Canvas.liveText : context.result != nil ? Theme.Canvas.text : Theme.Canvas.textMuted
         warningLabel.stringValue = context.warning ?? ""
         warningLabel.isHidden = context.warning == nil
+        warningGlyph.isHidden = warningLabel.isHidden
 
         let named = ports(of: new).count > 1 ? ports(of: new) : []
         if portRows.count != named.count {
@@ -85,7 +96,7 @@ final class LogicCardView: CardView {
             }
         }
         for (row, port) in zip(portRows, named) {
-            row.set(name: portLabel(port), count: context.mark.ports[port] ?? 0, isLatest: context.mark.lastPort == port)
+            row.set(name: portLabel(port), count: context.mark.ports[port] ?? 0, isLatest: context.mark.lastPort == port, isRunning: context.isRunning)
         }
         needsLayout = true
     }
@@ -109,7 +120,9 @@ final class LogicCardView: CardView {
         let warningHeight: CGFloat = warningLabel.isHidden ? 0 : 15
         let summaryHeight = max(0, content.bounds.height - foot - warningHeight - 12)
         summaryLabel.frame = NSRect(x: 10, y: 6, width: w - 20, height: summaryHeight)
-        warningLabel.frame = NSRect(x: 10, y: 6 + summaryHeight, width: w - 20, height: 15)
+        let glyph = DS.IconSize.s + 2
+        warningGlyph.frame = NSRect(x: 10, y: 6 + summaryHeight + (15 - glyph) / 2, width: glyph, height: glyph)
+        warningLabel.frame = NSRect(x: 10 + glyph + 4, y: 6 + summaryHeight, width: max(0, w - 24 - glyph), height: 15)
         for (i, row) in portRows.enumerated() {
             row.frame = NSRect(x: 1, y: content.bounds.height - foot + CGFloat(i) * CanvasGeometry.portRowHeight,
                                width: w - 2, height: CanvasGeometry.portRowHeight)
@@ -125,11 +138,11 @@ enum CardSummary {
         case .start:
             let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
             let command = first.isEmpty ? "Write the command" : first
-            return card.trigger.map { "\(command)\n\($0.summary)" } ?? command
+            return card.trigger.map { "\(command)\n\($0.summary(in: .current))" } ?? command
         case .ifElse: return check(card)
         case .switchCard: return "Claude picks one of \((card.branches ?? []).count) branches"
-        case .and: return "Waits for all \(inputs) linked cards"
-        case .or: return "Passes on the first of \(inputs) to answer"
+        case .and: return inputs == 0 ? "Link cards into this to wait for them" : "Waits for all \(inputs) linked cards"
+        case .or: return inputs == 0 ? "Link cards into this to pass on the first answer" : "Passes on the first of \(inputs) to answer"
         case .prompt:
             let first = (card.template ?? "").split(separator: "\n").first.map(String.init) ?? ""
             return first.isEmpty ? "Passes the message on" : first

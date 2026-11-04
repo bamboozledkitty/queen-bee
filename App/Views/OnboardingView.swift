@@ -1,5 +1,6 @@
 import QueenBeeCore
 import SwiftUI
+import QueenBeeDesign
 
 /// The first-run walk-through: one panel over the window, four steps, each with a small
 /// drawing made from the same parts the canvas uses. Shown once, and again from the Help menu.
@@ -44,43 +45,43 @@ struct OnboardingView: View {
                 }
                 .frame(height: 190)
                 .clipped()
-                Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+                DSDivider()
 
-                VStack(alignment: .leading, spacing: Theme.Space.s) {
+                VStack(alignment: .leading, spacing: DS.Space.s) {
                     Text(Self.steps[step].title)
-                        .font(.dsMono(Theme.Size.heading, .medium))
+                        .textRole(.subtitle)
                     Text(Self.steps[step].text)
-                        .font(.dsSans(Theme.Size.title))
+                        .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if isLast { ClaudeCheck() }
                 }
                 .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
-                .padding(.horizontal, Theme.Space.xl)
-                .padding(.top, Theme.Space.l)
+                .padding(.horizontal, DS.Space.xl)
+                .padding(.top, DS.Space.l)
                 .id(step)
                 .transition(.opacity)
 
                 footer
             }
-            .frame(width: 520)
+            .frame(width: DS.Size.onboardingWidth)
             .foregroundStyle(Theme.ink.ui)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.m))
             .floatingPanel()
         }
         .animation(Theme.Motion.standard, value: step)
     }
 
     private var footer: some View {
-        HStack(spacing: Theme.Space.s) {
+        HStack(spacing: DS.Space.s) {
             Button("Skip", action: finish)
                 .buttonStyle(.panel(.quiet))
                 .keyboardShortcut(.cancelAction)
                 .opacity(isLast ? 0 : 1)
                 .disabled(isLast)
             Spacer()
-            HStack(spacing: 6) {
+            HStack(spacing: DS.Space.tight) {
                 ForEach(Self.steps.indices, id: \.self) { i in
                     Capsule()
                         .fill((i == step ? Theme.ink : Theme.hairline).ui)
@@ -90,11 +91,12 @@ struct OnboardingView: View {
             .accessibilityLabel("Step \(step + 1) of \(Self.steps.count)")
             Spacer()
             Button("Back") { step -= 1 }
-                .buttonStyle(.panel())
+                // On the first page there is nothing to go back to, so it drops its outline as well as its colour.
+                .buttonStyle(.panel(step == 0 ? .quiet : .outline))
                 .keyboardShortcut(.leftArrow, modifiers: [])
                 .disabled(step == 0)
             if isLast {
-                Button(services.projects.isEmpty ? "Add project folder…" : "Done") {
+                Button(services.projects.isEmpty ? "Add Project Folder…" : "Done") {
                     let needsFolder = services.projects.isEmpty
                     finish()
                     if needsFolder { WorkspaceView.pickProjectFolder() }
@@ -114,8 +116,8 @@ struct OnboardingView: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, Theme.Space.xl)
-        .padding(.vertical, Theme.Space.l)
+        .padding(.horizontal, DS.Space.xl)
+        .padding(.vertical, DS.Space.l)
     }
 
     @ViewBuilder private var illustration: some View {
@@ -141,26 +143,26 @@ struct OnboardingView: View {
                 MiniCard(icon: "terminal", name: "Reviewer", width: 120) { MiniTerminal("● APPROVED") }
                 MiniLink(tone: .pass, width: 40)
                 MiniCard(icon: "arrow.triangle.branch", name: "Approved?", badge: "✓ 2", width: 132) {
-                    VStack(alignment: .trailing, spacing: 3) {
+                    VStack(alignment: .trailing, spacing: DS.Space.xs) {
                         MiniText("Has \"APPROVED\"")
-                        Text("Yes").font(.dsMono(10, .medium)).foregroundStyle(Theme.liveInk.ui)
-                            .padding(.horizontal, 5).background(Theme.liveTint.ui)
-                        Text("No").font(.dsMono(10, .medium))
+                        Text("Yes").textRole(.micro).foregroundStyle(Theme.liveInk.ui)
+                            .padding(.horizontal, DS.Space.tight).background(Theme.liveTint.ui)
+                        Text("No").textRole(.micro)
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(6)
+                    .padding(DS.Space.tight)
                 }
                 MiniLink(tone: .pass, width: 40)
                 MiniCard(icon: "flag", name: "Done", badge: "✓", width: 96) { MiniText("Saved to slogan.txt") }
             }
         default:
-            HStack(alignment: .top, spacing: Theme.Space.l) {
+            HStack(alignment: .top, spacing: DS.Space.l) {
                 HStack(spacing: 0) {
                     MiniCard(icon: "play", name: "Start", width: 76) { MiniText("…") }
                     MiniLink(tone: .plain, width: 26)
                     MiniCard(icon: "terminal", name: "Writer", width: 96) { MiniTerminal("›") }
                 }
-                .padding(.top, 34)
+                .padding(.top, DS.Space.xxl)
                 MiniCard(icon: "sparkles", name: "Orchestrator", badge: "idle", width: 210) {
                     MiniTerminal("› a writer and a reviewer\n  that loop until approved\n● Built it: 4 cards, 4 links.", height: 96)
                 }
@@ -177,7 +179,7 @@ private struct ClaudeCheck: View {
 
     var body: some View {
         let environment = services.environment
-        HStack(spacing: 6) {
+        HStack(spacing: DS.Space.tight) {
             if environment == nil || (environment?.claude != nil && !checked) {
                 Badge(text: "Looking for Claude Code…")
             } else if environment?.claude == nil {
@@ -190,7 +192,7 @@ private struct ClaudeCheck: View {
                 Badge(text: "Claude Code is installed, but its version couldn't be read. It needs \(ResolvedEnvironment.minimumClaude) or later.")
             }
         }
-        .padding(.top, Theme.Space.xs)
+        .padding(.top, DS.Space.xs)
         .task(id: environment?.claude) {
             guard let environment, environment.claude != nil else { return }
             version = await environment.claudeVersion()
@@ -231,30 +233,30 @@ private struct MiniCard<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 8, weight: .medium))
-                Text(name).font(.dsMono(10, .medium)).lineLimit(1)
+            HStack(spacing: DS.Space.xs) {
+                Image(systemName: icon).dsIcon(DS.IconSize.xxs, .medium).accessibilityHidden(true)
+                Text(name).textRole(.micro).lineLimit(1)
                 Spacer(minLength: 0)
                 if let badge {
                     Text(badge)
-                        .font(.dsMono(9, .medium))
+                        .textRole(.micro)
                         .foregroundStyle((live ? Theme.liveInk : badge.hasPrefix("✓") ? Theme.passInk : Theme.inkSecondary).ui)
-                        .padding(.horizontal, 3)
+                        .padding(.horizontal, DS.Space.xs)
                         .background((live ? Theme.liveTint : badge.hasPrefix("✓") ? Theme.passTint : NSColor.clear).ui,
-                                    in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.xs))
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, DS.Space.tight)
             .frame(height: 20)
             .background(Theme.bar.ui)
-            Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+            DSDivider()
             content
         }
         .frame(width: width)
         .background(Theme.surface.ui)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
-            .strokeBorder((live ? Theme.live : Theme.ink).ui, lineWidth: live ? Theme.Stroke.link : Theme.Stroke.card))
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.m))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.m)
+            .strokeBorder((live ? Theme.live : Theme.ink).ui, lineWidth: live ? DS.Stroke.link : DS.Stroke.hairline))
     }
 }
 
@@ -269,10 +271,10 @@ private struct MiniTerminal: View {
 
     var body: some View {
         Text(text)
-            .font(.dsMono(10))
+            .textRole(.monoCaption)
             .foregroundStyle(Theme.terminalInk.ui)
             .lineSpacing(1)
-            .padding(6)
+            .padding(DS.Space.tight)
             .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
             .background(Theme.terminal.ui)
     }
@@ -284,10 +286,10 @@ private struct MiniText: View {
 
     var body: some View {
         Text(text)
-            .font(.dsSans(10))
+            .textRole(.micro)
             .foregroundStyle(Theme.inkSecondary.ui)
             .lineLimit(2)
-            .padding(6)
+            .padding(DS.Space.tight)
             .frame(maxWidth: .infinity, minHeight: 30, alignment: .topLeading)
     }
 }
@@ -306,7 +308,7 @@ private struct MiniLink: View {
                 path.move(to: CGPoint(x: 0, y: 5))
                 path.addLine(to: CGPoint(x: width - 5, y: 5))
             }
-            .stroke(color, style: StrokeStyle(lineWidth: tone == .live ? 2 : Theme.Stroke.link, dash: tone == .live ? [6, 6] : [], dashPhase: phase))
+            .stroke(color, style: StrokeStyle(lineWidth: tone == .live ? 2 : DS.Stroke.link, dash: tone == .live ? [6, 6] : [], dashPhase: phase))
             Path { path in
                 path.move(to: CGPoint(x: width, y: 5))
                 path.addLine(to: CGPoint(x: width - 7, y: 1))

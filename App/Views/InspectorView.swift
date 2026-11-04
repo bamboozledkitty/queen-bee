@@ -1,11 +1,12 @@
 import QueenBeeCore
 import SwiftUI
+import QueenBeeDesign
 
 /// Settings for the selected card or link, floating over the canvas's corner. Every kind of
 /// card gets the same three parts: a header that names it, rows for what it is set to, and a
 /// footer with what you can do to it.
 struct InspectorView: View {
-    static let width: CGFloat = 300
+    static let width: CGFloat = 320
     let controller: FlowController
 
     var body: some View {
@@ -29,7 +30,7 @@ struct InspectorView: View {
         }
         .frame(width: Self.width)
         .foregroundStyle(Theme.ink.ui)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.m))
         .floatingPanel()
     }
 }
@@ -57,9 +58,9 @@ private struct CardSettings: View {
             case .loop:
                 condition
                 row("Give up after") {
-                    HStack(spacing: 4) {
+                    HStack(spacing: DS.Space.xs) {
                         StepField(value: card.maxTries ?? 3, range: 1...20) { v in patch { $0.maxTries = v } }
-                        Text("tries").font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                        Text("tries").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                     }
                 }
                 note("When the tries run out, the message goes out Gave up. If nothing is linked to Gave up, it goes out Done instead.")
@@ -69,9 +70,9 @@ private struct CardSettings: View {
                               selection: card.split ?? .auto) { v in patch { $0.split = v } }
                 }
                 row("At most") {
-                    HStack(spacing: 4) {
+                    HStack(spacing: DS.Space.xs) {
                         StepField(value: card.maxItems ?? 20, range: 1...Engine.mostItems) { v in patch { $0.maxItems = v } }
-                        Text("items").font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                        Text("items").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                     }
                 }
                 note("Sends each item out Each, one at a time. Link the last card that works on an item back into this card: what comes back that way is that item's result, and then the next item goes. When all of them are back, everything goes out Done together. “List items” is used when the message is a JSON list. Every hand-off to an agent counts toward a run's limit of \(Engine.maxDeliveries).")
@@ -91,7 +92,7 @@ private struct CardSettings: View {
                     section {
                         field("Latest answer") {
                             ScrollView {
-                                Text(result).font(.dsSans(Theme.Size.body)).textSelection(.enabled)
+                                Text(result).textRole(.body).textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .frame(maxHeight: 160)
@@ -125,15 +126,15 @@ private struct CardSettings: View {
                 }
                 if let inner, let problem = controller.nestingProblem(placing: inner) {
                     Label(problem, systemImage: "exclamationmark.triangle")
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                         .foregroundStyle(Theme.failInk.ui)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, Theme.Space.m)
-                        .padding(.bottom, 6)
+                        .padding(.horizontal, DS.Space.m)
+                        .padding(.bottom, DS.Space.tight)
                 }
-                HStack(spacing: Theme.Space.s) {
+                HStack(spacing: DS.Space.s) {
                     Text(inner == nil ? "Make a sub-flow just for this card:" : "Build or change what it does:")
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                         .foregroundStyle(Theme.inkSecondary.ui)
                     Spacer()
                     Button(inner == nil ? "New sub-flow" : "Open") { controller.openSubflow(forCard: card.id) }
@@ -141,8 +142,8 @@ private struct CardSettings: View {
                         .disabled(inner == nil && controller.newSubflowProblem != nil)
                         .help(inner == nil ? controller.newSubflowProblem ?? "You can also double-click the card" : "You can also double-click the card")
                 }
-                .padding(.horizontal, Theme.Space.m)
-                .padding(.vertical, 6)
+                .padding(.horizontal, DS.Space.m)
+                .padding(.vertical, DS.Space.tight)
                 note("This card runs a whole flow as one step. The message that arrives here goes to that flow's Input, and what reaches its Output comes back out Done. If it stops early or fails, the message goes out Fail.")
             case .script:
                 EditorField("Command", text: card.command ?? "", mono: true) { v in controller.setScriptCommand(card.id, v) }
@@ -158,23 +159,23 @@ private struct CardSettings: View {
             if let warning = controller.warnings[card.id] {
                 section {
                     Label(warning, systemImage: "exclamationmark.triangle")
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                         .foregroundStyle(Theme.failInk.ui)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if controller.canRetry(card.id) {
-                HStack(spacing: Theme.Space.s) {
+                HStack(spacing: DS.Space.s) {
                     Text("The run stopped here.")
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                     Spacer()
                     Button("Retry") { controller.retry(card.id) }
                         .buttonStyle(.panel())
                         .help("Give this card the same message again and carry on from here")
                 }
                 .foregroundStyle(Theme.failInk.ui)
-                .padding(.horizontal, Theme.Space.m)
-                .padding(.vertical, 6)
+                .padding(.horizontal, DS.Space.m)
+                .padding(.vertical, DS.Space.tight)
                 .background(Theme.failTint.ui)
                 .overlay(alignment: .top) { rule }
             }
@@ -185,13 +186,13 @@ private struct CardSettings: View {
                 // The session is still running on what it was started with. Say so beside
                 // the buttons that settle it.
                 Text("Not in use yet. The agent keeps working with its old \(Self.list(pending)) until you restart it.")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.liveInk.ui)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Theme.Space.m)
-                    .padding(.vertical, 7)
-                    .background(Theme.liveTint.ui)
+                    .padding(.horizontal, DS.Space.m)
+                    .padding(.vertical, DS.Space.tight)
+                    .liveRule()
                     .overlay(alignment: .top) { rule }
                     .transition(.opacity)
             }
@@ -203,14 +204,15 @@ private struct CardSettings: View {
     /// The card's kind, its name, and for an agent what its session is doing. The name is
     /// edited where it stands.
     private var header: some View {
-        HStack(spacing: Theme.Space.s) {
+        HStack(spacing: DS.Space.s) {
             Image(systemName: CanvasGeometry.icon(for: card.kind))
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 16)
+                .dsIcon(DS.IconSize.l, .medium)
+                .frame(width: DS.Size.iconSlot)
                 .help(card.kind.label)
+                .accessibilityHidden(true)
             TextField(card.kind.label, text: $name)
                 .textFieldStyle(.plain)
-                .font(.dsMono(Theme.Size.title, .medium))
+                .textRole(.label)
                 .focused($isNaming)
                 .onSubmit(commitName)
                 .onAppear { name = card.name }
@@ -224,24 +226,26 @@ private struct CardSettings: View {
                 Badge(text: session.state.label.lowercased(), tone: session.state.tone)
             } else {
                 Text(card.kind.label)
-                    .font(.dsMono(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
             }
         }
-        .padding(.horizontal, Theme.Space.m)
-        .padding(.vertical, Theme.Space.s)
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
         .background(Theme.bar.ui)
     }
 
     private func footer(pending: [String]) -> some View {
-        HStack(spacing: Theme.Space.s) {
-            Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }
+        HStack(spacing: DS.Space.s) {
+            Button { controller.deleteSelection() } label: { Image(systemName: "trash") }
                 .buttonStyle(.panel(.quiet))
+                .accessibilityLabel("Delete")
                 .help("Delete this card and its links")
             Spacer()
             if acceptsInput(card), controller.runFromCardID != card.id {
                 Button("Run from here…") { controller.runFromCardID = card.id }
                     .buttonStyle(.panel(.quiet))
+                    .fixedSize()
                     .help("Start a run at this card with a message you give it, skipping everything that comes before")
             }
             if card.kind == .start {
@@ -267,8 +271,8 @@ private struct CardSettings: View {
                 }
             }
         }
-        .padding(.horizontal, Theme.Space.s)
-        .padding(.vertical, 6)
+        .padding(.horizontal, DS.Space.s)
+        .padding(.vertical, DS.Space.tight)
         .background(Theme.bar.ui)
         .overlay(alignment: .top) { rule }
     }
@@ -291,7 +295,7 @@ private struct CardSettings: View {
             row("Cost") {
                 let run = controller.runUsage(forCard: card.id)
                 Text(run.map { $0.isZero ? "\(all.price) in all" : "\($0.price) this run · \(all.price) in all" } ?? "\(all.price) in all")
-                    .font(.dsMono(Theme.Size.caption, .medium))
+                    .textRole(.captionLabel)
                     .help("An estimate of what this agent's work would cost if you paid Anthropic by usage (\(all.tokenCount) so far). On a Claude subscription you don't pay this.")
             }
         }
@@ -304,6 +308,7 @@ private struct CardSettings: View {
         row("Browser") {
             Toggle("", isOn: Binding(get: { card.browser == true }, set: { on in patch { $0.browser = on } }))
                 .labelsHidden()
+                .accessibilityLabel("Browser")
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .tint(Theme.select.ui)
@@ -340,11 +345,12 @@ private struct CardSettings: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: DS.Space.xs) {
                     Text(current?.name ?? "None").lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui)
+                    Image(systemName: "chevron.up.chevron.down").dsIcon(DS.IconSize.xxs, .semibold).foregroundStyle(Theme.inkSecondary.ui)
+                        .accessibilityHidden(true)
                 }
-                .font(.dsMono(Theme.Size.caption, .medium))
+                .textRole(.captionLabel)
                 .foregroundStyle(Theme.ink.ui)
                 .contentShape(Rectangle())
             }
@@ -352,12 +358,14 @@ private struct CardSettings: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
+            .accessibilityLabel("Role")
+            .accessibilityValue(current?.name ?? "None")
             .help("A role is an agent's settings saved under a name, so you can make more agents like it in any flow")
         }
         if let current, let changed = current.changedLine {
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: DS.Space.s) {
                 Text("\(changed).")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
@@ -367,13 +375,13 @@ private struct CardSettings: View {
                         .help("Give the role what it held before the device changed it. Cards that have the role keep what they have.")
                 }
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.bottom, 6)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.bottom, DS.Space.tight)
         }
         if let current, !current.matches(card) {
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: DS.Space.s) {
                 Text("Changed since the role was saved.")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                 Spacer()
                 Button("Reset") { controller.applyRole(current, toCard: card.id) }
@@ -383,8 +391,8 @@ private struct CardSettings: View {
                     .buttonStyle(.panel())
                     .help("Save this card's settings into the role. Other agents with the same role can then take them with Reset.")
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.bottom, 6)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.bottom, DS.Space.tight)
         }
     }
 
@@ -457,44 +465,44 @@ private struct ApprovalReview: View {
     @State private var note = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
             Text("From \(hold.from). Waiting for you.")
-                .font(.dsMono(Theme.Size.caption, .medium))
+                .textRole(.captionLabel)
             if let deadline = hold.deadline, let card = controller.flow.card(hold.cardID) {
                 Text("If you don't answer by \(deadline.formatted(date: .omitted, time: .shortened)), it will be \(HoldTimeLimit.port(for: card) == "approved" ? "approved" : "rejected") for you.")
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .fixedSize(horizontal: false, vertical: true)
             }
             TextEditor(text: $draft)
-                .font(.dsSans(Theme.Size.body))
+                .textRole(.body)
                 .frame(height: 150)
                 .scrollContentBackground(.hidden)
-                .padding(.horizontal, 3)
-                .padding(.vertical, 5)
-                .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.live.ui))
+                .padding(.horizontal, DS.Space.xs)
+                .padding(.vertical, DS.Space.tight)
+                .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.m).strokeBorder(Theme.live.ui))
                 .foregroundStyle(Theme.ink.ui)
             TextField("Why you're rejecting it (optional)", text: $note, axis: .vertical)
                 .lineLimit(1...4)
                 .textFieldStyle(.plain)
-                .font(.dsSans(Theme.Size.body))
+                .textRole(.body)
                 .fieldBox()
                 .foregroundStyle(Theme.ink.ui)
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: DS.Space.s) {
                 Button("Reject") { controller.reject(hold.id, note: note) }
                     .buttonStyle(.panel())
                     .help("Send the message on along the Rejected link, with your reason ahead of it if you gave one")
                 Spacer()
                 Button(draft == hold.text ? "Approve" : "Approve edited") { controller.approve(hold.id, text: draft) }
-                    .buttonStyle(.panel(.live))
+                    .buttonStyle(.panel(.filled))
                     .help("Send the message on along the Approved link")
             }
         }
         .foregroundStyle(Theme.liveInk.ui)
-        .padding(.horizontal, Theme.Space.m)
-        .padding(.vertical, Theme.Space.s)
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.liveTint.ui)
+        .liveRule()
         .overlay(alignment: .top) { rule }
         .onAppear { draft = hold.text }
     }
@@ -506,37 +514,37 @@ private struct ScriptReview: View {
     let hold: PendingHold
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s) {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
             if hold.needsAllow {
                 Text("You didn't write this command yourself, so it is waiting for you. Read it, then let it run or skip it."
                      + (hold.deadline.map { " If you haven't by \($0.formatted(date: .omitted, time: .shortened)), it is skipped." } ?? ""))
-                    .font(.dsSans(Theme.Size.caption))
+                    .textRole(.caption)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(hold.command)
-                    .font(.dsMono(Theme.Size.caption))
+                    .textRole(.caption)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(6)
-                    .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .padding(DS.Space.tight)
+                    .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: DS.Radius.m))
                     .foregroundStyle(Theme.ink.ui)
-                HStack(spacing: Theme.Space.s) {
+                HStack(spacing: DS.Space.s) {
                     Button("Don't run") { controller.refuseScript(hold.id) }
                         .buttonStyle(.panel())
                     Spacer()
                     Button("Allow and run") { controller.allowScript(hold.id) }
-                        .buttonStyle(.panel(.live))
+                        .buttonStyle(.panel(.filled))
                         .help("Runs the command now. This card won't ask again unless the command changes.")
                 }
             } else {
                 Text("Running its command…")
-                    .font(.dsMono(Theme.Size.caption, .medium))
+                    .textRole(.captionLabel)
             }
         }
         .foregroundStyle(Theme.liveInk.ui)
-        .padding(.horizontal, Theme.Space.m)
-        .padding(.vertical, Theme.Space.s)
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.liveTint.ui)
+        .liveRule()
         .overlay(alignment: .top) { rule }
     }
 }
@@ -578,17 +586,17 @@ private struct TriggerSettings: View {
                 timeRow(trigger)
             case .weekly:
                 row("On") {
-                    HStack(spacing: 3) {
+                    HStack(spacing: DS.Space.xs) {
                         ForEach(Self.days, id: \.0) { day, letter in
                             let isOn = trigger.weekdays.contains(day)
                             Button {
                                 set { $0.weekdays = isOn ? $0.weekdays.filter { $0 != day } : ($0.weekdays + [day]).sorted() }
                             } label: {
                                 Text(letter)
-                                    .font(.dsMono(Theme.Size.caption, .medium))
+                                    .textRole(.captionLabel)
                                     .frame(width: 20, height: 20)
                                     .foregroundStyle((isOn ? Theme.surface : Theme.ink).ui)
-                                    .background((isOn ? Theme.ink : Theme.bar).ui, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+                                    .background((isOn ? Theme.ink : Theme.bar).ui, in: RoundedRectangle(cornerRadius: DS.Radius.xs))
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -606,30 +614,35 @@ private struct TriggerSettings: View {
                      : "\(controller.nextFires[card.id].map { "Next: \(Self.when($0)). " } ?? "")Queen Bee has to be open for it to run. A run that falls due while another is going is skipped.")
             } else {
                 // A schedule that came in the flow's file, or from an undo, hasn't been agreed to here.
-                HStack(spacing: Theme.Space.s) {
+                HStack(spacing: DS.Space.s) {
                     Text("This schedule is switched off. It stays off until you turn it on here.")
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button("Turn on") { controller.setTrigger(trigger, onCard: card.id) }
                         .buttonStyle(.panel(.live))
                 }
                 .foregroundStyle(Theme.liveInk.ui)
-                .padding(.horizontal, Theme.Space.m)
-                .padding(.vertical, 6)
-                .background(Theme.liveTint.ui)
+                .padding(.horizontal, DS.Space.m)
+                .padding(.vertical, DS.Space.tight)
+                .liveRule()
                 .overlay(alignment: .top) { rule }
             }
         }
     }
 
     private func timeRow(_ trigger: Trigger) -> some View {
-        row("At") {
-            HStack(spacing: 2) {
-                MenuField(options: (0...23).map { (value: $0, label: String(format: "%02d", $0)) }, selection: trigger.hour) { v in set { $0.hour = v } }
-                Text(":").font(.dsMono(Theme.Size.caption, .medium))
-                MenuField(options: stride(from: 0, to: 60, by: 5).map { (value: $0, label: String(format: "%02d", $0)) } + (trigger.minute % 5 == 0 ? [] : [(value: trigger.minute, label: String(format: "%02d", trigger.minute))]),
-                          selection: trigger.minute) { v in set { $0.minute = v } }
+        // The hour and minute are written the way the Mac writes times: 7 AM on a 12-hour Mac, 07 on a 24-hour one.
+        let locale = Locale.current
+        let twentyFour = Trigger.usesTwentyFourHours(locale)
+        let minutes = stride(from: 0, to: 60, by: 5).map { $0 } + (trigger.minute % 5 == 0 ? [] : [trigger.minute])
+        return row("At") {
+            HStack(spacing: DS.Space.xxs) {
+                MenuField(options: (0...23).map { (value: $0, label: Trigger.hourLabel($0, in: locale)) }, selection: trigger.hour) { v in set { $0.hour = v } }
+                    .environment(\.fieldName, "Hour")
+                if twentyFour { Text(":").textRole(.monoLabel).accessibilityHidden(true) }
+                MenuField(options: minutes.map { (value: $0, label: (twentyFour ? "" : ":") + String(format: "%02d", $0)) }, selection: trigger.minute) { v in set { $0.minute = v } }
+                    .environment(\.fieldName, "Minute")
             }
         }
     }
@@ -647,34 +660,28 @@ private struct TriggerSettings: View {
 private struct LinkMessages: View {
     let messages: [LinkMessage]
 
-    private static let time: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f
-    }()
-
     var body: some View {
         section {
             field(messages.isEmpty ? "Messages" : messages.count == 1 ? "1 message in this run" : "\(messages.count) messages in this run") {
                 if messages.isEmpty {
                     Text("Nothing has gone along this link in the run on show.")
-                        .font(.dsSans(Theme.Size.caption))
+                        .textRole(.caption)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 } else {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        VStack(alignment: .leading, spacing: DS.Space.s) {
                             ForEach(messages.reversed()) { message in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("\(Self.time.string(from: message.date)) · from \(message.from)")
-                                        .font(.dsMono(Theme.Size.caption))
+                                VStack(alignment: .leading, spacing: DS.Space.xs) {
+                                    Text("\(message.date.formatted(date: .omitted, time: .standard)) · from \(message.from)")
+                                        .textRole(.caption)
                                         .foregroundStyle(Theme.inkSecondary.ui)
                                     Text(message.text)
-                                        .font(.dsSans(Theme.Size.body))
+                                        .textRole(.body)
                                         .textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .padding(6)
-                                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                                .padding(DS.Space.tight)
+                                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: DS.Radius.m))
                             }
                         }
                     }
@@ -695,13 +702,13 @@ private struct RunFromHere: View {
         section {
             field("The message \(card.name) gets") {
                 TextEditor(text: $draft)
-                    .font(.dsSans(Theme.Size.body))
+                    .textRole(.body)
                     .frame(height: 96)
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 5)
-                    .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
+                    .padding(.horizontal, DS.Space.xs)
+                    .padding(.vertical, DS.Space.tight)
+                    .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.m).strokeBorder(Theme.hairline.ui))
                 HStack {
                     Button("Cancel") { controller.runFromCardID = nil }
                         .buttonStyle(.panel(.quiet))
@@ -714,7 +721,7 @@ private struct RunFromHere: View {
                     .buttonStyle(.panel(.filled))
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.isRunning)
                 }
-                .padding(.top, 2)
+                .padding(.top, DS.Space.xxs)
             }
         }
         .onAppear { draft = controller.lastMessage(into: card.id)?.text ?? "" }
@@ -728,17 +735,17 @@ private struct SeveralSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: DS.Space.s) {
                 Image(systemName: "square.on.square.dashed")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 16)
+                    .dsIcon(DS.IconSize.l, .medium)
+                    .frame(width: DS.Size.iconSlot)
                 Text("\(count) cards")
-                    .font(.dsMono(Theme.Size.title, .medium))
+                    .textRole(.label)
                     .contentTransition(.numericText())
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, Theme.Space.s)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.s)
             .background(Theme.bar.ui)
             if let group = controller.selectedGroup {
                 GroupName(controller: controller, group: group)
@@ -748,7 +755,7 @@ private struct SeveralSettings: View {
             } else {
                 note("Drag any of them to move them together, or use the arrow keys. Shift-click a card to add it or take it out.")
             }
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: DS.Space.s) {
                 Button { controller.deleteSelection() } label: { Label("Delete", systemImage: "trash") }
                     .buttonStyle(.panel(.quiet))
                 Spacer()
@@ -765,8 +772,8 @@ private struct SeveralSettings: View {
                         .help("Frame these cards together under a name. A group can be folded into one card.")
                 }
             }
-            .padding(.horizontal, Theme.Space.s)
-            .padding(.vertical, 6)
+            .padding(.horizontal, DS.Space.s)
+            .padding(.vertical, DS.Space.tight)
             .background(Theme.bar.ui)
             .overlay(alignment: .top) { rule }
         }
@@ -785,7 +792,7 @@ private struct GroupName: View {
             field("Group") {
                 TextField("Name", text: $name)
                     .textFieldStyle(.plain)
-                    .font(.dsMono(Theme.Size.body, .medium))
+                    .textRole(.label)
                     .fieldBox()
                     .onAppear { name = group.name }
                     .onChange(of: name) { if name != group.name, !name.trimmingCharacters(in: .whitespaces).isEmpty { controller.rename(group: group.id, to: name) } }
@@ -802,20 +809,20 @@ private struct LinkSettings: View {
         let from = controller.flow.card(link.from)?.name ?? "?"
         let to = controller.flow.card(link.to)?.name ?? "?"
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Space.s) {
+            HStack(spacing: DS.Space.s) {
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 16)
+                    .dsIcon(DS.IconSize.l, .medium)
+                    .frame(width: DS.Size.iconSlot)
                 Text(link.port == "out" ? "\(from) → \(to)" : "\(from) · \(portLabel(link.port)) → \(to)")
-                    .font(.dsMono(Theme.Size.title, .medium))
+                    .textRole(.label)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text("Link")
-                    .font(.dsMono(Theme.Size.caption))
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, Theme.Space.s)
+            .padding(.horizontal, DS.Space.m)
+            .padding(.vertical, DS.Space.s)
             .background(Theme.bar.ui)
             row("Limit per run") {
                 StepField(value: link.maxPasses, range: 1...50) { controller.setMaxPasses(link.id, $0) }
@@ -828,8 +835,8 @@ private struct LinkSettings: View {
                     .help("Delete this link")
                 Spacer()
             }
-            .padding(.horizontal, Theme.Space.s)
-            .padding(.vertical, 6)
+            .padding(.horizontal, DS.Space.s)
+            .padding(.vertical, DS.Space.tight)
             .background(Theme.bar.ui)
             .overlay(alignment: .top) { rule }
         }
@@ -840,33 +847,33 @@ private struct LinkSettings: View {
 
 /// The hairline between a panel's parts.
 private var rule: some View {
-    Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+    DSDivider()
 }
 
 /// One part of the panel, ruled off from the part above it.
 private func section<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     content()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Theme.Space.m)
-        .padding(.vertical, Theme.Space.s)
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
         .overlay(alignment: .top) { rule }
 }
 
 /// A one-line setting: what it is on the left, its value on the right.
 private func row<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-    HStack(spacing: Theme.Space.s) {
-        Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
-        Spacer(minLength: Theme.Space.s)
-        content()
+    HStack(spacing: DS.Space.s) {
+        Text(title).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
+        Spacer(minLength: DS.Space.s)
+        content().environment(\.fieldName, title)
     }
-    .padding(.horizontal, Theme.Space.m)
-    .frame(minHeight: 30)
+    .padding(.horizontal, DS.Space.m)
+    .frame(minHeight: DS.Size.bar)
     .overlay(alignment: .top) { rule }
 }
 
 private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-        Text(title).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+    VStack(alignment: .leading, spacing: DS.Space.xs) {
+        Text(title).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
         content()
     }
 }
@@ -874,7 +881,7 @@ private func field<Content: View>(_ title: String, @ViewBuilder content: () -> C
 /// A sentence of help under the setting it explains.
 private func note(_ text: String) -> some View {
     section {
-        Text(text).font(.dsSans(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui).fixedSize(horizontal: false, vertical: true)
+        Text(text).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -901,7 +908,7 @@ private struct LineField: View {
                 TextField(placeholder, text: $draft, axis: .vertical)
                     .lineLimit(lines)
                     .textFieldStyle(.plain)
-                    .font(.dsSans(Theme.Size.body))
+                    .textRole(.body)
                     .fieldBox()
                     .onAppear { draft = text }
                     .onChange(of: draft) { if draft != text { commit(draft) } }
@@ -930,13 +937,13 @@ private struct EditorField: View {
         section {
             field(title) {
                 TextEditor(text: $draft)
-                    .font(mono ? .dsMono(Theme.Size.caption) : .dsSans(Theme.Size.body))
+                    .textRole(mono ? .monoCaption : .body)
                     .frame(height: 84)
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 5)
-                    .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
+                    .padding(.horizontal, DS.Space.xs)
+                    .padding(.vertical, DS.Space.tight)
+                    .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: DS.Radius.m))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.m).strokeBorder(Theme.hairline.ui))
                     .onAppear { draft = text }
                     .onChange(of: draft) { if draft != text { commit(draft) } }
                     .onChange(of: text) { if text != draft { draft = text } }
@@ -944,3 +951,4 @@ private struct EditorField: View {
         }
     }
 }
+

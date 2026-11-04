@@ -180,6 +180,9 @@ public actor Engine {
         /// The agent whose reply this is. It survives logic cards so the receiver knows who it is hearing from.
         var fromName: String
         var fromStart: Bool
+        /// The Approval that let this message through, if one did. The End card's log names it, since the person's
+        /// answer is what arrives; `fromName` stays the agent so the receiver still knows who it is hearing from.
+        var approvedBy: String?
     }
 
     /// The items a For each card is going through, one at a time.
@@ -382,7 +385,7 @@ public actor Engine {
         if let card = flow.card(held.cardID) {
             var message = held.message
             if let text, !Self.isBlank(text) { message.text = text }
-            if card.kind != .approval { message.fromName = card.name; message.fromStart = false }
+            if card.kind == .approval { message.approvedBy = card.name } else { message.fromName = card.name; message.fromStart = false; message.approvedBy = nil }
             output.log.append("\(Self.title(card)) → \(portLabel(port))")
             output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: port))
             await send(message, from: card, port: port, in: flow, state: &state, output: &output)
@@ -625,6 +628,7 @@ public actor Engine {
 
         case .prompt:
             var rewritten = message
+            rewritten.approvedBy = nil // the text is new, so an earlier Approval no longer vouches for it
             rewritten.text = Checks.fillTemplate(card.template ?? "", message: message.text, from: message.fromName)
             return ("out", rewritten)
 
@@ -659,7 +663,7 @@ public actor Engine {
         case .end:
             let saveTo = card.saveTo.flatMap { Self.isBlank($0) ? nil : $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             output.results.append(EndResult(cardID: card.id, cardName: card.name, text: message.text, saveTo: saveTo))
-            output.log.append("\(title) got the final answer from \(message.fromName)")
+            output.log.append("\(title) got the final answer from \(message.approvedBy ?? message.fromName)")
             state.answered = true
             return nil
 

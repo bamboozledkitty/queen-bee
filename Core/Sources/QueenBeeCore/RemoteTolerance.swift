@@ -91,6 +91,6 @@ extension HostMessage {
     /// The name each kind of message goes by in its JSON. A test checks it against every kind.
     public static let caseNames: Set<String> = [
         "welcome", "refused", "library", "opened", "flow", "run", "edit", "log", "messages", "history", "historyChanged",
-        "terminal", "answer", "control", "browserPage", "browserFrame", "browserCopied",
+        "terminal", "answer", "control", "browserPage", "browserFrame", "browserCopied", "overview",
     ]
 }

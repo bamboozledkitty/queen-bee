@@ -33,7 +33,7 @@ final class BrowserHalfView: UIView {
         addSubview(bar)
         addSubview(barRule)
         [back, forward, reload, expand].forEach(bar.addSubview)
-        address.font = Theme.mono(Theme.Size.caption)
+        address.font = Theme.mono(Theme.Size.label)
         address.textColor = Theme.ink
         address.lineBreakMode = .byTruncatingTail
         bar.addSubview(address)
@@ -41,20 +41,20 @@ final class BrowserHalfView: UIView {
         // A page is drawn on white whatever the app's appearance, as it is on the Mac.
         page.backgroundColor = .white
         page.clipsToBounds = true
-        notice.font = Theme.sans(Theme.Size.body)
+        notice.font = Theme.cardLabel(Theme.Size.label, .regular)
         notice.textColor = Theme.inkSecondary
         notice.textAlignment = .center
         notice.numberOfLines = 0
         addSubview(notice)
-        offer.font = Theme.mono(Theme.Size.body)
+        offer.font = Theme.cardLabel(Theme.Size.label, .regular)
         offer.textColor = Theme.ink
         offer.textAlignment = .center
         offer.layer.cornerRadius = Theme.Radius.card
         offer.layer.borderWidth = Theme.Stroke.card
         offer.backgroundColor = Theme.surface
         addSubview(offer)
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: BrowserHalfView, _) in view.offer.layer.borderColor = Theme.ink.cg(in: view) }
-        offer.layer.borderColor = Theme.ink.cg(in: self)
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: BrowserHalfView, _) in view.offer.layer.borderColor = Theme.outline.cg(in: view) }
+        offer.layer.borderColor = Theme.outline.cg(in: self)
         show(page: nil, picture: nil)
     }
 

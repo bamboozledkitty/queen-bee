@@ -35,7 +35,7 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   other file in the project can be overwritten.
 - **Schedules start runs with nobody watching.** A Start card can run on the clock or when a file in the project
   changes, while the app is open. A schedule only fires once you have set it or turned it on in this app, or a
-  paired device with "Can control" turned it on, and only for the command it was turned on with, so one that arrives in a flow file stays off until you agree. If the orchestrator
+  paired device with "Can control" turned it on, and only for the command it was turned on with, so one that arrives in a flow file stays off until you agree. Turning one on from the Schedules list first shows when it runs and the command it starts with, and asks you to confirm. If the orchestrator
   changes that command, or an agent's instructions, folder or permissions, the flow's schedules go off until you turn
   them on again. A paired device is held to more: see "Can control" below. A copied Start card never brings
   its schedule with it. Other edits by the orchestrator leave a schedule on: a Prompt card added after Start,
@@ -94,7 +94,7 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   device can only watch until you turn on "Can control" for it, which the next point is about. A device that
   only watches is sent every flow of the projects in your sidebar with its cards and their settings, the names of
   every flow's cards, the runs and the log, every session's terminal, your saved roles with their settings, and
-  what each flow has cost. It is sent nothing of the pages in agents' browsers: no picture, no address and no
+  what each flow has cost, the branch each flow works on, and a list of every flow's runs and every schedule (when it runs and which Start card, never the command it starts with). It is sent nothing of the pages in agents' browsers: no picture, no address and no
   title, because a page there can be one you are signed in to. Its card shows a line saying so in their place. Pairing takes a
   one-time code shown on this Mac, which works once and for two minutes. Each paired device has its own key, kept
   in the Keychain on both sides, and every connection is encrypted with it; a device without a
@@ -128,7 +128,7 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   start and stop runs, a run from a chosen Start card included, and Retry a card a run stopped at; approve or
   reject a message an Approval card is holding; allow a Script card's command, which is then remembered for that
   card exactly as if you had allowed it on the Mac, unless a device wrote the command, which a later point is
-  about; start, restart and stop a flow's agents, and start and restart its orchestrator; put an agent's settings
+  about; start, restart and stop a flow's agents, all of them together included (the Mac checks "Can control" for that too, and a device names its own cards: the Mac's selection is never used), and start and restart its orchestrator; put an agent's settings
   back to what its session is using; turn a Start card's schedule on and off; clear the log, close the message at
   the top of a flow, and pin a flow; type into any session of a flow, the orchestrator's included; and see and use
   an agent card's browser. Typing is the wide one. A session's terminal is where Claude Code asks "may I run this

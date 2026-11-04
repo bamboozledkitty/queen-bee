@@ -1,5 +1,41 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
+import SwiftUI
+
+/// The button on a card with no running session, in the design system's look. Its surface is solid, so the
+/// terminal's text never shows through it. While a start is slow it also carries the advice, in a panel.
+private struct StartPrompt: View {
+    var title: String
+    var note: String?
+    var width: CGFloat
+    var action: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
+        Group {
+            if let note {
+                // A slow start is a strip across the top, with the terminal pushed down below it, so it never
+                // hides the question Claude Code is asking at the foot of the terminal.
+                HStack(spacing: DS.Space.s) {
+                    Text(note)
+                        .textRole(.caption)
+                        .foregroundStyle(Palette.textMuted.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: DS.Space.s)
+                    Button(title, action: action).buttonStyle(.ds(.secondary))
+                }
+                .padding(.horizontal, DS.Space.m)
+                .padding(.vertical, DS.Space.xs)
+                .frame(width: width)
+                .background(Palette.raised.color, in: shape)
+                .overlay(shape.strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.hairline))
+            } else {
+                Button(title, action: action).buttonStyle(.ds(.secondary))
+            }
+        }
+    }
+}
 
 /// An agent's card: its live terminal under the title, its session's state beside the name,
 /// and a Start button while no session is running.
@@ -9,7 +45,8 @@ final class AgentCardView: CardView {
     private let restartBadge = BadgeLabel()
     /// What the session cost in the run on show.
     private let costBadge = BadgeLabel()
-    private let startButton = NSButton(title: "Start agent", target: nil, action: nil)
+    private let startButton = NSHostingView(rootView: StartPrompt(title: "Start agent", note: nil, width: 0, action: {}))
+    private var startTitle = "Start agent"
     private let terminalHolder = FlippedView()
     private weak var terminal: NSView?
     private var stateText = ""
@@ -30,10 +67,6 @@ final class AgentCardView: CardView {
         terminalHolder.wantsLayer = true
         content.addSubview(terminalHolder)
 
-        startButton.bezelStyle = .rounded
-        startButton.font = Theme.mono(Theme.Size.body)
-        startButton.target = self
-        startButton.action = #selector(startSession)
         content.addSubview(startButton)
 
         browserRule.wantsLayer = true
@@ -105,13 +138,13 @@ final class AgentCardView: CardView {
         costBadge.set(context.cost ?? "", tone: .plain)
         let live = state != .notStarted && state != .exited
         startButton.isHidden = live && !context.isSlowToStart
-        startButton.title = context.isSlowToStart ? "Retry" : state == .exited ? "Restart agent" : "Start agent"
+        startTitle = context.isSlowToStart ? "Retry" : state == .exited ? "Restart agent" : "Start agent"
         startButton.toolTip = context.isSlowToStart ? "Stop this agent's Claude Code and start it again" : nil
         isSlowToStart = context.isSlowToStart
         super.update(card: new, context: context)
     }
 
-    /// While a slow start is shown, Retry sits at the foot of the terminal, which may be asking something.
+    /// While a slow start is shown, the note and Retry sit in a strip above the terminal, which may be asking something.
     private var isSlowToStart = false
 
     override func layoutContent() {
@@ -124,20 +157,30 @@ final class AgentCardView: CardView {
         }
         terminalHolder.frame = left
         // A few points of padding so text doesn't touch the card's edge or the resize corner.
-        terminal?.frame = terminalHolder.bounds.insetBy(dx: 6, dy: 4)
-        startButton.sizeToFit()
+        let note = isSlowToStart ? "Claude Code may be asking whether to trust this folder. Answer in the terminal below, or press Retry if it is stuck." : nil
+        startButton.rootView = StartPrompt(title: startTitle, note: note, width: max(0, left.width - 2 * DS.Space.s)) { [weak self] in
+            self?.startSession()
+        }
+        startButton.frame.size = startButton.fittingSize
         startButton.frame.origin = CGPoint(x: left.minX + (left.width - startButton.frame.width) / 2,
-                                           y: isSlowToStart ? max(0, left.height - startButton.frame.height - Theme.Space.m)
-                                                            : (left.height - startButton.frame.height) / 2)
+                                           y: isSlowToStart ? DS.Space.xs : (left.height - startButton.frame.height) / 2)
+        // The strip sits above the terminal, not over it, so the foot of the terminal stays in view.
+        var area = terminalHolder.bounds.insetBy(dx: 6, dy: 4)
+        if isSlowToStart {
+            let strip = startButton.frame.maxY + DS.Space.xs
+            area.origin.y = max(area.origin.y, strip)
+            area.size.height = max(0, terminalHolder.bounds.height - 4 - area.origin.y)
+        }
+        terminal?.frame = area
         updateBrowserVisibility()
     }
 
     override func updateContentLayers() {
-        terminalHolder.layer?.backgroundColor = Theme.terminal.cgColor
-        browserRule.layer?.backgroundColor = Theme.hairline.cgColor
+        terminalHolder.layer?.backgroundColor = Theme.Canvas.terminal.cgColor
+        browserRule.layer?.backgroundColor = Theme.Canvas.rule.cgColor
     }
 
-    @objc private func startSession() {
+    private func startSession() {
         canvas?.controller?.startSession(forCard: card.id)
     }
 }

@@ -288,8 +288,13 @@ enum DebugEditing {
             }
         case "openFlow":
             return {
-                if let found = client.mirror.library?.projects.flatMap(\.flows).first(where: { $0.name == rest }) { client.open(found.id) }
-                try? await Task.sleep(for: .milliseconds(300))
+                guard let found = client.mirror.library?.projects.flatMap(\.flows).first(where: { $0.name == rest }) else { return nil }
+                client.open(found.id)
+                // Until the flow itself has come, a step that edits it would be editing the one before, and is stopped.
+                for _ in 0..<60 where client.mirror.snapshot?.flow.id != found.id {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                try? await Task.sleep(for: .milliseconds(150))
                 return nil
             }
         case "mac":

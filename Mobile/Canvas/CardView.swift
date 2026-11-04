@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import UIKit
 
 extension UIColor {
@@ -31,8 +32,8 @@ final class PortDotView: UIView {
     private func restyle() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        dot.strokeColor = Theme.ink.cg(in: self)
-        dot.fillColor = (isLinked ? Theme.ink : Theme.surface).cg(in: self)
+        dot.strokeColor = Theme.inkSecondary.cg(in: self)
+        dot.fillColor = (isLinked ? Theme.inkSecondary : Theme.paper).cg(in: self)
         CATransaction.commit()
     }
 }
@@ -48,8 +49,8 @@ final class BadgeLabel: UIView {
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         isHidden = true
-        layer.cornerRadius = Theme.Radius.badge
-        label.font = Theme.mono(Theme.Size.caption, .medium)
+        layer.cornerRadius = DS.Radius.m
+        label.font = Theme.cardLabel(Theme.Size.figure)
         addSubview(label)
     }
 
@@ -90,7 +91,7 @@ final class CardButtonView: UIView {
         isUserInteractionEnabled = false
         layer.cornerRadius = Theme.Radius.card
         layer.borderWidth = Theme.Stroke.card
-        label.font = Theme.mono(Theme.Size.body, .medium)
+        label.font = Theme.cardLabel()
         label.textAlignment = .center
         label.lineBreakMode = .byTruncatingTail
         addSubview(label)
@@ -114,11 +115,11 @@ final class CardButtonView: UIView {
         label.frame = bounds.insetBy(dx: 4, dy: 0)
     }
 
-    /// The Mac's panel buttons: an ink outline, or the live colours for the answer a card is waiting for.
+    /// The Mac's panel buttons: an outline, or the live colours for the answer a card is waiting for.
     private func restyle() {
-        backgroundColor = button.isMain ? Theme.liveTint : Theme.surface
+        backgroundColor = button.isMain ? Theme.liveTint : Theme.bar
         label.textColor = button.isMain ? Theme.liveInk : Theme.ink
-        layer.borderColor = (button.isMain ? Theme.live : Theme.ink).cg(in: self)
+        layer.borderColor = (button.isMain ? Theme.live : Theme.outline).cg(in: self)
         // Faint while its command is on its way to the Mac.
         alpha = button.isEnabled ? 1 : 0.45
     }
@@ -169,9 +170,10 @@ class CardView: UIView {
         super.init(frame: CardView.frame(for: card))
         isUserInteractionEnabled = false
 
-        body.layer.cornerRadius = Theme.Radius.card
+        body.layer.cornerRadius = DS.Radius.l
+        body.layer.cornerCurve = .continuous
         body.layer.masksToBounds = true
-        body.backgroundColor = Theme.surface
+        body.backgroundColor = Theme.bar
         addSubview(body)
 
         titleBar.backgroundColor = Theme.bar
@@ -181,9 +183,9 @@ class CardView: UIView {
         body.addSubview(titleRule)
 
         iconView.contentMode = .center
-        iconView.tintColor = Theme.ink
+        iconView.tintColor = Theme.inkSecondary
         titleBar.addSubview(iconView)
-        nameLabel.font = Theme.mono(Theme.Size.body, .medium)
+        nameLabel.font = Theme.cardName()
         nameLabel.textColor = Theme.ink
         nameLabel.lineBreakMode = .byTruncatingTail
         titleBar.addSubview(nameLabel)
@@ -202,7 +204,7 @@ class CardView: UIView {
         body.addSubview(overview)
 
         grip.fillColor = nil
-        grip.lineWidth = 1
+        grip.lineWidth = DS.Stroke.hairline
         layer.addSublayer(grip)
 
         isAccessibilityElement = true
@@ -464,12 +466,17 @@ class CardView: UIView {
         overview.frame = body.bounds
         if zoom < Self.overviewBelow {
             let scale = 1 / max(zoom, 0.01)
-            overviewName.font = Theme.mono(min(44, 13 * scale), .medium)
-            overviewDetail.font = Theme.mono(min(32, 10 * scale))
+            // The canvas is shrunk by `zoom`, so the type grows by its inverse: the name reads at 13 points and the
+            // detail at 11 on the screen however far out the canvas is. Too long for the card, it is cut short.
+            overviewName.font = Theme.cardName(Theme.Size.cardName * scale)
+            overviewDetail.font = Theme.cardLabel(Theme.Size.figure * scale)
             let width = max(0, overview.bounds.width - 24)
             let nameHeight = min(overviewName.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
             let detailHeight = overviewDetail.intrinsicContentSize.height
-            let top = max(4, (overview.bounds.height - nameHeight - detailHeight - 4) / 2)
+            // A card too small to hold both lines on screen keeps its name and drops the detail, rather than cutting it in half.
+            let fits = nameHeight + detailHeight + 4 + 8 <= overview.bounds.height
+            overviewDetail.isHidden = !fits
+            let top = max(4, (overview.bounds.height - nameHeight - (fits ? detailHeight + 4 : 0)) / 2)
             overviewName.frame = CGRect(x: 12, y: top, width: width, height: nameHeight)
             overviewDetail.frame = CGRect(x: 12, y: top + nameHeight + 4, width: width, height: detailHeight)
         }
@@ -520,10 +527,10 @@ class CardView: UIView {
         case .refuses: return (Theme.failInk, Theme.Stroke.selected)
         case .none: break
         }
-        if context.isSelected { return (Theme.select, Theme.Stroke.selected) }
+        if context.isSelected { return (Theme.select, DS.Stroke.focus) }
         if context.mark.failed { return (Theme.failInk, Theme.Stroke.link) }
         if context.isLive { return (Theme.live, Theme.Stroke.link) }
-        return (Theme.ink, Theme.Stroke.card)
+        return (Theme.outline, Theme.Stroke.card)
     }
 
     /// Layer colours are set by hand, because a layer doesn't follow a change between light and dark.
@@ -533,7 +540,7 @@ class CardView: UIView {
         ease(body.layer, "borderColor", to: outline.color.cg(in: self), animated: animated)
         ease(body.layer, "borderWidth", to: outline.width, animated: animated)
         // From far out, the overview's tint is what says a card is live or where a run stopped.
-        overview.backgroundColor = context.mark.failed ? Theme.failTint : context.isLive ? Theme.liveTint : Theme.surface
+        overview.backgroundColor = context.mark.failed ? Theme.failTint : context.isLive ? Theme.liveTint : Theme.bar
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         grip.strokeColor = Theme.inkSecondary.cg(in: self)
@@ -578,10 +585,10 @@ private final class PortRowView: UIView {
 
     init() {
         super.init(frame: .zero)
-        nameLabel.font = Theme.mono(Theme.Size.caption, .medium)
+        nameLabel.font = Theme.cardLabel()
         nameLabel.textAlignment = .right
         nameLabel.lineBreakMode = .byTruncatingTail
-        countLabel.font = Theme.mono(Theme.Size.caption)
+        countLabel.font = Theme.cardLabel(Theme.Size.label, .regular)
         addSubview(nameLabel)
         addSubview(countLabel)
     }
@@ -612,11 +619,11 @@ final class LogicCardView: CardView {
 
     override init(card: Card) {
         super.init(card: card)
-        summaryLabel.font = Theme.sans(Theme.Size.body)
+        summaryLabel.font = Theme.cardLabel(Theme.Size.label, .regular)
         summaryLabel.numberOfLines = 0
         summaryLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(summaryLabel)
-        warningLabel.font = Theme.mono(Theme.Size.caption, .medium)
+        warningLabel.font = Theme.cardLabel()
         warningLabel.textColor = Theme.failInk
         warningLabel.lineBreakMode = .byTruncatingTail
         content.addSubview(warningLabel)
@@ -740,7 +747,7 @@ final class AgentCardView: CardView {
         terminalHolder.backgroundColor = Theme.terminal
         terminalHolder.clipsToBounds = true
         content.addSubview(terminalHolder)
-        hintLabel.font = Theme.mono(Theme.Size.body)
+        hintLabel.font = Theme.cardLabel(Theme.Size.label, .regular)
         hintLabel.textColor = Theme.terminalInk.withAlphaComponent(0.6)
         hintLabel.textAlignment = .center
         content.addSubview(hintLabel)

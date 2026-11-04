@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The controls this device has when the Mac lets it do more than watch: the run bar, the buttons that
@@ -17,7 +18,7 @@ struct PressButtons: View {
         HStack(spacing: Theme.Space.s) {
             ForEach(buttons) { button in
                 Button(button.title) { client.press(button.press) }
-                    .buttonStyle(.panel(button.isMain ? .live : .outline))
+                    .buttonStyle(.panel(button.isMain ? .filled : .outline))
                     .disabled(!button.isEnabled)
                     .accessibilityLabel(about.isEmpty ? button.title : "\(button.title), \(about)")
                     .accessibilityHint(button.hint)
@@ -44,57 +45,70 @@ struct CanvasFoot: View {
                     .transition(.opacity)
             }
             EditBar()
+            // When the connection is well and has nothing to explain, a phone folds it into a dot beside the buttons
+            // rather than spend a bar of its own on it. Otherwise it keeps its strip, where the help can be read.
+            let status = ConnectionStatus(client)
+            let folds = status.isConnected && !status.hasHelp
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .bottom, spacing: Theme.Space.m) {
                     ConnectionBar(showSettings: showSettings)
                     Spacer(minLength: 0)
                     CanvasMore()
-                    RunBar(abilities: abilities)
+                    RunBar(abilities: abilities, showSettings: showSettings)
                 }
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     HStack(alignment: .bottom, spacing: Theme.Space.s) {
-                        RunBar(abilities: abilities)
+                        RunBar(abilities: abilities, showSettings: showSettings)
                         CanvasMore()
+                        if folds {
+                            Spacer(minLength: 0)
+                            ConnectionBar(showSettings: showSettings, isCompact: true)
+                        }
                     }
-                    ConnectionBar(showSettings: showSettings)
+                    if !folds { ConnectionBar(showSettings: showSettings) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .animation(Theme.Motion.standard, value: client.controls.refusal)
+        .dsAnimation(DS.Motion.standard, value: client.controls.refusal)
     }
 }
 
 /// Run and Stop, as the Mac's toolbar has them: Run when nothing is going, Stop while a run is. The Mac's
 /// Run takes no words of its own, and neither does this one: a run starts with what its Start card says.
-/// When this device may only watch, one line here says how to change that, and there are no buttons.
+/// When this device may only watch, one short line here says so, with a button that opens the settings, where how
+/// to change that is written. There are no run buttons.
 struct RunBar: View {
     @Environment(RemoteClient.self) private var client
-    @Environment(\.horizontalSizeClass) private var sizeClass
     let abilities: Abilities
+    let showSettings: () -> Void
 
     var body: some View {
         if let hint = abilities.hint {
-            Text(hint)
-                .dsSans(Theme.Touch.caption + 1)
-                .foregroundStyle(Theme.inkSecondary.ui)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 300, alignment: .leading)
-                .padding(.horizontal, Theme.Space.m)
-                .padding(.vertical, Theme.Space.s)
-                .frame(minHeight: Theme.Touch.target)
-                .floatingPanel()
+            HStack(spacing: Theme.Space.xs) {
+                Text("Watching only")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                    .lineLimit(1)
+                    .padding(.leading, Theme.Space.s)
+                Button("Settings", action: showSettings)
+                    .buttonStyle(.panel(.quiet))
+                    .accessibilityHint(hint)
+            }
+            .padding(Theme.Space.xs)
+            .floatingPanel()
+            .accessibilityElement(children: .contain)
         } else if !abilities.bar.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-            // On a phone the bar's note has a line of its own above the buttons: beside them it would be a column a
-            // few words wide, and the buttons cut short.
-            if sizeClass == .compact, let note = abilities.barNote {
+            // The bar's note has a line of its own above the buttons, on a phone and on an iPad: beside them it is a
+            // column a few words wide, which wraps to six lines and spills out of the bar.
+            if let note = abilities.barNote {
                 Text(note)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 300, alignment: .leading)
+                    .frame(maxWidth: DS.Size.calloutWidth, alignment: .leading)
                     .padding(.horizontal, Theme.Space.s)
                     .padding(.top, Theme.Space.xs)
             }
@@ -105,14 +119,6 @@ struct RunBar: View {
                         .buttonStyle(.panel(.tool))
                         .accessibilityHint(edit.hint)
                     Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: Theme.Touch.target - Theme.Space.s).accessibilityHidden(true)
-                }
-                if sizeClass != .compact, let note = abilities.barNote {
-                    Text(note)
-                        .dsSans(Theme.Touch.caption + 1)
-                        .foregroundStyle(Theme.inkSecondary.ui)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 240, alignment: .leading)
-                        .padding(.leading, Theme.Space.s)
                 }
                 ForEach(abilities.bar) { button in
                     if button.press == .run, !abilities.runMenu.isEmpty {
@@ -141,11 +147,44 @@ struct RunBar: View {
                         .accessibilityHint(button.hint)
                     }
                 }
+                if let menu = client.restartMenu { RestartMenuButton(menu: menu) }
             }
             }
             .padding(Theme.Space.xs)
             .floatingPanel()
         }
+    }
+}
+
+/// The Mac's Restart menu, at the end of the run bar for a device that may control: all the agents, all but the
+/// orchestrator, the ones selected on this device's canvas, and the ones with new settings waiting. Each keeps its
+/// conversation so far. Those in the middle of a task are asked about first.
+struct RestartMenuButton: View {
+    @Environment(RemoteClient.self) private var client
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    let menu: RestartMenu
+
+    var body: some View {
+        let isSending = client.mirror.waiting.values.contains { if case .restartAgents = $0 { true } else { false } }
+        Menu {
+            ForEach(menu.items) { item in
+                if item.startsGroup { Divider() }
+                Button(item.title) { client.press(.restart(item.which)) }
+                    .disabled(!item.isEnabled)
+            }
+        } label: {
+            HStack(spacing: Theme.Space.xs) {
+                Image(systemName: "arrow.clockwise")
+                // A phone's bar is narrow: the arrow alone says it, and VoiceOver reads the name.
+                if sizeClass != .compact { Text("Restart").lineLimit(1) }
+                Image(systemName: "chevron.down").dsIcon(DS.IconSize.s, .semibold).foregroundStyle(Theme.inkSecondary.ui)
+                    .accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(.panel(.outline))
+        .disabled(isSending)
+        .accessibilityLabel("Restart agents")
+        .accessibilityHint("Restarts every agent, all but the orchestrator, the agents selected on the canvas, or the ones with new settings waiting. Each keeps its conversation so far.")
     }
 }
 
@@ -160,10 +199,10 @@ struct RefusalNotice: View {
         Button(action: dismiss) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                 Text(text)
-                    .dsSans()
+                    .textRole(.body)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).accessibilityHidden(true)
+                Image(systemName: "xmark").dsIcon(DS.IconSize.l, .semibold).accessibilityHidden(true)
             }
             .foregroundStyle(Theme.failInk.ui)
             .padding(.horizontal, Theme.Space.m)
@@ -174,7 +213,7 @@ struct RefusalNotice: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: 420, alignment: alignment)
+        .frame(maxWidth: DS.Size.messageWidth, alignment: alignment)
         .accessibilityHint("Puts this message away.")
     }
 }
@@ -193,10 +232,10 @@ struct HoldAnswer: View {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 if let draft {
                     TextEditor(text: Binding { draft } set: { self.draft = $0 })
-                        .dsSans()
+                        .textRole(.body)
                         .foregroundStyle(Theme.ink.ui)
                         .scrollContentBackground(.hidden)
-                        .frame(height: 160)
+                        .frame(height: DS.Size.textAreaTall)
                         .padding(.horizontal, Theme.Space.s)
                         .padding(.vertical, Theme.Space.xs)
                         .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
@@ -216,7 +255,7 @@ struct HoldAnswer: View {
                         .accessibilityHint(draft == nil ? "Lets you change the message before approving it." : "Puts the message back as it was.")
                     let edited = draft.map { $0 != hold.text } ?? false
                     Button(edited ? "Approve edited" : "Approve") { client.press(.approve(holdID: hold.id, text: draft ?? hold.text)) }
-                        .buttonStyle(.panel(.live))
+                        .buttonStyle(.panel(.filled))
                         .disabled(buttons.contains { !$0.isEnabled })
                         .accessibilityHint("Sends the message on along the Approved link.")
                 }
@@ -226,7 +265,7 @@ struct HoldAnswer: View {
                 ForEach(buttons) { button in
                     if button.isMain { Spacer(minLength: 0) }
                     Button(button.title) { client.press(button.press) }
-                        .buttonStyle(.panel(button.isMain ? .live : .outline))
+                        .buttonStyle(.panel(button.isMain ? .filled : .outline))
                         .disabled(!button.isEnabled)
                         .accessibilityHint(button.hint)
                 }
@@ -259,12 +298,12 @@ struct CardActions: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             if let draft {
-                Text("The message \(card.name) gets").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+                Text("The message \(card.name) gets").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                 TextEditor(text: Binding { draft } set: { self.draft = $0 })
-                    .dsSans()
+                    .textRole(.body)
                     .foregroundStyle(Theme.ink.ui)
                     .scrollContentBackground(.hidden)
-                    .frame(height: 120)
+                    .frame(height: DS.Size.textArea)
                     .padding(.horizontal, Theme.Space.s)
                     .padding(.vertical, Theme.Space.xs)
                     .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
@@ -329,11 +368,11 @@ private struct RejectSheet: View {
 
     var body: some View {
         AskSheet(title: "Reject this message?") {
-            Text("From \(from), held at \(name)").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+            Text("From \(from), held at \(name)").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
             LongText(text: text, lines: 6).foregroundStyle(Theme.ink.ui).fieldBox()
             TextField("Why you're rejecting it (optional)", text: $note, axis: .vertical)
                 .lineLimit(2...5)
-                .dsSans()
+                .textRole(.body)
                 .foregroundStyle(Theme.ink.ui)
                 .fieldBox()
                 .focused($isWriting)
@@ -342,7 +381,7 @@ private struct RejectSheet: View {
                 .task { if DebugLaunch.writesNote { isWriting = true } }
                 #endif
             Text("The message goes on along the Rejected link, with your reason ahead of it if you give one.")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
         } action: {
@@ -361,23 +400,23 @@ private struct AllowSheet: View {
     var body: some View {
         AskSheet(title: "Allow \(name) to run this?") {
             Text("This command will run on your Mac, in the project's folder, as if you had typed it in Terminal. Read all of it first.")
-                .dsSans()
+                .textRole(.body)
                 .foregroundStyle(Theme.ink.ui)
                 .fixedSize(horizontal: false, vertical: true)
             // All of it, however long: nothing is cut short behind a button here.
             Text(command)
-                .dsMono(Theme.Touch.caption + 1)
+                .textRole(.monoCaption)
                 .foregroundStyle(Theme.ink.ui)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fieldBox()
                 .accessibilityLabel("The command: \(command)")
             Text("This card won't ask again unless the command changes.")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
         } action: {
-            Button("Allow and run") { client.confirm(ask) }.buttonStyle(.panel(.live))
+            Button("Allow and run") { client.confirm(ask) }.buttonStyle(.panel(.filled))
         }
     }
 }
@@ -399,7 +438,7 @@ private struct AskSheet<Content: View, Action: View>: View {
     var body: some View {
         let asked = VStack(alignment: .leading, spacing: Theme.Space.m) {
             Text(title)
-                .dsMono(Theme.Touch.title, .medium)
+                .textRole(.heading)
                 .foregroundStyle(Theme.ink.ui)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -460,14 +499,14 @@ private struct AsksBeforeActing: ViewModifier {
                 switch ask {
                 case .reject(_, let name, let from, let text): RejectSheet(ask: ask, name: name, from: from, text: text)
                 case .allow(_, let name, let command): AllowSheet(ask: ask, name: name, command: command)
-                case .stop, .restart, .restartOrchestrator: EmptyView()
+                case .stop, .restart, .restartOrchestrator, .restartAgents: EmptyView()
                 }
             }
             .alert(alertTitle, isPresented: Binding { alert.wrappedValue != nil } set: { if !$0 { alert.wrappedValue = nil } },
                    presenting: alert.wrappedValue) { ask in
                 switch ask {
                 case .stop: Button("Stop", role: .destructive) { client.confirm(ask) }
-                case .restartOrchestrator: Button("Restart") { client.confirm(ask) }
+                case .restartOrchestrator, .restartAgents: Button("Restart") { client.confirm(ask) }
                 default: Button("Restart agent") { client.confirm(ask) }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -478,6 +517,9 @@ private struct AsksBeforeActing: ViewModifier {
                     Text(isWorking ? "Restarting interrupts what the agent is doing now. It keeps its conversation so far." : "The agent keeps its conversation so far.")
                 case .restartOrchestrator(let isWorking):
                     Text(isWorking ? "Restarting interrupts what the orchestrator is doing now. It keeps its conversation so far." : "The orchestrator keeps its conversation so far.")
+                case .restartAgents(_, let busy):
+                    // The Mac's words for the same question.
+                    Text("Restarting cuts short what \(busy.count == 1 ? "it is" : "they are") doing now, or a question \(busy.count == 1 ? "it is" : "they are") waiting on you to answer. Every agent keeps its conversation so far.")
                 default: Text("")
                 }
             }
@@ -487,10 +529,16 @@ private struct AsksBeforeActing: ViewModifier {
             }
     }
 
+    /// "A", "A and B", "A, B and C".
+    private static func list(_ names: [String]) -> String {
+        names.count <= 1 ? names.first ?? "" : names.dropLast().joined(separator: ", ") + " and " + names.last!
+    }
+
     private var alertTitle: String {
         switch client.controls.asking {
         case .restart(_, let name, _): "Restart \(name)?"
         case .restartOrchestrator: "Restart the orchestrator?"
+        case .restartAgents(_, let busy): "Restart while \(Self.list(busy)) \(busy.count == 1 ? "is" : "are") busy?"
         default: "Stop the run?"
         }
     }
@@ -506,6 +554,7 @@ extension Abilities {
         case .allow(let holdID, _, _): presses.contains(.allow(holdID: holdID))
         case .reject(let holdID, _, _, _): presses.contains(.reject(holdID: holdID))
         case .restartOrchestrator: presses.contains(.startOrchestrator)
+        case .restartAgents: canAct
         }
     }
 }

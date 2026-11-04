@@ -14,7 +14,9 @@ It shows:
 On an iPad the panel beside the canvas has three tabs: **Orchestrator**, **Run** (the log and the answers) and
 **History** (earlier runs and cost). Tap a card, a link or a group and its details slide in over the panel, with a
 way back to the tab you were on; tap empty canvas and they go. On an iPhone a card's details come up in a sheet over
-the canvas, and the button in the bar at the top brings up the panel's three tabs in a sheet of their own.
+the canvas, and the button in the bar at the top brings up the panel's three tabs in a sheet of their own. On an
+iPhone's first screen, a bar at the foot switches between **Needs you** (the flows waiting on you, running or
+stopped) and **Flows**, and opens into a menu with your Mac's connection, **Settings** and your pinned flows.
 
 A device you have just paired only watches. Turn on **Can control** for it on the Mac, as described below, and from the device you can also:
 

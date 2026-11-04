@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// What the run on show did, step by step, newest at the bottom. It follows new lines as they arrive until
@@ -16,7 +17,7 @@ struct LogPage: View {
             if canClear {
                 let command = client.clearLogCommand()
                 HStack(spacing: Theme.Space.s) {
-                    Text("\(lines.count) \(lines.count == 1 ? "line" : "lines")").dsMono(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui)
+                    Text("\(lines.count) \(lines.count == 1 ? "line" : "lines")").textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
                     Spacer(minLength: Theme.Space.s)
                     Button("Clear") { asksToClear = true }
                         .buttonStyle(.panel(.quiet))
@@ -42,18 +43,18 @@ struct LogPage: View {
                 LazyVStack(alignment: .leading, spacing: Theme.Space.s) {
                     if lines.isEmpty {
                         Text("What each run did shows here, step by step: who passed what to whom, which way each decision went, and why a run stopped.")
-                            .dsSans()
+                            .textRole(.body)
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
                     ForEach(lines) { line in
                         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                            Text(Clock.time(line.date)).foregroundStyle(Theme.inkSecondary.ui)
+                            Text(Clock.time(line.date)).monospacedDigit().foregroundStyle(Theme.inkSecondary.ui)
                             Text(line.text)
                                 .foregroundStyle(Theme.ink.ui)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .dsMono(Theme.Touch.caption + 1)
+                        .textRole(.caption)
                         .accessibilityElement(children: .combine)
                         .id(line.id)
                     }
@@ -88,7 +89,7 @@ struct LogPage: View {
                     .accessibilityHint("Goes to the newest line and follows the log again.")
                 }
             }
-            .animation(Theme.Motion.standard, value: follows)
+            .dsAnimation(DS.Motion.standard, value: follows)
         }
     }
 }
@@ -104,20 +105,20 @@ struct OutputPage: View {
             VStack(alignment: .leading, spacing: Theme.Space.xl) {
                 if ends.isEmpty {
                     Text("This flow has no End card. An End card collects a run's final answer, and it would show here.")
-                        .dsSans()
+                        .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 }
                 ForEach(ends) { card in
                     VStack(alignment: .leading, spacing: Theme.Space.s) {
                         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                             Image(systemName: CanvasGeometry.icon(for: .end))
-                                .font(.system(size: 13, weight: .medium))
+                                .dsIcon(DS.IconSize.xl)
                                 .accessibilityHidden(true)
-                            Text(card.name).dsMono(Theme.Touch.body, .medium).accessibilityAddTraits(.isHeader)
+                            Text(card.name).textRole(.label).accessibilityAddTraits(.isHeader)
                             Spacer(minLength: Theme.Space.s)
                             if let file = card.saveTo, !file.isEmpty, results[card.id] != nil {
                                 Text(file)
-                                    .dsMono(Theme.Touch.caption)
+                                    .textRole(.footnote)
                                     .foregroundStyle(Theme.inkSecondary.ui)
                                     .lineLimit(1)
                                     .truncationMode(.head)
@@ -129,7 +130,7 @@ struct OutputPage: View {
                             LongText(text: text, lines: 14).foregroundStyle(Theme.ink.ui).fieldBox()
                         } else {
                             Text("Nothing yet. This fills in when a run reaches the card.")
-                                .dsSans()
+                                .textRole(.body)
                                 .foregroundStyle(Theme.inkSecondary.ui)
                         }
                     }
@@ -155,12 +156,12 @@ struct RunsPage: View {
                 if rows.isEmpty {
                     Text(isRunning ? "This is the flow's first run. It is listed here once it ends."
                          : "Each run is listed here once it ends, so you can look back at where it went.")
-                        .dsSans()
+                        .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 } else {
                     Text(isRunning ? "Earlier runs can be looked at once this one ends."
                          : "Tap a run to see where it went, on the canvas and in the log. Only this device changes.")
-                        .dsSans(Theme.Touch.caption + 1)
+                        .textRole(.caption)
                         .foregroundStyle(Theme.inkSecondary.ui)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -194,22 +195,22 @@ private struct RunRowView: View {
     let row: RunRow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.xs + 2) {
+        VStack(alignment: .leading, spacing: DS.Space.tight) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                Text(row.started).dsMono(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
+                Text("\(row.number.map { "Run \($0) · " } ?? "")\(row.started)").textRole(.label).foregroundStyle(Theme.ink.ui)
                 Badge(text: row.outcome.rawValue, tone: tone)
                 Spacer(minLength: Theme.Space.s)
-                Text(row.cost ?? "–").dsMono(Theme.Touch.body, .medium).foregroundStyle((row.cost == nil ? Theme.inkSecondary : Theme.ink).ui)
+                Text(row.cost ?? "–").textRole(.monoLabel).foregroundStyle((row.cost == nil ? Theme.inkSecondary : Theme.ink).ui)
             }
             Text(row.command)
-                .dsSans()
+                .textRole(.body)
                 .foregroundStyle(Theme.ink.ui)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
             HStack(spacing: Theme.Space.s) {
-                Text("\(row.length) · \(row.handOffs)").dsMono(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui)
+                Text("\(row.length) · \(row.handOffs)").textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
                 Spacer(minLength: Theme.Space.s)
-                if row.isOnShow { Text("On show").dsMono(Theme.Touch.caption, .medium).foregroundStyle(Theme.select.ui) }
+                if row.isOnShow { Text("On show").textRole(.footnoteLabel).foregroundStyle(Theme.select.ui) }
             }
         }
         .padding(Theme.Space.m)
@@ -235,19 +236,22 @@ struct CostPage: View {
     let sheet: CostSheet
     let flowName: String
 
+    /// The line with the largest share, whose bar is inked darker than the rest.
+    private static func top(of lines: [CostSheet.Line]) -> String? { lines.max { $0.share < $1.share }?.id }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xl) {
                 PanelSection(title: sheet.runTitle) {
                     if let lines = sheet.runLines, let total = sheet.runTotal {
                         ForEach(lines) { line in
-                            CostLine(line: line)
+                            CostLine(line: line, isTop: Self.top(of: lines) == line.id, showsBar: lines.count > 1)
                             Hairline()
                         }
                         TotalLine(label: sheet.runSoFar ? "This run so far" : "This run", usage: total)
                     } else {
                         Text(sheet.runPending ?? "")
-                            .dsSans()
+                            .textRole(.body)
                             .foregroundStyle(Theme.inkSecondary.ui)
                             .padding(Theme.Space.m)
                     }
@@ -255,12 +259,12 @@ struct CostPage: View {
                 PanelSection(title: "Cost of \(flowName), in all") {
                     if sheet.total.isZero {
                         Text("Nothing yet. A figure appears here once an agent in this flow has replied.")
-                            .dsSans()
+                            .textRole(.body)
                             .foregroundStyle(Theme.inkSecondary.ui)
                             .padding(Theme.Space.m)
                     } else {
                         ForEach(sheet.sessions) { line in
-                            CostLine(line: line)
+                            CostLine(line: line, isTop: Self.top(of: sheet.sessions) == line.id, showsBar: sheet.sessions.count > 1)
                             Hairline()
                         }
                         TotalLine(label: "In all", usage: sheet.total)
@@ -271,7 +275,8 @@ struct CostPage: View {
                         ForEach(sheet.subflows) { sub in
                             Button { client.open(sub.id) } label: {
                                 CostLine(line: CostSheet.Line(id: sub.id, name: sub.name, icon: "arrow.turn.down.right", usage: sub.usage, share: sub.share),
-                                         indent: CGFloat(sub.depth) * 14, opens: true)
+                                         indent: CGFloat(sub.depth) * 14, opens: true,
+                                         isTop: sheet.subflows.max { $0.share < $1.share }?.id == sub.id, showsBar: sheet.subflows.count > 1)
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint("Opens \(sub.name), to see its own breakdown.")
@@ -283,10 +288,10 @@ struct CostPage: View {
                 if let outer = sheet.outer {
                     Button { client.open(outer.id) } label: {
                         HStack(spacing: Theme.Space.s) {
-                            Image(systemName: "arrow.turn.left.up").font(.system(size: 12, weight: .medium)).frame(width: 18).accessibilityHidden(true)
-                            Text("Part of \(outer.name)").dsMono(Theme.Touch.body, .medium).lineLimit(1)
+                            Image(systemName: "arrow.turn.left.up").dsIcon(DS.IconSize.l).frame(width: DS.Size.iconSlotWide).accessibilityHidden(true)
+                            Text("Part of \(outer.name)").textRole(.label).lineLimit(1)
                             Spacer(minLength: Theme.Space.s)
-                            Text("\(outer.usage.price) in all").dsMono(Theme.Touch.caption)
+                            Text("\(outer.usage.price) in all").textRole(.monoCaption)
                         }
                         .foregroundStyle(Theme.ink.ui)
                         .padding(.horizontal, Theme.Space.m)
@@ -298,7 +303,7 @@ struct CostPage: View {
                     .accessibilityHint("Goes back to \(outer.name).")
                 }
                 Text(CostSheet.explanation)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -315,24 +320,30 @@ private struct CostLine: View {
     var indent: CGFloat = 0
     /// A chevron, for a line that opens its flow.
     var opens = false
+    /// Whether it is the biggest of its list. Only that one bar is inked, and a list of one has no bar: a share of
+    /// the whole that is all of it says nothing.
+    var isTop = false
+    var showsBar = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.xs + 2) {
+        VStack(alignment: .leading, spacing: DS.Space.tight) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                Image(systemName: line.icon).font(.system(size: 12, weight: .medium)).frame(width: 18).accessibilityHidden(true)
-                Text(line.name).dsMono(Theme.Touch.body, .medium).lineLimit(1)
-                if opens { Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true) }
+                Image(systemName: line.icon).dsIcon(DS.IconSize.l).frame(width: DS.Size.iconSlotWide).accessibilityHidden(true)
+                Text(line.name).textRole(.label).lineLimit(1)
+                if opens { Image(systemName: "chevron.right").dsIcon(DS.IconSize.s, .semibold).foregroundStyle(Theme.inkSecondary.ui).accessibilityHidden(true) }
                 Spacer(minLength: Theme.Space.s)
-                Text(line.usage.price).dsMono(Theme.Touch.body, .medium)
+                Text(line.usage.price).textRole(.monoLabel)
             }
             .foregroundStyle(Theme.ink.ui)
-            Text(line.usage.tokenCount).dsMono(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui).padding(.leading, 18 + Theme.Space.s)
+            Text(line.usage.tokenCount).textRole(.monoCaption).foregroundStyle(Theme.inkSecondary.ui).padding(.leading, DS.Size.iconSlotWide + Theme.Space.s)
+            if showsBar {
             GeometryReader { space in
-                Rectangle().fill(Theme.ink.ui)
-                    .frame(width: max(line.usage.isZero ? 0 : 2, space.size.width * min(1, max(0, line.share))), height: 2)
+                Rectangle().fill((isTop ? Palette.text : Palette.textFaint).color)
+                    .frame(width: max(line.usage.isZero ? 0 : DS.Size.meter, space.size.width * min(1, max(0, line.share))), height: DS.Size.meter)
             }
-            .frame(height: 2)
+            .frame(height: DS.Size.meter)
             .accessibilityHidden(true)
+            }
         }
         .padding(.leading, indent)
         .padding(Theme.Space.m)
@@ -348,10 +359,10 @@ private struct TotalLine: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-            Text(label).dsSans(Theme.Touch.body, .medium).foregroundStyle(Theme.ink.ui)
+            Text(label).textRole(.label).foregroundStyle(Theme.ink.ui)
             Spacer(minLength: Theme.Space.s)
-            Text(usage.tokenCount).dsMono(Theme.Touch.caption).foregroundStyle(Theme.inkSecondary.ui)
-            Text(usage.price).dsMono(Theme.Touch.title, .medium).foregroundStyle(Theme.ink.ui)
+            Text(usage.tokenCount).textRole(.monoCaption).foregroundStyle(Theme.inkSecondary.ui)
+            Text(usage.price).textRole(.monoHeading).foregroundStyle(Theme.ink.ui)
         }
         .padding(.horizontal, Theme.Space.m)
         .frame(minHeight: Theme.Touch.target)

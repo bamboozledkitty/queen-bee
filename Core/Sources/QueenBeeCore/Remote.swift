@@ -113,6 +113,11 @@ public enum RemoteFeature {
     /// the command's id. A command sent again with the same id after a dropped link is answered with what became
     /// of it the first time, and is never done twice. See `CommandMemory`.
     public static let commandMemory = "commandMemory"
+    /// What the redesigned Mac has that a device can show. The device takes `HostMessage.overview`, the Runs and Schedules
+    /// across flows, and is sent it. The Mac takes `RemoteCommand.restartAgents`, and sends the flow's branch in
+    /// `RemoteRunState.workplace`. Each end says it in its first message: a device never sends the new command to a Mac
+    /// that hasn't said it, as that Mac couldn't read it, and a Mac sends the new message only to a device that has.
+    public static let overview = "overview"
 }
 
 /// The first thing a device sends on a new connection.
@@ -327,15 +332,18 @@ public struct RemoteRunState: Codable, Equatable, Sendable {
     public var orchestratorNeedsRestart: Bool
     /// What each session has used in the run on show, by card id: while a run goes, what it has used so far.
     public var runUsage: [String: Usage]
+    /// Where the flow works, in the words of the Mac's branch chip: a branch, or "branch · worktree". Nil outside a git
+    /// repository, and from a Mac from before the chip. A device only shows it: it is changed on the Mac.
+    public var workplace: String?
 
     public init(isRunning: Bool, marks: [String: RunMark], linkPasses: [String: Int], liveLinkIDs: [String], handOffs: Int,
                 holds: [PendingHold], results: [String: String], usage: [String: Usage], sessions: [String: SessionState],
                 awaitingAnswer: [String], banner: String?, awaitingRestart: [String: [String]] = [:],
-                orchestratorNeedsRestart: Bool = false, runUsage: [String: Usage] = [:]) {
+                orchestratorNeedsRestart: Bool = false, runUsage: [String: Usage] = [:], workplace: String? = nil) {
         self.isRunning = isRunning; self.marks = marks; self.linkPasses = linkPasses; self.liveLinkIDs = liveLinkIDs
         self.handOffs = handOffs; self.holds = holds; self.results = results; self.usage = usage; self.sessions = sessions
         self.awaitingAnswer = awaitingAnswer; self.banner = banner; self.awaitingRestart = awaitingRestart
-        self.orchestratorNeedsRestart = orchestratorNeedsRestart; self.runUsage = runUsage
+        self.orchestratorNeedsRestart = orchestratorNeedsRestart; self.runUsage = runUsage; self.workplace = workplace
     }
 }
 
@@ -421,6 +429,9 @@ public enum HostMessage: Codable, Equatable, Sendable {
     case browserFrame(id: String, card: String, frame: RemoteBrowserFrame)
     /// The text that was selected on a card's page, for the device's Copy. Sent just before Copy's answer.
     case browserCopied(id: String, card: String, text: String)
+    /// The Runs and Schedules across every open project, whenever either changes. Sent only to a device that has
+    /// `RemoteFeature.overview`, and after the first library.
+    case overview(RemoteOverview)
 }
 
 /// Device to Mac.
@@ -712,6 +723,9 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     /// flow with nobody watching, on what the flow does now. A later change from a device to what the flow
     /// does turns it off again.
     case armSchedule(flowID: String, cardID: String, on: Bool)
+    /// The header's Restart menu: all the flow's agents, some of them, or the ones with new settings waiting. Each keeps its
+    /// conversation so far. Only to a Mac that has said `RemoteFeature.overview`.
+    case restartAgents(flowID: String, which: RemoteRestart)
 
     // MARK: Editing, stage 4
 
@@ -768,7 +782,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
              .duplicate(let id, _), .tidy(let id), .group(let id, _, _), .ungroup(let id, _), .renameGroup(let id, _, _),
              .foldGroup(let id, _, _), .patchCard(let id, _, _), .setFlowOption(let id, _), .renameFlow(let id, _),
              .deleteFlow(let id), .undo(let id), .redo(let id), .runFromStart(let id, _), .retry(let id, _), .clearLog(let id),
-             .dismissBanner(let id), .stopAgents(let id), .revertSettings(let id, _), .armSchedule(let id, _, _), .paste(let id, _, _),
+             .dismissBanner(let id), .stopAgents(let id), .revertSettings(let id, _), .armSchedule(let id, _, _), .restartAgents(let id, _), .paste(let id, _, _),
              .addRoleCard(let id, _, _, _), .newSubflow(let id, _, _), .pin(let id, _), .saveRole(let id, _, _), .updateRole(_, let id, _),
              .browser(let id, _, _): id
         case .newFlow, .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: nil
@@ -784,7 +798,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     public var isEdit: Bool {
         switch self {
         case .openOnMac, .run, .runFrom, .stop, .approve, .reject, .allowScript, .refuseScript, .startSession, .prompt, .keys,
-             .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .armSchedule, .pin, .updateRole, .deleteRole,
+             .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .armSchedule, .restartAgents, .pin, .updateRole, .deleteRole,
              .clearBrowserData, .installBrowser, .restartBrowser, .browser: false
         case .addCard, .moveCards, .resizeCard, .deleteItems, .addLink, .setLinkLimit, .duplicate, .tidy, .group, .ungroup,
              .renameGroup, .foldGroup, .patchCard, .setFlowOption, .newFlow, .renameFlow, .deleteFlow, .undo, .redo,
@@ -851,7 +865,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
         case .browser(let id, let cardID, let action): .browser(flowID: id, cardID: cardID, action: action.cleaned)
         case .openOnMac, .stop, .allowScript, .refuseScript, .startSession, .keys, .addCard, .moveCards, .resizeCard,
              .deleteItems, .setLinkLimit, .duplicate, .tidy, .ungroup, .foldGroup, .setFlowOption, .deleteFlow, .undo, .redo,
-             .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .addRoleCard, .pin,
+             .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .restartAgents, .addRoleCard, .pin,
              .updateRole, .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: self
         }
     }
@@ -924,6 +938,9 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
             return RemotePoint(x: x, y: y).isOnCanvas ? nil : Self.offCanvas
         case .newSubflow(_, _, let name), .saveRole(_, _, let name):
             return Remote.fitsName(name) ? nil : Self.nameTooLong
+        case .restartAgents(_, let which):
+            if case .cards(let ids) = which, ids.count > Remote.cardLimit { return Self.tooMany }
+            return nil
         case .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .pin, .updateRole,
              .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: return nil
         case .browser(_, _, let action): return action.problem

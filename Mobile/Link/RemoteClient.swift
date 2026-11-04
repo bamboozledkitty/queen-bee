@@ -112,7 +112,19 @@ final class RemoteClient {
     private(set) var debugSent: [RemoteCommand] = []
     /// And is told which browser cards the device has on screen, as the Mac would be.
     @ObservationIgnored var debugWatcher: ((_ flowID: String, _ cardIDs: [String]) -> Void)?
+    /// How each of the last few tries to pair or connect went, newest last, for a test that failed to say why.
+    /// Noted once a try, never for each message, so keeping it costs nothing while connected.
+    private(set) var debugLinkEvents: [String] = []
     #endif
+
+    /// Notes how a try to pair or connect went, for a test. Nothing outside a Debug build.
+    private func noteForTest(_ text: @autoclosure () -> String) {
+        #if DEBUG
+        let clock = Date().formatted(.iso8601.time(includingFractionalSeconds: true)) + "Z"
+        debugLinkEvents.append("\(clock) \(text())")
+        if debugLinkEvents.count > 20 { debugLinkEvents.removeFirst(debugLinkEvents.count - 20) }
+        #endif
+    }
 
     /// One connection and the things waiting to be sent on it, which leave in the order they were asked for.
     private final class Link {
@@ -399,8 +411,10 @@ final class RemoteClient {
                 linkLost()
             }
         }
+        noteForTest("connecting to \(place.endpoint)")
         do {
             try await connection.start()
+            noteForTest("secured; saying hello")
             // By address, the device proves which device it is, on this very connection.
             var proof: Data?
             if place.byAddress {
@@ -409,7 +423,7 @@ final class RemoteClient {
             }
             try await connection.send(DeviceMessage.hello(
                 RemoteHello(version: Remote.version, deviceID: DeviceIdentity.deviceID, deviceName: DeviceIdentity.deviceName,
-                            epoch: DeviceIdentity.epoch, features: [RemoteFeature.historyChanges], proof: proof)))
+                            epoch: DeviceIdentity.epoch, features: [RemoteFeature.historyChanges, RemoteFeature.overview], proof: proof)))
             while true {
                 let frame = try await connection.receive()
                 guard turn == mine else { return outcome }
@@ -428,9 +442,11 @@ final class RemoteClient {
                 take(message)
                 switch message {
                 case .refused(let text):
+                    noteForTest("refused: \(text)")
                     outcome.verdict = LinkVerdict.refused(text)
                     return outcome
                 case .welcome(let welcome):
+                    noteForTest("welcomed")
                     outcome.gotIn = true
                     since = Date()
                     state = .connected
@@ -452,6 +468,7 @@ final class RemoteClient {
                 }
             }
         } catch {
+            noteForTest("ended: \(error)\(since.map { String(format: " after %.1f s connected", Date().timeIntervalSince($0)) } ?? "")")
             outcome.verdict = LinkVerdict.failed(error)
             outcome.lasted = since.map { Date().timeIntervalSince($0) } ?? 0
             if !outcome.gotIn { outcome.error = error }
@@ -726,6 +743,8 @@ final class RemoteClient {
         #endif
         // A question about the flow that was open is not one about the next, and nor is editing it, or what
         // was selected in it, whose details would otherwise stay up over the next.
+        // A run the Runs list went to is for its own flow only.
+        if canvas.wantedRun?.flowID != flowID { canvas.wantedRun = nil }
         if flowID != mirror.openFlowID {
             controls.asking = nil
             stopEditing()
@@ -779,11 +798,13 @@ final class RemoteClient {
             // The code's secret is the key: only the Mac showing that code can answer.
             let connection = LinkConnection(to: endpoint, key: code.secret)
             defer { connection.close() }
+            noteForTest("pairing at \(endpoint)")
             do {
                 try await connection.start()
                 try await connection.send(PairRequest(version: Remote.version, deviceID: DeviceIdentity.deviceID, deviceName: DeviceIdentity.deviceName))
                 switch try await connection.receive(PairReply.self) {
                 case .granted(let grant):
+                    noteForTest("paired")
                     guard DeviceIdentity.save(grant) else {
                         pairingFailed("Queen Bee couldn't save the pairing on this device. Try again with a new code.")
                         return
@@ -793,8 +814,10 @@ final class RemoteClient {
                     pairingFailed(text)
                 }
             } catch let error as LinkError where error.keyRefused {
+                noteForTest("pairing refused the code: \(error)")
                 pairingFailed("That code didn't work. It may be for a different Mac. On your Mac, choose “Pair a device…” again and use the new code.")
             } catch {
+                noteForTest("pairing failed: \(error)")
                 pairingFailed("Queen Bee couldn't reach your Mac. Check that the code is still on your Mac's screen and that both are on the same Wi-Fi, then try again.")
             }
         }

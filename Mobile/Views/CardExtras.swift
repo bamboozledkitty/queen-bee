@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The parts of a card's details that are buttons more than settings, as the Mac's settings panel has them: a
@@ -15,7 +16,7 @@ struct ScheduleSwitch: View {
         let command = client.armCommand(cardID, on: !isOn)
         HStack(spacing: Theme.Space.s) {
             Text(isOn ? "Runs by itself while it is on." : "Turned on here, it runs by itself, with nobody watching.")
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Theme.Space.s)
@@ -40,7 +41,7 @@ struct SubflowRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            Text("Runs \(inner.name).").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+            Text("Runs \(inner.name).").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
             Spacer(minLength: Theme.Space.s)
             Button("Open") { client.openSubflow(of: cardID) }
                 .buttonStyle(.panel())
@@ -62,7 +63,7 @@ struct NewSubflowRow: View {
     var body: some View {
         let busy = client.mirror.waiting.values.contains { if case .newSubflow(_, cardID, _) = $0 { true } else { false } }
         HStack(spacing: Theme.Space.s) {
-            Text("Make a sub-flow just for this card:").dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui)
+            Text("Make a sub-flow just for this card:").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
             Spacer(minLength: Theme.Space.s)
             Button("New sub-flow") { client.askForNewSubflow(for: cardID) }
                 .buttonStyle(.panel(.filled))
@@ -102,7 +103,7 @@ struct RoleDriftRow: View {
     }
 
     private var line: some View {
-        Text(EditForm.roleDrift).dsSans(Theme.Touch.caption + 1).foregroundStyle(Theme.inkSecondary.ui).fixedSize(horizontal: false, vertical: true)
+        Text(EditForm.roleDrift).textRole(.caption).foregroundStyle(Theme.inkSecondary.ui).fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private func buttons(reset: RemoteCommand?, update: RemoteCommand?) -> some View {
@@ -145,13 +146,13 @@ struct RoleMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: Theme.Space.xs + 2) {
-                Text(chosen).dsMono(Theme.Touch.body, .medium).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.inkSecondary.ui)
+            HStack(spacing: DS.Space.tight) {
+                Text(chosen).textRole(.label).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").dsIcon(DS.IconSize.s, .semibold).foregroundStyle(Theme.inkSecondary.ui)
             }
             .foregroundStyle(Theme.ink.ui)
             .padding(.horizontal, Theme.Space.m)
-            .frame(minHeight: 36)
+            .frame(minHeight: DS.Size.rowCompact)
             .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.hairline.ui))
             .frame(minHeight: Theme.Touch.target)

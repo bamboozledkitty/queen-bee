@@ -143,13 +143,21 @@ final class Notifier: NSObject {
 
 extension Notifier: UNUserNotificationCenterDelegate {
     /// On screen, what a notification would say is on the screen already.
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
-        -> UNNotificationPresentationOptions { [] }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([])
+    }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    /// The completion handler is called on the main actor: the `async` form of this method finished on a
+    /// background thread, and UIKit stopped the app for it.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let info = response.notification.request.content.userInfo
         let action = response.actionIdentifier
         let flowID = info["flowID"] as? String, holdID = info["holdID"] as? String, text = info["text"] as? String
-        await respond(to: action, flowID: flowID, holdID: holdID, text: text)
+        Task { @MainActor in
+            await respond(to: action, flowID: flowID, holdID: holdID, text: text)
+            completionHandler()
+        }
     }
 }

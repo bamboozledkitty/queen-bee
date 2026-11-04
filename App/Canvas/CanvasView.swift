@@ -3,7 +3,7 @@ import Observation
 import QueenBeeCore
 import SwiftTerm
 
-/// The surface cards sit on: drafting paper with a dot matrix. Flipped so a card's y grows
+/// The surface cards sit on: the panel's colour with a dot matrix. Flipped so a card's y grows
 /// downward, as the flow file stores it.
 final class CanvasDocumentView: NSView {
     /// What the add-card palette puts on the pasteboard when a row is dragged. Nothing else
@@ -15,7 +15,7 @@ final class CanvasDocumentView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        Theme.paper.setFill()
+        Theme.Canvas.paper.setFill()
         dirtyRect.fill()
 
         // Zoomed out, dots crowd together and shrink below a pixel. Every second or fourth
@@ -24,7 +24,7 @@ final class CanvasDocumentView: NSView {
         var step = CanvasGeometry.gridStep
         while step * zoom < 14 { step *= 2 }
         let size = max(1.6, 1.6 / zoom)
-        Theme.dot.setFill()
+        Theme.Canvas.dot.setFill()
         var y = (dirtyRect.minY / step).rounded(.down) * step
         while y <= dirtyRect.maxY {
             var x = (dirtyRect.minX / step).rounded(.down) * step
@@ -150,7 +150,7 @@ final class CanvasOverlayView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         // A hairline on screen at any zoom.
         let hairline = 1 / max(convert(CGSize(width: 1, height: 1), to: nil).width, 0.01)
-        ctx.setStrokeColor(Theme.select.cgColor)
+        ctx.setStrokeColor(Theme.Canvas.accent.cgColor)
         ctx.setLineWidth(hairline)
         for guide in guides {
             let pad = 12 * hairline
@@ -164,7 +164,7 @@ final class CanvasOverlayView: NSView {
         }
         ctx.strokePath()
         if let marquee {
-            ctx.setFillColor(Theme.select.withAlphaComponent(0.08).cgColor)
+            ctx.setFillColor(Theme.Canvas.accent.withAlphaComponent(0.08).cgColor)
             ctx.fill(marquee)
             ctx.stroke(marquee)
         }
@@ -179,8 +179,6 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     /// Room to pan left of and above the canvas's origin. Without it a card at the origin
     /// could never be moved out from under the palette, which floats over that corner.
     static let margin: CGFloat = 3000
-    /// The height of the window's title bar, which floats over the canvas's top edge.
-    static let titleBarHeight: CGFloat = 52
 
     let scrollView = NSScrollView()
     let document = CanvasDocumentView()
@@ -380,6 +378,49 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         }
         syncGroups(flow, controller)
         didFirstSync = true
+        // A card that has just been picked or added is brought into the clear part of the canvas, beside its settings.
+        let picked = controller.selection.cardIDs
+        if picked != revealedSelection {
+            revealedSelection = picked
+            if case .card = controller.selection {
+                Task { @MainActor [weak self] in self?.keepClear(of: picked) }
+            }
+        }
+    }
+
+    /// The cards last brought into view, so a card is only moved to when the pick changes.
+    private var revealedSelection: Set<String> = []
+
+    /// What the floating controls cover: the palette, and the inspector while a card or link is picked.
+    private var covered: CanvasObstruction {
+        var covered = AppServices.shared.canvasObstruction
+        if let controller, controller.selection != .none { covered.right += InspectorView.width + WorkspaceView.gap }
+        return covered
+    }
+
+    /// Pans, no more than needed, so `ids` sit in the part of the canvas the palette and the inspector leave clear.
+    private func keepClear(of ids: Set<String>) {
+        // A click or drag is under way: moving the canvas now would move the card out from under the pointer.
+        guard NSEvent.pressedMouseButtons == 0, let controller else { return }
+        let boxes = controller.flow.cards.filter { ids.contains($0.id) && cardViews[$0.id]?.isHidden != true }.map(CanvasGeometry.frame(of:))
+        guard let first = boxes.first else { return }
+        let box = boxes.dropFirst().reduce(first) { $0.union($1) }
+        let zoom = max(scrollView.magnification, 0.01)
+        let visible = scrollView.documentVisibleRect
+        let covered = covered
+        // The status line and zoom control sit over the foot, and the header's edge over the top.
+        let clear = CGRect(x: visible.minX + (covered.left + 8) / zoom, y: visible.minY + 8 / zoom,
+                           width: max(40, visible.width - (covered.left + covered.right + 16) / zoom),
+                           height: max(40, visible.height - 66 / zoom))
+        func shift(_ low: CGFloat, _ high: CGFloat, within lowEdge: CGFloat, _ highEdge: CGFloat) -> CGFloat {
+            if low < lowEdge { return low - lowEdge }
+            if high > highEdge { return min(high - highEdge, low - lowEdge) }
+            return 0
+        }
+        let dx = shift(box.minX, box.maxX, within: clear.minX, clear.maxX)
+        let dy = shift(box.minY, box.maxY, within: clear.minY, clear.maxY)
+        guard dx != 0 || dy != 0 else { return }
+        document.scroll(CGPoint(x: visible.minX + dx, y: visible.minY + dy))
     }
 
     /// Frames for the flow's groups, and the folding away of cards that are inside a folded one.
@@ -442,6 +483,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             savePlace()
             return
         }
+        // A card asked for before this canvas was on screen is zoomed to now.
+        if let controller { AppServices.shared.canvasAppeared(for: controller) }
         if TestHarness.isEnabled, LaunchArguments.floats {
             window.level = .floating
             window.orderFrontRegardless()
@@ -523,7 +566,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
         if !didInitialScroll, bounds.width > 0 {
             if !restorePlace() {
                 // Start with the canvas's origin just clear of the panels floating over its left edge.
-                document.scroll(CGPoint(x: -(AppServices.shared.canvasObstruction.left + 20), y: -(CanvasView.titleBarHeight + 16)))
+                document.scroll(CGPoint(x: -(AppServices.shared.canvasObstruction.left + 20), y: -16))
             }
             didInitialScroll = true
         }
@@ -988,7 +1031,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     var visibleCenter: CGPoint {
         let r = scrollView.documentVisibleRect
         // The middle of what the floating panels leave uncovered, not of the whole window.
-        let covered = AppServices.shared.canvasObstruction
+        let covered = covered
         let zoom = max(scrollView.magnification, 0.01)
         return CGPoint(x: r.midX + (covered.left - covered.right) / 2 / zoom, y: r.midY)
     }
@@ -1040,10 +1083,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     /// The panels are a fixed size on screen, so the zoom is worked out from the room they
     /// leave, and the rectangle shown is `box` plus what they cover at that zoom.
     private func fit(_ box: CGRect, atMost: CGFloat? = nil) {
-        let covered = AppServices.shared.canvasObstruction
-        // The see-through title bar and its buttons sit over the canvas's top; the status
-        // line and zoom control over its foot.
-        let top = CanvasView.titleBarHeight, foot: CGFloat = 50
+        let covered = covered
+        // The status line and zoom control sit over the canvas's foot.
+        let top: CGFloat = 0, foot: CGFloat = 50
         let screen = scrollView.contentView.frame.size
         let room = CGSize(width: max(80, screen.width - covered.left - covered.right), height: max(80, screen.height - top - foot))
         let needed = min(room.width / box.width, room.height / box.height)

@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// Everything the flow on screen can do from the keyboard, found by typing: add a card of any kind, run or stop
@@ -58,7 +59,7 @@ struct CommandPalette: View {
         for card in flow.cards {
             all.append(Command(id: "go/\(card.id)", title: "Go to \(card.name)", detail: card.kind.label,
                                icon: CanvasGeometry.icon(for: card.kind)) {
-                AppServices.shared.reveal(flowID: flow.id, cardID: card.id)
+                AppServices.shared.reveal(controller, cardID: card.id)
             })
         }
         for kind in CardKindMenu.kinds {
@@ -75,11 +76,11 @@ struct CommandPalette: View {
     var body: some View {
         let found = Array(PaletteSearch.rank(commands, by: query) { $0.title }.prefix(Self.shown))
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Space.s) {
-                Image(systemName: "command").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.inkSecondary.ui)
+            HStack(spacing: DS.Space.s) {
+                Image(systemName: "command").dsIcon(DS.IconSize.l, .medium).foregroundStyle(Theme.inkSecondary.ui)
                 TextField(placeholder, text: $query)
                     .textFieldStyle(.plain)
-                    .font(.dsSans(Theme.Size.heading))
+                    .textRole(.subtitle)
                     .focused($isFocused)
                     .onSubmit { if found.indices.contains(picked) { perform(found[picked]) } }
                     .onKeyPress(.downArrow) { picked = min(picked + 1, max(found.count - 1, 0)); return .handled }
@@ -88,34 +89,35 @@ struct CommandPalette: View {
                     .onChange(of: query) { picked = 0 }
                     .accessibilityLabel("Command")
             }
-            .padding(.horizontal, Theme.Space.m)
-            .padding(.vertical, 10)
+            .padding(.horizontal, DS.Space.l)
+            .frame(height: DS.Size.commandField)
 
-            Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+            DSDivider()
             if found.isEmpty {
                 Text("Nothing matches. Try a card's name, or \"add\", \"link\" or \"run\".")
-                    .font(.dsSans(Theme.Size.body))
+                    .textRole(.body)
                     .foregroundStyle(Theme.inkSecondary.ui)
-                    .padding(Theme.Space.m)
+                    .padding(DS.Space.m)
             } else {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: DS.Space.xxs) {
                     ForEach(Array(found.enumerated()), id: \.element.id) { index, command in
-                        HStack(spacing: Theme.Space.s) {
+                        HStack(spacing: DS.Space.m) {
                             Image(systemName: command.icon)
-                                .font(.system(size: 11, weight: .medium))
-                                .frame(width: 16)
+                                .dsIcon(DS.IconSize.xl, .medium)
+                                .foregroundStyle(Palette.textMuted.color)
+                                .frame(width: 18)
                             Text(command.title)
-                                .font(.dsMono(Theme.Size.body, .medium))
+                                .textRole(.label)
                                 .lineLimit(1)
-                            Spacer(minLength: Theme.Space.s)
+                            Spacer(minLength: DS.Space.s)
                             Text(command.detail)
-                                .font(.dsMono(Theme.Size.caption))
+                                .textRole(.caption)
                                 .foregroundStyle(Theme.inkSecondary.ui)
                                 .lineLimit(1)
                         }
-                        .padding(.horizontal, Theme.Space.s)
-                        .padding(.vertical, 5)
-                        .background(index == picked ? Theme.barHover.ui : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.badge))
+                        .padding(.horizontal, DS.Space.m)
+                        .frame(height: DS.Size.commandRow)
+                        .background(index == picked ? Palette.hover.color : .clear, in: RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous))
                         .contentShape(Rectangle())
                         .onTapGesture { perform(command) }
                         .onHover { if $0 { picked = index } }
@@ -124,12 +126,24 @@ struct CommandPalette: View {
                         .accessibilityAction { perform(command) }
                     }
                 }
-                .padding(Theme.Space.xs)
+                .padding(DS.Space.s)
             }
+            DSDivider()
+            HStack(spacing: DS.Space.m) {
+                HStack(spacing: DS.Space.xs) { KeyHint("↑", "↓"); Text("Move") }
+                HStack(spacing: DS.Space.xs) { KeyHint("↵"); Text("Choose") }
+                HStack(spacing: DS.Space.xs) { KeyHint("esc"); Text("Close") }
+                Spacer()
+            }
+            .textRole(.caption)
+            .foregroundStyle(Palette.textFaint.color)
+            .padding(.horizontal, DS.Space.l)
+            .frame(height: DS.Size.commandFooter)
         }
         .foregroundStyle(Theme.ink.ui)
-        .frame(width: 480)
+        .frame(width: DS.Size.commandWidth)
         .floatingPanel()
+        .dsLift()
         .onAppear { isFocused = true }
     }
 

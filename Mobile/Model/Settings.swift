@@ -165,7 +165,7 @@ extension RemoteClient {
         if flow.id == mirror.snapshot?.flow.id, abilities.canAct {
             items.append(FlowMenuItem(kind: .settings, title: "Flow Settings…", symbol: "slider.horizontal.3"))
         }
-        items.append(FlowMenuItem(kind: .delete, title: "Delete…", symbol: "trash"))
+        items.append(FlowMenuItem(kind: .delete, title: "Move to Trash…", symbol: "trash"))
         return items
     }
 

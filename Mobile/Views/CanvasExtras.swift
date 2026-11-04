@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// What floats over the canvas besides the bars: the map of the whole flow, the way back out of a sub-flow, the
@@ -48,14 +49,14 @@ struct CanvasMore: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 16, weight: .medium))
+                    .dsIcon(DS.IconSize.bar)
                     .foregroundStyle(Theme.ink.ui)
                     .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                     .contentShape(Rectangle())
             }
             .padding(Theme.Space.xs)
             .floatingPanel()
-            .accessibilityLabel("Canvas")
+            .accessibilityLabel("Canvas menu")
             .accessibilityHint(client.abilities.canAct ? "Shows or hides a map of the whole flow, shows all of it on the canvas, or opens the flow's settings."
                                    : "Shows or hides a map of the whole flow, or shows all of it on the canvas.")
         }
@@ -75,10 +76,10 @@ struct Minimap: View {
                 for card in map.cards {
                     context.fill(Path(card.rect), with: .color(card.tone.ui.opacity(card.isStrong ? 1 : 0.55)))
                     if card.isSelected {
-                        context.stroke(Path(card.rect.insetBy(dx: -1.5, dy: -1.5)), with: .color(Theme.select.ui), lineWidth: 1.5)
+                        context.stroke(Path(card.rect.insetBy(dx: -DS.Stroke.link, dy: -DS.Stroke.link)), with: .color(Theme.select.ui), lineWidth: DS.Stroke.link)
                     }
                 }
-                if let view = map.view { context.stroke(Path(view), with: .color(Theme.select.ui), lineWidth: 1) }
+                if let view = map.view { context.stroke(Path(view), with: .color(Theme.select.ui), lineWidth: DS.Stroke.hairline) }
             }
             .frame(width: Self.size.width, height: Self.size.height)
             .background(Theme.paper.ui)
@@ -147,9 +148,9 @@ struct BackToParent: View {
 
     var body: some View {
         Button { client.goBackToParent() } label: {
-            HStack(spacing: Theme.Space.xs + 2) {
-                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
-                Text("Back to \(parent.name)").dsMono(Theme.Touch.body, .medium).lineLimit(1)
+            HStack(spacing: DS.Space.tight) {
+                Image(systemName: "chevron.left").dsIcon(DS.IconSize.xl, .semibold).accessibilityHidden(true)
+                Text("Back to \(parent.name)").textRole(.label).lineLimit(1)
             }
             .foregroundStyle(Theme.ink.ui)
             .padding(.horizontal, Theme.Space.m)
@@ -171,16 +172,16 @@ struct FailureBanner: View {
     var body: some View {
         let canClose = client.abilities.canAct
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
+            Image(systemName: "exclamationmark.triangle").dsIcon(DS.IconSize.xl).accessibilityHidden(true)
             Text(text)
-                .dsSans()
+                .textRole(.body)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if canClose {
                 let command = client.dismissBannerCommand()
                 Button { Task { await client.dismissBanner() } } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
+                        .dsIcon(DS.IconSize.l, .semibold)
                         .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                         .contentShape(Rectangle())
                 }
@@ -209,9 +210,9 @@ struct CalloutView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            Text(Callout.title).dsMono(Theme.Touch.body, .medium).accessibilityAddTraits(.isHeader)
+            Text(Callout.title).textRole(.label).accessibilityAddTraits(.isHeader)
             Text(callout.text)
-                .dsSans(Theme.Touch.caption + 1)
+                .textRole(.caption)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .fixedSize(horizontal: false, vertical: true)
             // Side by side where both fit whole, the way to start it above the other where they don't.
@@ -229,7 +230,7 @@ struct CalloutView: View {
         }
         .foregroundStyle(Theme.ink.ui)
         .padding(Theme.Space.m)
-        .frame(maxWidth: 360, alignment: .leading)
+        .frame(maxWidth: DS.Size.calloutWidth, alignment: .leading)
         .floatingPanel()
     }
 

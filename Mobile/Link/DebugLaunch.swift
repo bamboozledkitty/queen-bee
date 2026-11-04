@@ -28,6 +28,7 @@ import UIKit
 ///   -qbShow orchestrator|log|output|runs|cost
 ///                                       turn the panel to that page. On an iPhone, with nothing selected,
 ///                                       bring up the panel's sheet too
+///   -qbPlace needsYou|runs|schedules    show that place: in the list's column on an iPad, as the bar's tab or menu item on an iPhone
 ///   -qbDetent large                     on an iPhone, bring each sheet up at full height
 ///   -qbShow details                     with -qbSelect: the details of what that selects, which come up as it
 ///                                       is selected. Without it the state says so, as `panel.showProblem`
@@ -122,6 +123,16 @@ enum DebugLaunch {
     }
 
     static var show: String? { defaults.string(forKey: "qbShow") }
+
+    /// The place a test wants shown above the flows, by `-qbPlace`.
+    static var namedPlace: DevicePlace? {
+        switch defaults.string(forKey: "qbPlace") {
+        case "needsYou": .needsYou
+        case "runs": .runs
+        case "schedules": .schedules
+        default: nil
+        }
+    }
     /// How far up a sheet comes on an iPhone, when a test wants it at full height: "large".
     static var detent: String? { defaults.string(forKey: "qbDetent") }
     /// The setting whose box takes the keyboard once the details show it, by its name in `FieldKey.Name`.
@@ -265,6 +276,8 @@ enum DebugLaunch {
             "sheet": client.sheet?.rawValue ?? NSNull(), "sheetSettled": panel.isSheetSettled,
             "showProblem": showProblem ?? NSNull(),
             "canvasMenu": client.canvasMenu.map(\.title),
+            "places": placesState(client),
+            "restartMenu": client.restartMenu.map { menu in menu.items.map { ["title": $0.title, "enabled": $0.isEnabled] as [String: Any] } } ?? NSNull(),
         ]
         guard let snapshot = client.mirror.snapshot else { return state }
         let viewed = client.canvas.viewedRun
@@ -288,6 +301,7 @@ enum DebugLaunch {
              "cost": $0.cost ?? NSNull(), "onShow": $0.isOnShow] as [String: Any]
         }
         state["viewedRun"] = viewed?.id ?? NSNull()
+        state["workplace"] = snapshot.run.workplace ?? NSNull()
         state["lastViewedRun"] = client.canvas.debugLastViewed ?? NSNull()
         let cost = CostSheet(snapshot, run: run, flows: client.openFlow?.project.flows ?? [])
         func lines(_ all: [CostSheet.Line]) -> [[String]] { all.map { [$0.name, $0.usage.price, $0.usage.tokenCount] } }
@@ -300,6 +314,19 @@ enum DebugLaunch {
             "runPending": cost.runPending ?? NSNull(),
         ]
         state["needsYou"] = WaitingCard.all(in: snapshot).map { ["name": $0.name, "reason": $0.reason] }
+        return state
+    }
+
+    /// What the places above the flows hold, worked out the way their views work it out.
+    private static func placesState(_ client: RemoteClient) -> [String: Any] {
+        var state: [String: Any] = ["macHasOverview": client.mirror.macHasOverview, "needsYouCount": client.flowsNeedingYou]
+        if let overview = client.mirror.overview {
+            let groups = overview.runGroups, schedules = overview.scheduleGroups
+            func names(_ runs: [RemoteRunEntry]) -> [String] { runs.map { "\($0.flowName) #\($0.number ?? 0)" } }
+            state["runs"] = ["running": names(groups.running), "stopped": names(groups.stopped), "done": names(groups.done)]
+            state["schedules"] = ["on": schedules.on.map { "\($0.summary) / \($0.flowName)" }, "off": schedules.off.map { "\($0.summary) / \($0.flowName)" },
+                                  "footer": RemoteOverview.schedulesAreForTheMac]
+        }
         return state
     }
 
@@ -327,6 +354,12 @@ enum DebugLaunch {
         case "retry": return card.map { (.retry(cardID: $0.id), "") }
         case "revert": return card.map { (.revert(cardID: $0.id), "") }
         case "orchestrator": return (.startOrchestrator, "")
+        // The Restart menu's items, by what they restart: restart:all | restart:allExcept | restart:selected | restart:awaiting
+        case "restart":
+            guard let menu = client.restartMenu else { return nil }
+            let titles = ["all": 0, "allExcept": 1, "selected": 2, "awaiting": 3]
+            guard let index = parts.count > 1 ? titles[parts[1]] : nil, menu.items.indices.contains(index), menu.items[index].isEnabled else { return nil }
+            return (.restart(menu.items[index].which), "")
         default: return nil
         }
     }
@@ -604,6 +637,7 @@ enum DebugLaunch {
         case .allow(_, let name, let command): "allow:\(name):\(command)"
         case .reject(_, let name, _, _): "reject:\(name)"
         case .restartOrchestrator: "restart:orchestrator"
+        case .restartAgents(_, let busy): "restartAgents:\(busy.joined(separator: ","))"
         }
         let all = abilities.bar + abilities.cards.values.joined() + abilities.details.values.joined()
         return [
@@ -613,7 +647,7 @@ enum DebugLaunch {
             "bar": titles(abilities.bar),
             "barNote": abilities.barNote ?? NSNull(),
             "cards": byName(abilities.cards),
-            // The banner shows a waiting card's own buttons under its line.
+            // The buttons of each waiting card the banner points to; the banner itself only goes to the card.
             "banner": Dictionary(waitingCards.compactMap { card in abilities.cards[card.id].map { (card.name, titles($0)) } }) { first, _ in first },
             "details": details,
             "answerLine": abilities.answerLine ?? NSNull(),
@@ -720,6 +754,7 @@ enum DebugLaunch {
                 "pairingProblem": client.pairingProblem ?? NSNull(),
                 "flows": client.mirror.library?.projects.flatMap(\.flows).map(\.name) ?? [],
                 "hasKey": DeviceIdentity.key != nil,
+                "link": client.debugLinkEvents,
             ]
             // What the canvas is drawing, written again whenever it changes.
             _ = client.canvas.shownRevision
@@ -749,6 +784,8 @@ enum DebugLaunch {
         } onChange: {
             Task { @MainActor in report(client) }
         }
+        // When this was written, so a test can tell a state that stopped changing from an app that stopped writing.
+        fields["written"] = Date().timeIntervalSince1970
         if let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) {
             try? data.write(to: stateFile, options: .atomic)
         }

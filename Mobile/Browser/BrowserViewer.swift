@@ -1,5 +1,6 @@
 import GameController
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 import UIKit
 
@@ -31,11 +32,11 @@ struct BrowserViewer: View {
         VStack(spacing: 0) {
             HStack(spacing: Theme.Space.m) {
                 Image(systemName: "globe")
-                    .font(.system(size: 15, weight: .medium))
+                    .dsIcon(DS.IconSize.row)
                     .foregroundStyle(Theme.ink.ui)
                     .accessibilityHidden(true)
                 Text(name)
-                    .dsMono(Theme.Touch.title, .medium)
+                    .textRole(.heading)
                     .foregroundStyle(Theme.ink.ui)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
@@ -58,7 +59,7 @@ struct BrowserViewer: View {
             addressBar(page, canAct: canAct)
             if let problem = page.addressProblem ?? feeds.refusals[cardID] {
                 Text(problem)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.failInk.ui)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Theme.Space.l)
@@ -100,7 +101,7 @@ struct BrowserViewer: View {
             barButton("chevron.right", "Forward", isEnabled: canAct && page.canGoForward) { use(.forward) }
             barButton("arrow.clockwise", "Reload this page", isEnabled: canAct) { use(.reload) }
             TextField("Type an address, or what to search for", text: $typed)
-                .dsMono(Theme.Touch.body)
+                .textRole(.body)
                 .foregroundStyle(Theme.ink.ui)
                 .tint(Theme.select.ui)
                 .textInputAutocapitalization(.never)
@@ -117,7 +118,7 @@ struct BrowserViewer: View {
                     return .handled
                 }
                 .padding(.horizontal, Theme.Space.m)
-                .frame(minHeight: 36)
+                .frame(minHeight: Theme.Touch.target)
                 .background(Theme.surface.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card)
                     .strokeBorder((isTypingAddress ? Theme.select : Theme.hairline).ui, lineWidth: Theme.Stroke.card))
@@ -136,7 +137,7 @@ struct BrowserViewer: View {
     private func barButton(_ symbol: String, _ label: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 16, weight: .medium))
+                .dsIcon(DS.IconSize.bar)
                 .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                 .contentShape(Rectangle())
         }
@@ -148,7 +149,7 @@ struct BrowserViewer: View {
     @ViewBuilder private func noticeView(_ notice: BrowserNotice, canAct: Bool) -> some View {
         VStack(spacing: Theme.Space.m) {
             Text(notice.words)
-                .dsSans(Theme.Touch.body)
+                .textRole(.body)
                 .foregroundStyle(Theme.inkSecondary.ui)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -160,18 +161,18 @@ struct BrowserViewer: View {
                 .disabled(!canAct)
                 if !canAct {
                     Text("Your Mac offers this. This device can only watch.")
-                        .dsSans(Theme.Touch.caption + 1)
+                        .textRole(.caption)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 }
             }
             if let refusal = client.settings.browserRefusal {
                 Text(refusal)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.failInk.ui)
                     .multilineTextAlignment(.center)
             }
         }
-        .frame(maxWidth: 360)
+        .frame(maxWidth: DS.Size.calloutWidth)
         .padding(Theme.Space.l)
     }
 
@@ -211,11 +212,11 @@ private struct BrowserKeysBar: View {
             if canAct {
                 HStack(spacing: Theme.Space.s) {
                     ScrollView(.horizontal) {
-                        HStack(spacing: Theme.Space.xs + 2) {
+                        HStack(spacing: DS.Space.tight) {
                             ForEach(Self.keys, id: \.name) { key in
                                 Button { client.pressInBrowser(cardID, key.name) } label: {
                                     HStack(spacing: Theme.Space.xs) {
-                                        if let symbol = key.symbol { Image(systemName: symbol).font(.system(size: 14, weight: .medium)) }
+                                        if let symbol = key.symbol { Image(systemName: symbol).dsIcon(DS.IconSize.xxl) }
                                         if !key.title.isEmpty { Text(key.title) }
                                     }
                                     .padding(.horizontal, Theme.Space.xs)
@@ -225,7 +226,7 @@ private struct BrowserKeysBar: View {
                                 .buttonRepeatBehavior(key.name.hasPrefix("Arrow") || key.name == "Backspace" ? .enabled : .disabled)
                                 .accessibilityLabel(key.spoken)
                             }
-                            Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: 28).padding(.horizontal, Theme.Space.xs)
+                            Rectangle().fill(Theme.hairline.ui).frame(width: DS.Stroke.hairline, height: DS.Size.control).padding(.horizontal, Theme.Space.xs)
                                 .accessibilityHidden(true)
                             Button("Copy") { Task { await client.copyFromBrowser(cardID) } }
                                 .buttonStyle(.panel())
@@ -234,7 +235,7 @@ private struct BrowserKeysBar: View {
                                 .buttonStyle(.panel())
                                 .accessibilityHint("Types what is on this device's clipboard into the page.")
                         }
-                        .padding(.vertical, 1)
+                        .padding(.vertical, DS.Space.xxs)
                     }
                     .scrollIndicators(.hidden)
                     .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
@@ -242,7 +243,7 @@ private struct BrowserKeysBar: View {
                         wantsKeyboard = !isCatching
                     } label: {
                         Image(systemName: isCatching ? "keyboard.chevron.compact.down" : "keyboard")
-                            .font(.system(size: 17, weight: .medium))
+                            .dsIcon(DS.IconSize.bar)
                             .foregroundStyle(Theme.ink.ui)
                             .frame(width: Theme.Touch.target, height: Theme.Touch.target)
                             .contentShape(Rectangle())
@@ -261,12 +262,12 @@ private struct BrowserKeysBar: View {
                                               isCatching = has
                                               if !has { wantsKeyboard = false }
                                           })
-                        .frame(width: 1, height: 1)
+                        .frame(width: DS.Stroke.hairline, height: DS.Stroke.hairline)
                         .accessibilityHidden(true)
                 }
             } else {
                 Text(client.abilities.canAct ? "Nothing can be typed until the page is there." : BrowserViewer.watchOnly)
-                    .dsSans(Theme.Touch.caption + 1)
+                    .textRole(.caption)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .frame(maxWidth: .infinity, minHeight: Theme.Touch.target, alignment: .leading)
                     .padding(.horizontal, Theme.Space.l)

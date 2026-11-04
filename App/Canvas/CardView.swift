@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
 
 /// A round dot on a card's edge that a link starts from or lands on.
 final class PortDotView: NSView {
@@ -16,7 +17,7 @@ final class PortDotView: NSView {
         let d = CanvasGeometry.portRadius * 2 + 6
         super.init(frame: NSRect(x: 0, y: 0, width: d, height: d))
         wantsLayer = true
-        dot.lineWidth = Theme.Stroke.card
+        dot.lineWidth = DS.Stroke.hairline
         layer?.addSublayer(dot)
         toolTip = isOutput ? "\(portLabel(port)): drag from here to another card to link them" : "Messages arrive here"
     }
@@ -30,9 +31,9 @@ final class PortDotView: NSView {
         let r = CanvasGeometry.portRadius + (isHovered && isOutput ? 1.5 : 0)
         let circle = CGRect(x: bounds.midX - r, y: bounds.midY - r, width: r * 2, height: r * 2)
         dot.frame = bounds
-        dot.strokeColor = Theme.ink.cgColor
+        dot.strokeColor = Theme.Canvas.textMuted.cgColor
         dot.ease("path", to: CGPath(ellipseIn: circle, transform: nil), animated: hasDrawn)
-        dot.ease("fillColor", to: (isLinked || isHovered ? Theme.ink : Theme.surface).cgColor, animated: hasDrawn)
+        dot.ease("fillColor", to: (isLinked || isHovered ? Theme.Canvas.textMuted : Theme.Canvas.paper).cgColor, animated: hasDrawn)
         hasDrawn = true
     }
 
@@ -79,6 +80,7 @@ final class TitleBarView: NSView {
 final class BadgeLabel: NSView {
     enum Tone { case plain, live, pass, fail }
 
+    private static let height: CGFloat = 18
     private let label = NSTextField(labelWithString: "")
     private(set) var tone: Tone = .plain
 
@@ -87,8 +89,8 @@ final class BadgeLabel: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Theme.Radius.badge
-        label.font = Theme.mono(Theme.Size.caption, .medium)
+        layer?.cornerRadius = Self.height / 2  // a capsule
+        label.font = TextRole.captionLabel.nsFont()
         addSubview(label)
     }
 
@@ -99,14 +101,15 @@ final class BadgeLabel: NSView {
         if label.stringValue != text { label.stringValue = text }
         isHidden = text.isEmpty
         label.textColor = switch tone {
-        case .plain: Theme.inkSecondary
-        case .live: Theme.liveInk
-        case .pass: Theme.passInk
-        case .fail: Theme.failInk
+        case .plain: Theme.Canvas.textMuted
+        case .live: Theme.Canvas.liveText
+        case .pass: Theme.Canvas.passText
+        case .fail: Theme.Canvas.failText
         }
         label.sizeToFit()
-        setFrameSize(NSSize(width: label.frame.width + 10, height: 16))
-        label.setFrameOrigin(NSPoint(x: 5, y: (16 - label.frame.height) / 2))
+        // A pill: round ends, and room either side of the words.
+        setFrameSize(NSSize(width: label.frame.width + (tone == .plain ? 4 : 14), height: Self.height))
+        label.setFrameOrigin(NSPoint(x: tone == .plain ? 2 : 7, y: (Self.height - label.frame.height) / 2))
         needsDisplay = true
     }
 
@@ -115,9 +118,9 @@ final class BadgeLabel: NSView {
     override func updateLayer() {
         layer?.backgroundColor = switch tone {
         case .plain: NSColor.clear.cgColor
-        case .live: Theme.liveTint.cgColor
-        case .pass: Theme.passTint.cgColor
-        case .fail: Theme.failTint.cgColor
+        case .live: Theme.Canvas.liveTint.cgColor
+        case .pass: Theme.Canvas.passTint.cgColor
+        case .fail: Theme.Canvas.failTint.cgColor
         }
     }
 }
@@ -175,7 +178,8 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         wantsLayer = true
 
         body.wantsLayer = true
-        body.layer?.cornerRadius = Theme.Radius.card
+        body.layer?.cornerRadius = DS.Radius.l
+        body.layer?.cornerCurve = .continuous
         body.layer?.masksToBounds = true
         addSubview(body)
 
@@ -186,10 +190,10 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         body.addSubview(titleRule)
 
         iconView.imageScaling = .scaleProportionallyDown
-        iconView.contentTintColor = Theme.ink
+        iconView.contentTintColor = Theme.Canvas.textMuted
         titleBar.addSubview(iconView)
-        nameLabel.font = Theme.mono(Theme.Size.body, .medium)
-        nameLabel.textColor = Theme.ink
+        nameLabel.font = TextRole.headline.nsFont()
+        nameLabel.textColor = Theme.Canvas.text
         nameLabel.lineBreakMode = .byTruncatingTail
         titleBar.addSubview(nameLabel)
         titleBar.addSubview(runBadge)
@@ -197,11 +201,11 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         overview.wantsLayer = true
         overview.layer?.opacity = 0
         overviewName.alignment = .center
-        overviewName.textColor = Theme.ink
+        overviewName.textColor = Theme.Canvas.text
         overviewName.maximumNumberOfLines = 2
         overviewName.lineBreakMode = .byTruncatingTail
         overviewDetail.alignment = .center
-        overviewDetail.textColor = Theme.inkSecondary
+        overviewDetail.textColor = Theme.Canvas.textMuted
         overviewDetail.lineBreakMode = .byTruncatingTail
         overview.addSubview(overviewName)
         overview.addSubview(overviewDetail)
@@ -279,7 +283,8 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         if shows != (old < Self.overviewBelow) {
             overview.layer?.ease("opacity", to: Float(shows ? 1 : 0), duration: Theme.Motion.standardDuration)
         }
-        // The overview's type is sized to read the same on screen whatever the zoom.
+        // The overview's type is sized to read the same on screen whatever the zoom (never smaller than its normal size);
+        // a card too narrow for it truncates with an ellipsis.
         if shows { needsLayout = true }
     }
 
@@ -340,13 +345,19 @@ class CardView: NSView, NSGestureRecognizerDelegate {
         overview.frame = body.bounds
         if overview.isShowing {
             let scale = 1 / max(zoom, 0.01)
-            overviewName.font = Theme.mono(min(44, 13 * scale), .medium)
-            overviewDetail.font = Theme.mono(min(32, 10 * scale))
+            overviewName.font = TextRole.headline.nsFont(scale: scale)
+            overviewDetail.font = TextRole.captionLabel.nsFont(scale: scale)
             let width = max(0, overview.bounds.width - 24)
-            let nameHeight = min(overviewName.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height, overview.bounds.height * 0.6)
-            let detailHeight = overviewDetail.intrinsicContentSize.height
-            let top = max(4, (overview.bounds.height - nameHeight - detailHeight - 4) / 2)
+            let room = max(0, overview.bounds.height - 8)
+            let fullName = overviewName.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height
+            // A card too short for both lines keeps its name and lets the detail go, rather than cutting it in half.
+            let detailHeight = overviewDetail.stringValue.isEmpty ? 0 : overviewDetail.intrinsicContentSize.height
+            let showsDetail = detailHeight > 0 && min(fullName, room * 0.6) + 4 + detailHeight <= room
+            let nameHeight = showsDetail ? min(fullName, room * 0.6) : min(fullName, room)
+            let shown = nameHeight + (showsDetail ? 4 + detailHeight : 0)
+            let top = max(4, (overview.bounds.height - shown) / 2)
             overviewName.frame = NSRect(x: 12, y: top, width: width, height: nameHeight)
+            overviewDetail.isHidden = !showsDetail
             overviewDetail.frame = NSRect(x: 12, y: top + nameHeight + 4, width: width, height: detailHeight)
         }
 
@@ -374,14 +385,14 @@ class CardView: NSView, NSGestureRecognizerDelegate {
     /// it is selected, it failed, it is live, or nothing in particular.
     var outline: (color: NSColor, width: CGFloat) {
         switch linkDrop {
-        case .accepts: return (Theme.live, Theme.Stroke.selected)
-        case .refuses: return (Theme.failInk, Theme.Stroke.selected)
+        case .accepts: return (Theme.Canvas.live, DS.Stroke.focus)
+        case .refuses: return (Theme.Canvas.fail, DS.Stroke.focus)
         case .none: break
         }
-        if context.isFocused || context.isSelected { return (Theme.select, Theme.Stroke.selected) }
-        if context.mark.failed { return (Theme.failInk, Theme.Stroke.link) }
-        if context.isLive { return (Theme.live, Theme.Stroke.link) }
-        return (Theme.ink, Theme.Stroke.card)
+        if context.isFocused || context.isSelected { return (Theme.Canvas.accent, DS.Stroke.focus) }
+        if context.mark.failed { return (Theme.Canvas.fail, DS.Stroke.link) }
+        if context.isLive { return (Theme.Canvas.live, DS.Stroke.link) }
+        return (Theme.Canvas.outline, DS.Stroke.hairline)
     }
 
     override var wantsUpdateLayer: Bool { true }
@@ -389,14 +400,14 @@ class CardView: NSView, NSGestureRecognizerDelegate {
     // Layer colours are set here because this runs with the view's own light or dark
     // appearance in force, so they follow a change of mode.
     override func updateLayer() {
-        body.layer?.backgroundColor = Theme.surface.cgColor
+        body.layer?.backgroundColor = Theme.Canvas.card.cgColor
         // The outline and the title's tint ease, so selecting and hovering don't snap.
         body.layer?.ease("borderColor", to: outline.color.cgColor, animated: hasDrawn)
         body.layer?.ease("borderWidth", to: outline.width, animated: hasDrawn)
-        titleBar.layer?.ease("backgroundColor", to: (titleBar.isHovered ? Theme.barHover : Theme.bar).cgColor, animated: hasDrawn)
-        titleRule.layer?.backgroundColor = Theme.hairline.cgColor
+        titleBar.layer?.ease("backgroundColor", to: (titleBar.isHovered ? Theme.Canvas.cardHover : Theme.Canvas.card).cgColor, animated: hasDrawn)
+        titleRule.layer?.backgroundColor = Theme.Canvas.rule.cgColor
         // From far out, the overview's tint is what says a card is live or where a run stopped.
-        let tint = context.mark.failed ? Theme.failTint : context.isLive ? Theme.liveTint : Theme.surface
+        let tint = context.mark.failed ? Theme.Canvas.failTint : context.isLive ? Theme.Canvas.liveTint : Theme.Canvas.card
         overview.layer?.ease("backgroundColor", to: tint.cgColor, animated: hasDrawn)
         updateContentLayers()
         hasDrawn = true
@@ -694,7 +705,7 @@ final class ResizeGripView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        Theme.inkSecondary.setStroke()
+        Theme.Canvas.textFaint.setStroke()
         let path = NSBezierPath()
         for inset in stride(from: CGFloat(5), through: 11, by: 3) {
             path.move(to: NSPoint(x: bounds.maxX - 3, y: bounds.maxY - inset))

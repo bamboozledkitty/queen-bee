@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The app's icon in the menu bar. A raised hand and a count when cards are waiting on you, a filled hexagon
@@ -10,7 +11,7 @@ struct MenuBarLabel: View {
     var body: some View {
         let waiting = services.needingYou.count
         let running = services.allFlows.contains(where: \.isRunning)
-        HStack(spacing: 3) {
+        HStack(spacing: DS.Space.xs) {
             Image(systemName: waiting > 0 ? "hand.raised.fill" : running ? "hexagon.fill" : "hexagon")
             if waiting > 0 { Text("\(waiting)") }
         }
@@ -36,7 +37,7 @@ struct MenuBarMenu: View {
             Section("Waiting on you") {
                 ForEach(Array(waiting.enumerated()), id: \.offset) { _, item in
                     Button("\(item.card.name) · \(item.controller.flow.name)") {
-                        services.reveal(flowID: item.controller.flow.id, cardID: item.card.id)
+                        services.reveal(item.controller, cardID: item.card.id)
                     }
                 }
             }
@@ -49,11 +50,11 @@ struct MenuBarMenu: View {
                 ForEach(Array(open.enumerated()), id: \.offset) { _, controller in
                     if controller.isRunning {
                         Menu("\(controller.flow.name) · running") {
-                            Button("Show") { services.reveal(flowID: controller.flow.id, cardID: nil) }
+                            Button("Show") { services.reveal(controller, cardID: nil) }
                             Button("Stop the Run") { Task { await controller.stop() } }
                         }
                     } else {
-                        Button("\(controller.flow.name) · not running") { services.reveal(flowID: controller.flow.id, cardID: nil) }
+                        Button("\(controller.flow.name) · not running") { services.reveal(controller, cardID: nil) }
                     }
                 }
             }

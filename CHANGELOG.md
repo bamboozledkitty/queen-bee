@@ -6,8 +6,45 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- In "Where this flow works", This folder no longer switches your folder's branch: agents work on whatever branch it has checked out. Flows set before keep working until you apply the form again. A worktree can be made on a new branch, started from any local branch, or on an existing local branch. The branch lists are searchable, and two branches whose names differ only by a slash or a dash (feature/foo and feature-foo) no longer share a worktree folder.
+- A new look, after Linear's apps, in Queen Bee's own colours, on the Mac and on the iPhone and iPad. On the Mac the sidebar sits on the window's colour, a thin line away from the flow, which fills the rest of the window flat, with its header along the top and a gear in the canvas's top right corner for the flow's settings; cards, panels, buttons and the ⌘K menu are redrawn to match. On the iPhone a floating bar at the foot of the first screen holds Needs you, Flows and a menu with your Mac, Settings and pinned flows. Light and dark both follow it. Agents and the orchestrator are still live Claude Code sessions.
+- Both apps now share one design system, so a colour, a type size, a spacing step or a timing is set in one place for both.
+- On the Mac the window has no title bar. A flow's header holds a pin, a More menu (Rename, Pin, Flow Settings, Move to Trash), where it works, Run and Stop, Run from in the arrow on Run's other half, and Restart. Flow Settings, or the gear over the canvas, opens the flow's settings in a sheet over the canvas; Done or Esc closes it. The Queen Bee menu at the top of the sidebar shows the app's icon, and search opens from a button.
+- In the sidebar a running flow has a blue dot, and a flow that needs you or has stopped says so in words instead, and VoiceOver says which.
+- A polish of both apps: grey text reads clearly on every surface; nothing is set smaller than 11 points; card names stay readable however far out you zoom; a card's warning is grey with a small red mark, and red is kept for a card that failed; Approve is the main button wherever you answer; a waiting card's settings are marked with an orange edge rather than filled orange; Needs you, Runs, Schedules and Devices share one centred column with a title, and Needs you has a Go to card button on each row; one way of writing times, with the seconds in the log; on the iPhone and iPad the banner over the canvas is one line that goes to the waiting card, "Watching only" is one line, and the cost page's bars are lighter.
+- Times follow your Mac's setting everywhere. The side panel's runs show their number.
+- Turning a schedule on from the Schedules list first shows when it runs and the command it starts with, and asks.
+- Text set in the faint colour is easier to read, and the new animations follow Reduce Motion.
+- On the iPhone and iPad: Needs you lists only flows waiting on you; deleting a flow says Move to Trash, as on the Mac; the orchestrator opens at full height so its terminal can be read; the iPad's list of flows sits beside the canvas when held sideways; small controls are at least 44 points; and large text no longer cuts off buttons. Card names and words match the Mac's sizes. The connection bar hides when all is well.
+
+### Added
+
+- Needs you, Runs, Schedules and Devices at the top of the Mac's sidebar: what waits on you, every flow's runs with each one's log, every schedule with Turn on and Turn off, and your paired devices.
+- Runs are numbered (#12), and a run keeps its number after older runs are let go.
+- On the iPad and iPhone: the Mac's Restart menu in the run bar for a device that can control, with the same items; the branch or worktree a flow works in, shown on the canvas and changed only on the Mac; Runs and Schedules across every open project (on the iPad above the flows, on the iPhone in the bar's menu), where a tap on a run opens its flow with that run on show; and Needs you on the iPad. The Schedules list on a device is read-only: a schedule is turned on or off in its Start card.
+
 ### Fixed
 
+- Picking a card in Needs you or Schedules zooms to it again when its flow was already the one open.
+- Sidebar rows and the add-card list can be used with the keyboard and VoiceOver, and the arrows on menu buttons are no longer read out as separate buttons.
+- The Start, Restart and Retry buttons on an agent card no longer let the terminal's text show through, and while an agent is slow to start the card says Claude Code may be asking whether to trust the folder.
+- Zoom to fit no longer leaves a gap at the top of the canvas where the title bar used to be.
+- After a run ends, the path it took turns green like its links. A run with no hand-offs no longer says "0 hand-offs", and an And or Or card with nothing linked says to link cards into it.
+- The menu bar shows "Queen Bee", with its space.
+- Two flows with the same id in different projects, as when a flow file is copied, no longer get mixed up: picking one opens that one, only its row is selected, and both show in the iPad's list of flows. Run and schedule rows on the iPad and iPhone say which project they are from when more than one is open.
+- The note that Claude Code may be asking whether to trust the folder sits above the terminal, so the question it points to stays in view.
+- After an Approval card, the End card's log names the Approval card as where the answer came from, unless a Script or Prompt card changed the answer after it.
+- Run numbers keep counting after Clear log, and aren't used twice.
+- Deleting or closing the flow on screen no longer takes you away from Needs you, Runs or Schedules.
+- Pinning a flow that was copied into another open project pins only that copy, and closing one project no longer stops the other project's copy from hearing from its agents.
+- On a device, tapping a schedule opens its own Start card when the flow has more than one with the same name.
+- A schedule's time and the hour picker follow your Mac's 12- or 24-hour setting.
+- The inspector no longer covers the card it shows, new cards land where you can see them, and the minimap draws a folded group as one card. The earlier-run note says which run it is.
+- Inspector menus are named for VoiceOver ("Role", "Model"), and icons that only decorate are no longer read out.
+- A paired device's copy of a terminal could have blank lines at the top of its earlier output when the session had printed something before its card was laid out. It now starts where the Mac's terminal does.
+- On the iPad, tapping a notification, or its Approve or Reject, no longer closes the app; the orchestrator's terminal no longer goes blank after the iPad is turned back upright; and large text now grows the app's text, while cards keep the Mac's sizes. On a device, Undo is ready right after a change made there, the branch shows for a flow the Mac hasn't opened yet, and tapping an earlier run while one is going says why it can't be shown yet.
 - A copy of Queen Bee built from source ("Queen Bee Dev") no longer asks for your Keychain password after every build. It kept paired devices' keys in the login keychain, which trusts an app by its exact build, so each new build had to be allowed again. It now keeps them in a file only your account can read, in its own data folder; a device paired with it has to be paired again once, and Settings says so. The installed app keeps its keys in the Keychain as before.
 
 ## [0.8.0] - 2026-10-30

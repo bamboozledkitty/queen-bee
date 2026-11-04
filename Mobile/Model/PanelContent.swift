@@ -5,22 +5,13 @@ import QueenBeeCore
 /// `FlowController` works out for its own panels, reading the snapshot where the Mac reads itself. They are
 /// plain values, so a test can read exactly what a panel shows without looking at the screen.
 
-/// Times as the Mac's panels write them.
+/// Times as the Mac's panels write them, from the same `RunClock`, in the person's own 12- or 24-hour style.
 nonisolated enum Clock {
-    private static func style(_ format: Date.FormatString) -> Date.VerbatimFormatStyle {
-        Date.VerbatimFormatStyle(format: format, locale: .current, timeZone: .current, calendar: .current)
-    }
-
     /// "14:02:09", for a line of the log or a message.
-    static func time(_ date: Date) -> String {
-        date.formatted(style("\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)"))
-    }
+    static func time(_ date: Date) -> String { RunClock.time(date, seconds: true) }
 
-    /// When a run began: "14:02" today, "3 Oct 14:02" before that.
-    static func run(_ date: Date) -> String {
-        let clock = date.formatted(style("\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)"))
-        return Calendar.current.isDateInToday(date) ? clock : date.formatted(style("\(day: .defaultDigits) \(month: .abbreviated)")) + " " + clock
-    }
+    /// When a run began: "14:02" today, "3 Oct, 14:02" before that.
+    static func run(_ date: Date) -> String { RunClock.moment(date) }
 
     /// How long a run took: "42 sec", "3 min 5 sec", "1 hr 4 min".
     static func length(from start: Date, to end: Date) -> String {
@@ -342,6 +333,8 @@ nonisolated struct Details: Equatable {
 /// One earlier run, as the list of runs shows it.
 nonisolated struct RunRow: Equatable, Identifiable {
     var id: String
+    /// Its number in its flow, as the Mac gives it: counting from 1 and never reused. Nil for a run kept before runs were numbered.
+    var number: Int?
     /// When it began.
     var started: String
     var outcome: RunRecord.Outcome
@@ -358,7 +351,7 @@ nonisolated struct RunRow: Equatable, Identifiable {
         // With nothing picked the latest run is on show, unless another is going now.
         let shown = viewed?.id ?? (snapshot.run.isRunning ? nil : snapshot.runs.last?.id)
         return snapshot.runs.reversed().map { run in
-            RunRow(id: run.id, started: Clock.run(run.started), outcome: run.outcome, length: Clock.length(from: run.started, to: run.ended),
+            RunRow(id: run.id, number: run.number, started: Clock.run(run.started), outcome: run.outcome, length: Clock.length(from: run.started, to: run.ended),
                    command: run.command, handOffs: "\(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")",
                    cost: run.usage == nil ? nil : run.cost.price, isOnShow: run.id == shown)
         }
@@ -366,7 +359,7 @@ nonisolated struct RunRow: Equatable, Identifiable {
 
     /// Read out as one sentence.
     var spoken: String {
-        "Run from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? ""). \(command)\(isOnShow ? ". On show." : "")"
+        "Run \(number.map { "\($0) " } ?? "")from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? ""). \(command)\(isOnShow ? ". On show." : "")"
     }
 }
 

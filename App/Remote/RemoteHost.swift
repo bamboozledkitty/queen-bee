@@ -82,6 +82,8 @@ final class RemoteHost {
     @ObservationIgnored private var pairingListener: LinkListener?
     @ObservationIgnored private(set) var pairingPort: UInt16?
     @ObservationIgnored private var lastLibrary: RemoteLibrary?
+    /// The Runs and Schedules lists as devices were last sent them.
+    @ObservationIgnored private var lastOverview: RemoteOverview?
     /// When the flow list was last worked out, and the wait for the next time it may be. It is worked out at most
     /// once a second, however fast what it is made from changes: a card dragged on the Mac changes a flow sixty
     /// times a second.
@@ -103,7 +105,28 @@ final class RemoteHost {
     @ObservationIgnored var testPorts: (pairing: UInt16?, device: UInt16?) = (nil, nil)
     /// The port each device paired that way is listened for on.
     @ObservationIgnored private var testDevicePorts: [String: UInt16] = [:]
+    /// What happened to listeners and connections lately, newest last, for a test that failed to say why.
+    @ObservationIgnored private(set) var debugEvents: [String] = []
     #endif
+
+    /// What `noteForTest` kept. Always empty outside a Debug build.
+    var testEvents: [String] {
+        #if DEBUG
+        debugEvents
+        #else
+        []
+        #endif
+    }
+
+    /// Notes a listener or connection event for a test. Nothing outside a test copy.
+    func noteForTest(_ text: @autoclosure () -> String) {
+        #if DEBUG
+        guard TestHarness.isEnabled else { return }
+        let clock = Date().formatted(.iso8601.time(includingFractionalSeconds: true)) + "Z"
+        debugEvents.append("\(clock) \(text())")
+        if debugEvents.count > 60 { debugEvents.removeFirst(debugEvents.count - 60) }
+        #endif
+    }
 
     /// The port a test fixed for the pairing listener, or for a device's. Nil, always, outside a test copy.
     private func fixedPort(for deviceID: String?) -> UInt16? {
@@ -156,6 +179,7 @@ final class RemoteHost {
         watch += 1
         // The next device to connect after Remote comes back on must be sent the list, changed or not.
         lastLibrary = nil
+        lastOverview = nil
         libraryLater?.cancel()
         libraryLater = nil
     }
@@ -182,15 +206,20 @@ final class RemoteHost {
             let listener = try LinkListener(key: key, service: service, localOnly: localOnly, largestInbound: Self.largestFromDevice,
                                             port: fixedPort(for: id))
             listeners[id] = listener
+            noteForTest("device \(id.prefix(4)): listener starting on \(fixedPort(for: id).map(String.init) ?? "any port")")
             Task {
                 do {
                     let port = try await listener.start(onFailure: { error in
                         Task { @MainActor in RemoteHost.shared.listenerEnded(listener, deviceID: id, error: error) }
                     }) { connection in
-                        Task { @MainActor in await RemoteHost.shared.serve(connection, deviceID: id, from: listener) }
+                        Task { @MainActor in
+                            RemoteHost.shared.noteForTest("device \(id.prefix(4)): connection in")
+                            await RemoteHost.shared.serve(connection, deviceID: id, from: listener)
+                        }
                     }
                     // It may have been stopped or replaced while it was starting.
                     guard listeners[id] === listener else { return }
+                    noteForTest("device \(id.prefix(4)): listening on \(port)")
                     ports[id] = port
                     listening(id)
                 } catch {
@@ -198,6 +227,7 @@ final class RemoteHost {
                 }
             }
         } catch {
+            noteForTest("device \(id.prefix(4)): listener couldn't be made: \(error)")
             listeningFailed(id, error: error)
         }
     }
@@ -207,6 +237,7 @@ final class RemoteHost {
     private func listenerEnded(_ listener: LinkListener, deviceID id: String, error: Error) {
         // Stopped on purpose or already replaced: the device was unpaired or paired again, or Remote was turned off.
         guard listeners[id] === listener else { return }
+        noteForTest("device \(id.prefix(4)): listener ended: \(error)")
         listener.stop()
         listeners[id] = nil
         ports[id] = nil
@@ -289,6 +320,7 @@ final class RemoteHost {
         // One too many from anywhere, or from one address, is closed before it costs a handshake.
         let address = connection.remoteHost
         guard gate.admit(address) else {
+            noteForTest("connection from \(address ?? "?") turned away: too many")
             connection.close()
             throw LinkError("too many connections")
         }
@@ -307,23 +339,27 @@ final class RemoteHost {
     }
 
     private func serve(_ connection: LinkConnection, deviceID: String, from listener: LinkListener) async {
+        let tag = "device \(deviceID.prefix(4))"
         do {
             guard case .hello(let hello) = try await opening(DeviceMessage.self, on: connection, deviceID: deviceID) else {
+                noteForTest("\(tag): first message wasn't hello")
                 connection.close()
                 return
             }
-            guard try await sameVersion(hello, on: connection) else { return }
+            guard try await sameVersion(hello, on: connection) else { return noteForTest("\(tag): other version") }
             // Ids are kept in lower case, and a device may send its own in either.
             guard isOn, hello.deviceID.lowercased() == deviceID, let device = devices.devices.first(where: { $0.id == deviceID }) else {
+                noteForTest("\(tag): refused as unpaired")
                 // Told, so the device can say so instead of trying again for ever as if the link had dropped.
                 try await connection.send(HostMessage.refused(Remote.unpairedRefusal))
                 connection.close()
                 return
             }
             // The listener it came in by was replaced while it was arriving. It can simply connect again.
-            guard listeners[deviceID] === listener else { connection.close(); return }
+            guard listeners[deviceID] === listener else { noteForTest("\(tag): came in by a replaced listener"); connection.close(); return }
             await welcome(device, hello: hello, on: connection)
         } catch {
+            noteForTest("\(tag): opening failed: \(error)")
             connection.close()
         }
     }
@@ -343,10 +379,14 @@ final class RemoteHost {
         closeSessions(of: device.id)
         let session = RemoteSession(connection: connection, device: device, hello: hello, viaAddress: viaAddress)
         sessions.append(session)
+        let began = Date()
         session.send(.welcome(RemoteWelcome(version: Remote.version, macName: macName, canControl: device.canControl,
-                                            features: [RemoteFeature.commandMemory], memoryID: Self.memoryID)))
+                                            features: [RemoteFeature.commandMemory, RemoteFeature.overview], memoryID: Self.memoryID)))
         session.send(.library(library()))
+        if session.hasOverview { session.send(.overview(overview())) }
+        noteForTest("device \(device.id.prefix(4)): welcomed, list and overview made in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
         await session.run()
+        noteForTest("device \(device.id.prefix(4)): session ended after \(String(format: "%.1f", Date().timeIntervalSince(began))) s")
         sessions.removeAll { $0 === session }
     }
 
@@ -522,9 +562,7 @@ final class RemoteHost {
     private func libraryWithoutUsage() -> RemoteLibrary {
         let services = AppServices.shared
         let found = browserName()
-        // Ids that flows of more than one open project have: a device can't open or change those.
-        var seen = Set<String>(), shared = Set<String>()
-        for controller in services.allFlows where !seen.insert(controller.flow.id).inserted { shared.insert(controller.flow.id) }
+        let shared = Self.sharedFlowIDs()
         return RemoteLibrary(projects: services.projects.map { project in
             // One for the project, as working it out reads every flow.
             let nesting = project.nesting
@@ -533,7 +571,7 @@ final class RemoteHost {
                 let outer = nesting.outerFlows(of: id)
                 return RemoteFlowSummary(id: id, name: controller.flow.name, isSubflow: controller.flow.isSubflow == true,
                                          activity: controller.activity, parentID: outer.count == 1 ? outer[0] : nil,
-                                         pinned: services.pinnedFlowIDs.contains(id), cardNames: Remote.listedNames(of: controller.flow),
+                                         pinned: services.isPinned(controller), cardNames: Remote.listedNames(of: controller.flow),
                                          sharedID: shared.contains(id) ? true : nil)
             }, browser: Self.browserState(of: project, browser: found))
         // What a role holds, so a device can say when a card has drifted from it, with the start of its instructions and a
@@ -542,6 +580,45 @@ final class RemoteHost {
             RemoteRole.listed(id: $0.id, name: $0.name, instructions: $0.instructions, model: $0.model, effort: $0.effort,
                               permissionMode: $0.permissionMode, changedFrom: $0.changedFrom?.device, changedAt: $0.changedFrom?.date)
         })
+    }
+
+    /// Ids that flows of more than one open project have: a device can't open or change those.
+    private static func sharedFlowIDs() -> Set<String> {
+        var seen = Set<String>(), shared = Set<String>()
+        for controller in AppServices.shared.allFlows where !seen.insert(controller.flow.id).inserted { shared.insert(controller.flow.id) }
+        return shared
+    }
+
+    /// The Mac's Runs and Schedules places as a device is sent them, for every open project the flow list shows, so a
+    /// device sees no more than it does there. A run is a line and a schedule carries no command: see `RemoteOverview`.
+    private func overview() -> RemoteOverview {
+        let shared = Self.sharedFlowIDs()
+        var runs: [RemoteRunEntry] = [], schedules: [RemoteScheduleEntry] = []
+        for project in AppServices.shared.projects {
+            let projectID = project.root.path
+            for controller in project.controllers {
+                let flowID = controller.flow.id, name = controller.flow.name
+                let isShared: Bool? = shared.contains(flowID) ? true : nil
+                if controller.isRunning {
+                    runs.append(RemoteRunEntry(flowID: flowID, flowName: name, projectID: projectID, projectName: project.name, runID: nil,
+                                               number: controller.nextRunNumber, outcome: nil, summary: "Running",
+                                               handOffs: controller.handOffs, started: nil, sharedID: isShared))
+                }
+                for record in controller.runs {
+                    runs.append(RemoteRunEntry(flowID: flowID, flowName: name, projectID: projectID, projectName: project.name, runID: record.id,
+                                               number: record.number, outcome: record.outcome, summary: record.summary, handOffs: record.handOffs,
+                                               started: record.started, cost: record.cost.isZero ? nil : record.cost, sharedID: isShared))
+                }
+                for card in controller.flow.cards where card.kind == .start {
+                    guard let trigger = card.trigger else { continue }
+                    let armed = controller.isArmed(card)
+                    schedules.append(RemoteScheduleEntry(flowID: flowID, flowName: name, projectID: projectID, projectName: project.name, cardID: card.id,
+                                                         cardName: card.name, summary: trigger.summary(in: .current), isFile: trigger.kind == .file, armed: armed,
+                                                         next: armed ? controller.nextFires[card.id] : nil, sharedID: isShared))
+                }
+            }
+        }
+        return RemoteOverview.made(runs: runs, schedules: schedules)
     }
 
     /// The same list with what each flow's own sessions have used, and that with every sub-flow below it.
@@ -615,10 +692,12 @@ final class RemoteHost {
         }
         libraryBuilt = Date()
         var base = RemoteLibrary(projects: [])
-        withObservationTracking { base = libraryWithoutUsage() } onChange: {
+        var lists = RemoteOverview()
+        withObservationTracking { base = libraryWithoutUsage(); lists = overview() } onChange: {
             Task { @MainActor in RemoteHost.shared.watchLibrary(generation) }
         }
         send(withUsage(base))
+        send(lists)
     }
 
     /// Looks at what flows have cost every few seconds, and sends the list if it has changed.
@@ -634,6 +713,12 @@ final class RemoteHost {
                 if current != last { self.send(current) }
             }
         }
+    }
+
+    private func send(_ current: RemoteOverview) {
+        guard current != lastOverview else { return }
+        lastOverview = current
+        for session in sessions where session.hasOverview { session.send(.overview(current)) }
     }
 
     private func send(_ current: RemoteLibrary) {
@@ -660,13 +745,19 @@ final class RemoteHost {
             let listener = try LinkListener(key: offer.code.secret, service: service, localOnly: localOnly,
                                             largestInbound: Self.largestFromDevice, port: fixedPort(for: nil))
             pairingListener = listener
+            noteForTest("pairing: listener starting on \(fixedPort(for: nil).map(String.init) ?? "any port")")
             Task {
                 do {
                     let port = try await listener.start { connection in
-                        Task { @MainActor in await RemoteHost.shared.pair(connection, offer: offer) }
+                        Task { @MainActor in
+                            RemoteHost.shared.noteForTest("pairing: connection in")
+                            await RemoteHost.shared.pair(connection, offer: offer)
+                        }
                     }
+                    noteForTest("pairing: listening on \(port)")
                     if pairing == offer { pairingPort = port }
                 } catch {
+                    noteForTest("pairing: listener failed: \(error)")
                     // A listener stopped because the code was used, put away or replaced hasn't failed.
                     guard pairing == offer else { return }
                     pairingProblem = "Queen Bee couldn't start pairing: \(error)"
@@ -745,6 +836,9 @@ final class RemoteHost {
                 remove(id)
                 return
             }
-        } catch {}
+            noteForTest("pairing: device \(id.prefix(4)) given its key")
+        } catch {
+            noteForTest("pairing: failed: \(error)")
+        }
     }
 }

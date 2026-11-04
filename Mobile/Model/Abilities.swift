@@ -25,6 +25,8 @@ nonisolated enum Press: Hashable, Sendable {
     case revert(cardID: String)
     /// The orchestrator panel's Start, Restart or "Restart to apply".
     case startOrchestrator
+    /// An item of the run bar's Restart menu.
+    case restart(RemoteRestart)
 
     /// The command this press sends. `note` is what the person said when rejecting.
     func command(flowID: String, note: String = "") -> RemoteCommand {
@@ -41,6 +43,7 @@ nonisolated enum Press: Hashable, Sendable {
         case .retry(let cardID): .retry(flowID: flowID, cardID: cardID)
         case .revert(let cardID): .revertSettings(flowID: flowID, cardID: cardID)
         case .startOrchestrator: .startSession(flowID: flowID, cardID: Remote.orchestratorKey)
+        case .restart(let which): .restartAgents(flowID: flowID, which: which)
         }
     }
 
@@ -60,6 +63,7 @@ nonisolated enum Press: Hashable, Sendable {
                  (.allow(let id), .allowScript(_, let other)), (.allow(let id), .refuseScript(_, let other)),
                  (.dontRun(let id), .allowScript(_, let other)), (.dontRun(let id), .refuseScript(_, let other)): id == other
             case (.startAgent(let id), .startSession(_, let other)): id == other
+            case (.restart, .restartAgents): true
             default: false
             }
         }
@@ -117,7 +121,10 @@ nonisolated struct Abilities: Equatable {
     var orchestrator: PressButton?
 
     static let howToTurnOn = "This device can only watch. To run and answer from here, turn on “Can control” for it on your Mac: Settings, then Remote."
-    static let nothingToRun = "Nothing to run yet. On your Mac, give the Start card something to start with and link it to a card."
+    /// The Mac's own words. This is only said to a device that can control the Mac, and so can edit the flow too,
+    /// so it points at no other place to do it.
+    static let nothingToRun = "Nothing to run yet: give the Start card something to start with and link it to a card."
+    static let noStartCard = "Nothing to run yet: add a Start card, give it something to start with and link it to a card."
 
     init() {}
 
@@ -168,7 +175,7 @@ nonisolated struct Abilities: Equatable {
             var runButton = button("Run", .run, main: true, hint: "Runs the flow on your Mac from its Start card.")
             if !canRun {
                 runButton.isEnabled = false
-                barNote = Self.nothingToRun
+                barNote = startCards.isEmpty ? Self.noStartCard : Self.nothingToRun
             }
             bar = [runButton]
         }
@@ -298,6 +305,8 @@ nonisolated enum Ask: Hashable, Identifiable, Sendable {
     case reject(holdID: String, name: String, from: String, text: String)
     /// Restarting the orchestrator while its session is running. `isWorking` is whether it would be interrupted.
     case restartOrchestrator(isWorking: Bool)
+    /// Restarting several agents from the run bar's menu, when some of them are in the middle of a task: their names.
+    case restartAgents(RemoteRestart, busy: [String])
 
     var id: Self { self }
 
@@ -305,7 +314,7 @@ nonisolated enum Ask: Hashable, Identifiable, Sendable {
     var isSheet: Bool {
         switch self {
         case .allow, .reject: true
-        case .stop, .restart, .restartOrchestrator: false
+        case .stop, .restart, .restartOrchestrator, .restartAgents: false
         }
     }
 }
@@ -467,9 +476,29 @@ extension RemoteClient {
             } else {
                 controls.ask(.restartOrchestrator(isWorking: state == .working || state == .needsYou), in: flowID)
             }
+        case .restart(let which):
+            // The Mac asks this of the person at the Mac. A restart cuts short what an agent is doing, so it is asked here.
+            let agents = snapshot.flow.cards.filter { $0.kind == .agent }.map { (id: $0.id, name: $0.name) }
+            let busy = RestartMenu.busy(which, sessions: snapshot.run.sessions, agents: agents, awaiting: Set(snapshot.run.awaitingRestart.keys),
+                                        orchestratorAwaiting: snapshot.run.orchestratorNeedsRestart)
+            if busy.isEmpty {
+                Task { await perform(press, in: flowID) }
+            } else {
+                controls.ask(.restartAgents(which, busy: busy), in: flowID)
+            }
         case .run, .startAgents, .approve, .dontRun, .runFromStart, .retry, .revert:
             Task { await perform(press, in: flowID) }
         }
+    }
+
+    /// The run bar's Restart menu, in the Mac's words: nil unless this device may control and the Mac has the menu.
+    /// "Restart Selected" goes by the cards selected on this device's canvas. The Mac's own selection is never used.
+    var restartMenu: RestartMenu? {
+        guard abilities.canAct, mirror.macHasOverview, let snapshot = mirror.snapshot else { return nil }
+        let agents = snapshot.flow.cards.filter { $0.kind == .agent }.map(\.id)
+        let selected = agents.filter { canvas.selection.cardIDs.contains($0) }
+        let awaiting = snapshot.run.awaitingRestart.count + (snapshot.run.orchestratorNeedsRestart ? 1 : 0)
+        return RestartMenu(selected: selected, awaiting: awaiting)
     }
 
     /// The person said yes to what was asked. The answer goes to the flow the question was asked about, and
@@ -484,6 +513,7 @@ extension RemoteClient {
         case .allow(let holdID, _, _): .allow(holdID: holdID)
         case .reject(let holdID, _, _, _): .reject(holdID: holdID)
         case .restartOrchestrator: .startOrchestrator
+        case .restartAgents(let which, _): .restart(which)
         }
         Task { await perform(press, note: note, in: flowID) }
     }

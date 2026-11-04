@@ -58,7 +58,7 @@ Don't describe a capability anywhere else: not in the orchestrator's prompt in `
 ## How the code is written
 
 - Anything that can be decided without a window goes in `Core/` and gets a test there.
-- Every colour, type size, spacing step and timing comes from `App/Design/Tokens.swift`. `Mobile/Design/Tokens.swift` mirrors it value for value, so change a value in both.
+- Every colour, type size, spacing step and timing comes from the shared design system in `Core/Sources/QueenBeeDesign`, which both apps use, along with its parts (buttons, status pills, rows, tabs). Screens arrange those and set no colour or size of their own.
 - Words people read are plain, with no jargon. Claude Code's own option names (effort, permission modes, model) stay exactly as Claude Code writes them. Comments and docs follow the same plain style.
 - Swift 6 language mode. The app target isolates to the main actor by default.
 - Anything that lets a flow file or the orchestrator do something on the person's Mac without asking needs a line in `SECURITY.md`.
@@ -66,7 +66,7 @@ Don't describe a capability anywhere else: not in the orchestrator's prompt in `
 
 ## Core
 
-- Two libraries: `QueenBeeCore`, and `QueenBeeLink`, the device link's networking and keys. Each has its own test target in `Core/Tests/`.
+- Three libraries: `QueenBeeCore`, `QueenBeeLink`, the device link's networking and keys, and `QueenBeeDesign`, the design system. Each has its own test target in `Core/Tests/`.
 - Tests use Swift Testing (`import Testing`, `@Test`), mostly one test file per source file.
 - No SwiftUI, AppKit or UIKit. Core is built for both the Mac and iOS, and CI builds it for the iOS Simulator too.
 

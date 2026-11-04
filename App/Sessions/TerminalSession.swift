@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import QueenBeeCore
+import QueenBeeDesign
 
 extension SessionState {
     var color: NSColor {
@@ -71,7 +72,7 @@ final class TerminalSession: NSObject {
         self.key = key
         view = SessionTerminalView(frame: NSRect(x: 0, y: 0, width: 520, height: 320))
         super.init()
-        view.font = Theme.mono(12)
+        view.font = TextRole.mono.nsFont()
         view.onExit = { [weak self] code in self?.processExited(code) }
         applyTheme()
         // The terminal takes plain colours, so it is told again whenever light and dark swap.
@@ -82,8 +83,8 @@ final class TerminalSession: NSObject {
 
     private func applyTheme() {
         let appearance = NSApp.effectiveAppearance
-        view.nativeBackgroundColor = Theme.terminal.fixed(in: appearance)
-        view.nativeForegroundColor = Theme.terminalInk.fixed(in: appearance)
+        view.nativeBackgroundColor = Theme.Canvas.terminal.fixed(in: appearance)
+        view.nativeForegroundColor = Theme.Canvas.terminalText.fixed(in: appearance)
     }
 
     private func makeFeed() -> TerminalFeed {

@@ -1,4 +1,5 @@
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// What editing a flow adds outside the canvas: the bar, the list a held finger brings up, and the questions
@@ -37,12 +38,14 @@ struct EditBar: View {
                 Button { client.press(item.kind) } label: {
                     if symbols.contains(item.kind) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 16, weight: .medium))
+                            .dsIcon(DS.IconSize.bar)
                             .frame(minWidth: Theme.Touch.target - Theme.Space.s * 2)
                     } else {
-                        Text(item.title)
+                        // Done is never cut short: the other buttons give way to it first.
+                        Text(item.title).lineLimit(1).fixedSize()
                     }
                 }
+                .layoutPriority(item.kind == .done ? 1 : 0)
                 .buttonStyle(.panel(item.kind == .done ? .filled : item.isOn ? .toolOn : .tool))
                 .disabled(!item.isEnabled)
                 .accessibilityLabel(item.title)
@@ -79,7 +82,7 @@ private struct EditMore: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
+                .dsIcon(DS.IconSize.bar)
                 .frame(minWidth: Theme.Touch.target - Theme.Space.s * 2, minHeight: Theme.Touch.target - Theme.Space.s)
                 .contentShape(Rectangle())
         }
@@ -142,7 +145,7 @@ private struct EditMenuPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text(menu.title)
-                    .dsMono(Theme.Touch.caption, .medium)
+                    .textRole(.footnoteLabel)
                     .foregroundStyle(Theme.inkSecondary.ui)
                     .lineLimit(1)
                     .padding(.horizontal, Theme.Space.m)
@@ -157,11 +160,11 @@ private struct EditMenuPanel: View {
                         HStack(spacing: Theme.Space.s) {
                             if let symbol = item.symbol {
                                 Image(systemName: symbol)
-                                    .font(.system(size: 14, weight: .medium))
-                                    .frame(width: 24)
+                                    .dsIcon(DS.IconSize.xxl)
+                                    .frame(width: DS.Size.iconSlotLarge)
                                     .accessibilityHidden(true)
                             }
-                            Text(item.title).dsMono(Theme.Touch.body, .medium).lineLimit(1)
+                            Text(item.title).textRole(.label).lineLimit(1)
                             Spacer(minLength: 0)
                         }
                         .foregroundStyle((item.isDestructive ? Theme.failInk : Theme.ink).ui)

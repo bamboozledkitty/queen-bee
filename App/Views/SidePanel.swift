@@ -1,5 +1,6 @@
 import AppKit
 import QueenBeeCore
+import QueenBeeDesign
 import SwiftUI
 
 /// The panel beside the canvas: the flow's orchestrator, the run log, and what the run produced.
@@ -12,7 +13,6 @@ struct SidePanel: View {
 
     var body: some View {
         content
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay(alignment: .leading) { resizeEdge }
     }
 
@@ -41,25 +41,25 @@ struct SidePanel: View {
             HStack(spacing: 0) {
                 ForEach(PanelTab.allCases, id: \.self) { item in
                     Button { tab = item } label: {
-                        VStack(spacing: 5) {
-                            HStack(spacing: 5) {
+                        VStack(spacing: DS.Space.tight) {
+                            HStack(spacing: DS.Space.tight) {
                                 Text(item.label)
-                                    .font(.dsMono(Theme.Size.body, tab == item ? .medium : .regular))
+                                    .textRole(tab == item ? .label : .body)
                                 if let count = count(for: item) {
-                                    Text("\(count)").font(.dsMono(Theme.Size.caption)).foregroundStyle(Theme.inkSecondary.ui)
+                                    Text("\(count)").textRole(.caption).foregroundStyle(Theme.inkSecondary.ui)
                                 }
                             }
                             // One rule shared by the tabs, so it slides to the tab you pick.
                             ZStack {
                                 if tab == item {
-                                    Rectangle().fill(Theme.ink.ui).matchedGeometryEffect(id: "rule", in: tabs)
+                                    Rectangle().fill(Theme.select.ui).matchedGeometryEffect(id: "rule", in: tabs)
                                 }
                             }
                             .frame(height: 2)
                         }
                         .fixedSize()
-                        .padding(.horizontal, Theme.Space.m)
-                        .padding(.top, Theme.Space.s)
+                        .padding(.horizontal, DS.Space.m)
+                        .padding(.top, DS.Space.s)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -73,41 +73,43 @@ struct SidePanel: View {
                 if tab == .log, !controller.log.isEmpty {
                     Button("Clear") { controller.clearLog() }
                         .buttonStyle(.panel(.quiet))
-                        .padding(.trailing, Theme.Space.s)
+                        .padding(.trailing, DS.Space.s)
                         .help("Clear the log and the list of earlier runs")
                 }
             }
-            .background(Theme.bar.ui)
+            .frame(minHeight: DS.Size.tabRow - 4)
             .animation(Theme.Motion.standard, value: tab)
-            Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+            DSDivider()
             if let id = controller.viewedRunID, let run = controller.runs.first(where: { $0.id == id }) {
                 // The canvas is showing an earlier run. Say so, with the way back.
-                HStack(spacing: Theme.Space.s) {
-                    Text("Showing the run from \(RunPicker.label(for: run.started)).")
-                        .font(.dsSans(Theme.Size.caption))
+                HStack(spacing: DS.Space.s) {
+                    Text("Showing \(run.number.map { "run \($0)" } ?? "the run") from \(RunPicker.label(for: run.started)).")
+                        .textRole(.caption)
                     Spacer()
                     Button("Back to latest") { controller.view(run: nil) }
                         .buttonStyle(.panel())
                 }
                 .foregroundStyle(Theme.ink.ui)
-                .padding(.horizontal, Theme.Space.m)
-                .padding(.vertical, 5)
+                .padding(.horizontal, DS.Space.m)
+                .padding(.vertical, DS.Space.tight)
                 .background(Theme.barHover.ui)
-                Rectangle().fill(Theme.hairline.ui).frame(height: 1)
+                DSDivider()
             }
 
             // The orchestrator's terminal stays in place under the other tabs, so switching
             // back to it is instant and it never loses its size.
             ZStack {
                 TerminalHost(terminal: controller.orchestrator.view)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(Theme.terminal.ui)
+                    .padding(.horizontal, DS.Space.tight)
+                    .padding(.vertical, DS.Space.xs)
+                    .background(Theme.Canvas.terminal.ui)
                     .opacity(tab == .orchestrator ? 1 : 0)
                     .allowsHitTesting(tab == .orchestrator)
                 if tab == .log { LogList(controller: controller) }
                 if tab == .output { OutputList(controller: controller) }
             }
+            // The terminal stays inside its own area, below the banner above, and never draws up over it.
+            .clipped()
         }
     }
 
@@ -121,7 +123,7 @@ struct SidePanel: View {
 
     @ViewBuilder private var orchestratorState: some View {
         let session = controller.orchestrator
-        HStack(spacing: Theme.Space.s) {
+        HStack(spacing: DS.Space.s) {
             Badge(text: session.state.label.lowercased(), tone: session.state.tone)
             if session.state == .exited || session.state == .notStarted {
                 Button(session.state == .exited ? "Restart" : "Start") { controller.startOrchestrator() }
@@ -132,15 +134,16 @@ struct SidePanel: View {
                     .help("This flow was renamed or moved since the orchestrator started, and it still goes by the old details. It keeps its conversation so far.")
             } else {
                 Button { controller.startOrchestrator() } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .medium)).frame(width: 16, height: 16).contentShape(Rectangle())
+                    Image(systemName: "arrow.clockwise").dsIcon(DS.IconSize.s, .medium).frame(width: DS.Size.iconButton, height: DS.Size.iconButton).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.inkSecondary.ui)
+                .accessibilityLabel("Restart orchestrator")
                 .help(session.state == .working ? "Restart the orchestrator. This interrupts what it is doing now. It keeps its conversation so far."
                                                 : "Restart the orchestrator. It keeps its conversation so far and reads the app's capabilities again.")
             }
         }
-        .padding(.trailing, Theme.Space.m)
+        .padding(.trailing, DS.Space.m)
     }
 }
 
@@ -149,9 +152,8 @@ struct RunPicker: View {
     let controller: FlowController
 
     static func label(for date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm" : "d MMM HH:mm"
-        return f.string(from: date)
+        // The system's own time format (12 or 24 hour), with a short date when it isn't today.
+        RunClock.moment(date)
     }
 
     var body: some View {
@@ -159,16 +161,16 @@ struct RunPicker: View {
             ForEach(controller.runs.reversed()) { run in
                 let isShown = controller.viewedRunID == run.id || (controller.viewedRunID == nil && run.id == controller.runs.last?.id)
                 Toggle(isOn: Binding(get: { isShown }, set: { _ in controller.view(run: run.id) })) {
-                    Text("\(Self.label(for: run.started)) · \(run.summary) · \(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")")
+                    Text("\(run.number.map { "Run \($0) · " } ?? "")\(Self.label(for: run.started)) · \(run.summary) · \(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")")
                     Text(run.command)
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: DS.Space.xs) {
                 Text(controller.viewedRunID == nil ? "Latest run" : "Earlier run")
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.up.chevron.down").dsIcon(DS.IconSize.xxs, .semibold).accessibilityHidden(true)
             }
-            .font(.dsMono(Theme.Size.caption, .medium))
+            .textRole(.captionLabel)
             .foregroundStyle(Theme.inkSecondary.ui)
             .contentShape(Rectangle())
         }
@@ -177,7 +179,7 @@ struct RunPicker: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(controller.isRunning)
-        .padding(.trailing, Theme.Space.s)
+        .padding(.trailing, DS.Space.s)
         .help(controller.isRunning ? "Earlier runs can be looked at once this one ends" : "Show an earlier run on the canvas and in the log")
     }
 }
@@ -190,24 +192,18 @@ private struct LogList: View {
     /// The person is scrolling, as opposed to the log growing under a still view.
     @State private var isScrolling = false
 
-    private static let time: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f
-    }()
-
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
+                LazyVStack(alignment: .leading, spacing: DS.Space.xs) {
                     if controller.shownLog.isEmpty {
                         Text("What each run did shows here, step by step: who passed what to whom, which way each decision went, and why a run stopped.")
-                            .font(.dsSans(Theme.Size.body))
+                            .textRole(.body)
                             .foregroundStyle(Theme.inkSecondary.ui)
                     }
                     ForEach(controller.shownLog) { line in
-                        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                            Text(Self.time.string(from: line.date))
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Space.s) {
+                            Text(RunClock.time(line.date, seconds: true))
                                 .foregroundStyle(Theme.inkSecondary.ui)
                             Text(line.text)
                                 .foregroundStyle(Theme.ink.ui)
@@ -216,9 +212,9 @@ private struct LogList: View {
                         .id(line.id)
                     }
                 }
-                .font(.dsMono(Theme.Size.caption))
+                .textRole(.caption)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Theme.Space.m)
+                .padding(DS.Space.m)
             }
             .onScrollPhaseChange { _, phase in isScrolling = phase == .interacting || phase == .decelerating || phase == .tracking }
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -251,36 +247,36 @@ private struct OutputList: View {
     var body: some View {
         let ends = controller.flow.cards.filter { $0.kind == .end }
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Space.l) {
+            VStack(alignment: .leading, spacing: DS.Space.l) {
                 if ends.isEmpty {
                     Text("Add an End card to collect a run's final answer here.")
-                        .font(.dsSans(Theme.Size.body))
+                        .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 }
                 ForEach(ends) { card in
-                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                    VStack(alignment: .leading, spacing: DS.Space.s) {
                         HStack {
-                            Text(card.name).font(.dsMono(Theme.Size.body, .medium))
+                            Text(card.name).textRole(.label)
                             Spacer()
                             if let file = card.saveTo, !file.isEmpty, controller.results[card.id] != nil {
                                 Button(file) {
                                     NSWorkspace.shared.activateFileViewerSelecting([controller.project.root.appendingPathComponent(file)])
                                 }
                                 .buttonStyle(.link)
-                                .font(.dsMono(Theme.Size.caption))
+                                .textRole(.caption)
                                 .help("Show the saved file in Finder")
                             }
                         }
                         if let text = controller.results[card.id] {
                             Text(text)
-                                .font(.dsSans(Theme.Size.title))
+                                .textRole(.body)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(Theme.Space.m)
-                                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                                .padding(DS.Space.m)
+                                .background(Theme.bar.ui, in: RoundedRectangle(cornerRadius: DS.Radius.m))
                         } else {
                             Text("Nothing yet. This fills in when a run reaches the card.")
-                                .font(.dsSans(Theme.Size.body))
+                                .textRole(.body)
                                 .foregroundStyle(Theme.inkSecondary.ui)
                         }
                     }
@@ -288,7 +284,7 @@ private struct OutputList: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Theme.Space.m)
+            .padding(DS.Space.m)
         }
         .background(Theme.surface.ui)
     }
