@@ -4,7 +4,7 @@ import QueenBeeDesign
 
 /// One named output of a card: its name and how many times the run has left by it.
 /// The output taken last is tinted, so the run's latest turn is visible at a glance.
-private final class PortRowView: NSView {
+final class PortRowView: NSView {
     private let nameLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
     private var isLatest = false
@@ -149,6 +149,7 @@ enum CardSummary {
         case .loop: return "\(check(card)), up to \(card.maxTries ?? 3) tries"
         case .end:
             let file = card.saveTo ?? ""
+            if card.failsRun == true { return file.isEmpty ? "Ends the run as failed" : "Ends the run as failed, saves to \(file)" }
             return file.isEmpty ? "The final answer shows here" : "Saves to \(file)"
         case .note: return card.text ?? ""
         case .approval:

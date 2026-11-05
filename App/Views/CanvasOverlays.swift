@@ -160,8 +160,8 @@ enum CardHelp {
     static func text(for kind: CardKind) -> (what: String, example: String) {
         switch kind {
         case .agent:
-            ("A live Claude Code agent that does one job. It is given a message, does the work, and its reply goes to whatever it is linked to.",
-             "A Writer drafts a slogan, and the draft goes on to a Reviewer.")
+            ("A live Claude Code agent that does one job. It is given a message, does the work, and its reply goes to whatever it is linked to. If it fails, the message it was given goes out Error instead.",
+             "A Writer drafts a slogan, and the draft goes on to a Reviewer. Its Error goes to a 2 minute Delay and back, to try again.")
         case .start:
             ("Where a run begins. It holds the first message and sends it when you press Run.",
              "“Write a slogan for a neighbourhood bakery.”")
@@ -199,7 +199,7 @@ enum CardHelp {
             ("Runs another of the project's flows as a single step. Build a piece once, then use it wherever you need it.",
              "A “Review loop” flow of four cards becomes one card in three other flows.")
         case .end:
-            ("Where a run's answer lands. It shows the final answer and can save it to a file.",
+            ("Where a run's answer lands. It shows the final answer and can save it to a file, or end the run as failed.",
              "Save the approved slogan to slogan.txt.")
         case .note:
             ("A sticky note for people. Agents never see it.",

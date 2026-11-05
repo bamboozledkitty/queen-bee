@@ -50,7 +50,7 @@ nonisolated struct FieldKey: Hashable, Sendable {
 
     /// The names are `RemoteCardPatch`'s for a card's settings.
     enum Name: String, Sendable {
-        case name, instructions, model, effort, permissionMode, role, browser, command, trigger, check, value, maxTries, branches, template, saveTo, text, flowRef
+        case name, instructions, model, effort, permissionMode, role, browser, command, trigger, check, value, maxTries, branches, template, saveTo, failsRun, text, flowRef
         case waitMinutes, whenNoAnswer, split, maxItems
         /// A link's limit.
         case limit
@@ -97,6 +97,7 @@ nonisolated struct FieldKey: Hashable, Sendable {
             case .branches: return .list(card.branches ?? [])
             case .template: return .text(card.template ?? "")
             case .saveTo: return .text(card.saveTo ?? "")
+            case .failsRun: return .flag(card.failsRun == true)
             case .text: return .text(card.text ?? "")
             case .flowRef: return .text(CanvasContent.innerFlow(of: card, in: siblings, excluding: flow.id)?.id ?? "")
             case .waitMinutes: return .text("\(card.kind == .delay ? DelayTime.minutes(for: card) : card.waitMinutes ?? 0)")
@@ -114,7 +115,7 @@ nonisolated struct FieldKey: Hashable, Sendable {
         case .name, .groupName, .flowName, .branches: Remote.nameLimit
         case .instructions, .command, .value, .template, .text: Remote.textLimit
         case .saveTo, .trigger: Remote.pathLimit
-        case .model, .effort, .permissionMode, .role, .browser, .check, .maxTries, .flowRef, .limit, .subflowLimit, .notify,
+        case .model, .effort, .permissionMode, .role, .browser, .failsRun, .check, .maxTries, .flowRef, .limit, .subflowLimit, .notify,
              .waitMinutes, .whenNoAnswer, .split, .maxItems, .spendingLimit: nil
         }
     }
@@ -201,6 +202,7 @@ nonisolated struct FieldKey: Hashable, Sendable {
             case .branches: patch.branches = value.list
             case .template: patch.template = value.text
             case .saveTo: patch.saveTo = value.text
+            case .failsRun: patch.failsRun = value.flag
             case .text: patch.text = value.text
             case .flowRef: patch.flowRef = value.text
             case .waitMinutes: patch.waitMinutes = Int(value.text) ?? 0
@@ -413,6 +415,8 @@ nonisolated struct EditForm: Equatable {
             note("When the message is JSON, {{message.title}} puts in just its title, and {{message.items.0.name}} the name of the first of its items. A field that isn't there stays as you wrote it.")
         case .end:
             add(.saveTo, "Save the answer to a file (optional)", .line(placeholder: "output/answer.md", lines: 2))
+            add(.failsRun, "End the run as failed", .toggle)
+            note(Self.failsRunLine)
             if let answer = details.items.first(where: { $0.style == .text }) { rows.append(.item(answer)) }
         case .and, .or:
             details.items.filter { $0.style == .note }.forEach { rows.append(.item($0)) }
@@ -539,6 +543,9 @@ nonisolated struct EditForm: Equatable {
     }
 
     /// What a Delay card does, as the Mac says it.
+    /// The Mac's note under its End the run as failed switch.
+    static let failsRunLine = "For the end of a path where something went wrong, such as an agent's Error output. A message that reaches it ends the run straight away as failed."
+
     static let delayText = "Holds each message for this long, then passes it on as it was. The run keeps going while it waits."
 
     /// What a card with a time limit does when it is up, or nil for one that waits for good.

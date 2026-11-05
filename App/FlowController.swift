@@ -1437,14 +1437,21 @@ final class FlowController: ToolHost {
         agentStopped(id, reason: "its session ended")
     }
 
-    /// An agent's session ended, was ended, or its turn failed. That stops the run only if the run is waiting on the
-    /// agent: the engine decides. `name` is for a card that has just been deleted.
-    private func agentStopped(_ id: String, name: String? = nil, reason: String) {
+    /// An agent's session ended, was ended, or its turn failed. That matters only if the run is waiting on the
+    /// agent, and then the message it was working on goes out its Error output or the run stops: the engine decides.
+    /// `wholeSession` is false for one failed turn in a session that goes on. `name` is for a card that has just
+    /// been deleted.
+    private func agentStopped(_ id: String, name: String? = nil, reason: String, wholeSession: Bool = true) {
         guard isRunning, let engine else { return }
+        // The run the failed turn was working for, which may have ended since.
+        let forRun = wholeSession ? nil : turnRun[id]
         turnRun[id] = nil
         Task {
-            let output = await engine.agentFailed(flow: self.flow, cardID: id, name: name, reason: reason)
-            if output.finished { self.markFailed(id) }
+            let output = await engine.agentFailed(flow: self.flow, cardID: id, name: name, reason: reason,
+                                                  wholeSession: wholeSession, forRun: forRun)
+            // Gone out Error, the failure is part of the run's path, not where it stopped.
+            let wentOutError = output.visits.contains { $0.cardID == id && $0.port == "error" }
+            if output.finished, !wentOutError { self.markFailed(id) }
             self.absorb(output, sender: nil)
         }
     }
@@ -1530,7 +1537,7 @@ final class FlowController: ToolHost {
             session.lastReply = reply
             routeIfPluginIsSilent(who, reply: reply)
         case "StopFailure":
-            agentStopped(who, reason: "its turn ended with an API error")
+            agentStopped(who, reason: "its turn ended with an API error", wholeSession: false)
         default:
             break
         }
@@ -1735,7 +1742,8 @@ final class FlowController: ToolHost {
 
     /// Whether Retry is offered on a card: the last run stopped there, and a message reached it.
     func canRetry(_ cardID: String) -> Bool {
-        marks[cardID]?.failed == true && !isRunning && lastMessage(into: cardID) != nil
+        // An End card that failed the run is where it ended, not something to try again.
+        marks[cardID]?.failed == true && !isRunning && flow.card(cardID)?.kind != .end && lastMessage(into: cardID) != nil
     }
 
     /// Tries the card a run stopped at again, with the message it was given.
@@ -1797,6 +1805,10 @@ final class FlowController: ToolHost {
         if !output.stalledOn.isEmpty { noteStalled(on: output.stalledOn) }
         scheduleHistorySave()
         if output.finished {
+            // An End card set to fail the run is where it failed, and the run's record keeps it.
+            if output.ending == .failed {
+                for result in output.results where flow.card(result.cardID)?.failsRun == true { markFailed(result.cardID) }
+            }
             awaitingAnswer.removeAll()
             stallNotice?.cancel()
             isRunning = false
@@ -1810,8 +1822,8 @@ final class FlowController: ToolHost {
             finishRecord(output)
             subflowTurns.somethingEnded()
             notifyOrchestrator(of: output)
-            let stopped = marks.values.contains(where: \.failed)
-            Notifier.post(title: "\(flow.name) \(stopped ? "stopped" : (output.ending ?? .finishedWithAnswer).label)",
+            let failed = output.ending == .failed || marks.values.contains(where: \.failed)
+            Notifier.post(title: "\(flow.name) \(failed ? RunEnding.failed.label : (output.ending ?? .finishedWithAnswer).label)",
                           body: log.last?.text ?? "", flowID: flow.id, cardID: nil)
         } else if output.runID != nil {
             isRunning = true

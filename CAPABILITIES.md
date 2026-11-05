@@ -7,8 +7,8 @@ This is what the app can do as it is now. Build with these and nothing else: a c
 ## Cards
 
 ### Agent (`agent`)
-A live Claude Code agent that does work. When its turn ends, its reply goes out along its links.
-- Outputs: out
+A live Claude Code agent that does work. When its turn ends, its reply goes out along its links from out.
+- Outputs: out, error
 - Input: yes
 - Size when added: 560 by 380 points
 - Setting `instructions` (text): A standing brief the agent always follows. Name the files and folders it reads and writes. It finds files with ls, find and grep in the shell, which need no approval, so don't forbid the shell outright.
@@ -18,6 +18,8 @@ A live Claude Code agent that does work. When its turn ends, its reply goes out 
 - Setting `cwd` (text): The folder the agent works in. An empty string goes back to the project folder.
 - Setting `browser` (true or false): true gives the agent a web browser in its card, which the person can watch and use too, and makes the card twice as wide. Turn it on only for an agent whose work needs the web. Its tools and limits are listed under "An agent with a browser".
 - New settings apply the next time the agent's session starts.
+- error is for when the agent fails while the run is waiting on it: its turn ends with an API error, or its session ends or is restarted. With something linked to error, the message it was working on goes out there as it was handed over, still from whoever sent it, and the run goes on. With nothing linked to error, the run stops.
+- To try again after a failure, link error to a Delay card and the Delay back to the agent. The link's max_passes limits the tries; after them, link error somewhere else, such as an End card with fails_run set, to end the run. A message that reaches an agent whose session has ended starts it again.
 
 ### Start (`start`)
 Holds the command a run begins with, and sends it to every card linked from it. Takes no input.
@@ -85,6 +87,7 @@ Records the final answer, and saves it to a file if save_to is set.
 - Input: yes
 - Size when added: 240 by 96 points
 - Setting `save_to` (text): A file to save the final answer to, relative to the project folder. Not inside .git, .claude, .queenbee.
+- Setting `fails_run` (true or false): true ends the run as failed as soon as a message reaches this card. Agents still working on the run are stopped and messages waiting at cards are dropped. The message is still recorded, and saved if save_to is set. In a sub-flow, the Flow card that runs it goes out fail with the message. Use it at the end of a path for when something went wrong. Defaults to false.
 
 ### Note (`note`)
 Text for people. It carries no messages and can't be linked.

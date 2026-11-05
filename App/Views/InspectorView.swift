@@ -89,6 +89,14 @@ private struct CardSettings: View {
                 note("When the message is JSON, {{message.title}} puts in just its title, and {{message.items.0.name}} the name of the first of its items. A field that isn't there stays as you wrote it.")
             case .end:
                 LineField("Save the answer to a file (optional)", placeholder: "output/answer.md", text: card.saveTo ?? "") { v in patch { $0.saveTo = v } }
+                Toggle("End the run as failed", isOn: Binding(get: { card.failsRun == true }, set: { on in patch { $0.failsRun = on } }))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(Theme.select.ui)
+                    .help("For the end of a path where something went wrong, such as an agent's Error output.")
+                note(card.failsRun == true
+                     ? "A message that reaches this card ends the run straight away as failed, and stops any agent still working on it. The message still shows here."
+                     : "Turn this on for the end of a path where something went wrong, such as an agent's Error output.")
                 if let result = controller.results[card.id] {
                     section {
                         field("Latest answer") {

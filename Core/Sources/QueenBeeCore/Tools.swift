@@ -226,6 +226,7 @@ public enum Tools {
                 fields["template"] = text(card.template)
             case .end:
                 fields["save_to"] = text(card.saveTo)
+                fields["fails_run"] = .bool(card.failsRun == true)
             case .note, .approval:
                 fields["text"] = text(card.text)
                 if card.kind == .approval {
@@ -478,6 +479,7 @@ private struct Arguments: Sendable {
         patch.branches = try strings("branches")
         patch.template = try string("template")
         patch.saveTo = try string("save_to")
+        patch.failsRun = try bool("fails_run")
         patch.text = try string("text")
         return patch
     }

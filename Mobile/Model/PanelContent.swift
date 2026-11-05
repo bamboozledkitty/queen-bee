@@ -212,6 +212,7 @@ nonisolated struct Details: Equatable {
             add(.note, "{{message}} is where the incoming message goes, and {{from}} is the name of the card it came from. With no {{message}}, the message is added at the end. When the message is JSON, {{message.title}} is just its title.")
         case .end:
             add(.row, "Save the answer to a file", (card.saveTo ?? "").isEmpty ? "Not saved" : card.saveTo ?? "")
+            if card.failsRun == true { add(.row, "Ends the run", "As failed") }
             if let result = run.results[card.id] { add(.text, run.earlier == nil ? "Latest answer" : "Answer in this run", result) }
         case .and:
             add(.note, "Waits until every card linked into it has answered, then passes all their answers on together.")

@@ -519,6 +519,8 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
     public var template: String?
     // End
     public var saveTo: String?
+    /// True ends the run as failed when a message reaches the card.
+    public var failsRun: Bool?
     // Note, Approval
     public var text: String?
     // Approval, Script
@@ -554,6 +556,7 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
         patch.branches = branches
         patch.template = template
         patch.saveTo = saveTo
+        patch.failsRun = failsRun
         patch.text = text
         patch.flowRef = flowRef
         patch.waitMinutes = waitMinutes

@@ -579,7 +579,7 @@ class CardView: UIView {
 
 /// One named output of a card: its name and how many times the run has left by it. The output taken last is
 /// tinted, so the run's latest turn is visible at a glance. The Mac's `PortRowView`.
-private final class PortRowView: UIView {
+final class PortRowView: UIView {
     private let nameLabel = UILabel()
     private let countLabel = UILabel()
 
@@ -713,6 +713,8 @@ final class AgentCardView: CardView {
     /// The card's browser half, while its Browser switch is on: terminal on the left, page on the right, as on the Mac.
     private(set) var browserHalf: BrowserHalfView?
     private let browserRule = UIView()
+    /// The Error output's row at the card's foot, below the terminal, as on the Mac.
+    private let errorRow = PortRowView()
 
     override var overviewText: String { stateText }
 
@@ -760,6 +762,7 @@ final class AgentCardView: CardView {
         browserRule.backgroundColor = Theme.hairline
         browserRule.isHidden = true
         content.addSubview(browserRule)
+        content.addSubview(errorRow)
     }
 
     /// Where a tap opens the card's browser full screen, in the canvas's own points, or nil when it has none.
@@ -838,6 +841,7 @@ final class AgentCardView: CardView {
         // With a button to start it from here, there is nothing to send the person to the Mac for.
         hintLabel.isHidden = (state != .notStarted && state != .exited) || !context.buttons.isEmpty
         hintLabel.text = state == .exited ? "Restart it on your Mac" : "Start it on your Mac"
+        errorRow.set(name: portLabel("error"), count: context.mark.ports["error"] ?? 0, isLatest: context.mark.lastPort == "error")
         let wantsBrowser = new.browser == true
         if wantsBrowser != (browserHalf != nil) {
             browserHalf?.removeFromSuperview()
@@ -851,12 +855,16 @@ final class AgentCardView: CardView {
 
 
     override func layoutContent() {
-        // With a browser the card is split down the middle, as on the Mac: terminal on the left, page on the right.
-        var left = content.bounds
+        // The Error row takes the foot. Above it, with a browser, the card is split down the middle, as on the Mac:
+        // terminal on the left, page on the right.
+        let foot = CanvasGeometry.portRowHeight
+        let above = max(0, content.bounds.height - foot)
+        errorRow.frame = CGRect(x: 1, y: above, width: max(0, content.bounds.width - 2), height: foot)
+        var left = CGRect(x: 0, y: 0, width: content.bounds.width, height: above)
         if let browserHalf {
             left.size.width = (content.bounds.width / 2).rounded()
-            browserRule.frame = CGRect(x: left.maxX, y: 0, width: 1, height: content.bounds.height)
-            browserHalf.frame = CGRect(x: left.maxX + 1, y: 0, width: content.bounds.width - left.maxX - 1, height: content.bounds.height)
+            browserRule.frame = CGRect(x: left.maxX, y: 0, width: 1, height: above)
+            browserHalf.frame = CGRect(x: left.maxX + 1, y: 0, width: content.bounds.width - left.maxX - 1, height: above)
         }
         terminalHolder.frame = left
         terminal?.frame = terminalFrame

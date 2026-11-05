@@ -10,9 +10,13 @@ All notable changes to Queen Bee are listed here. The format follows
 
 - A Prompt card can pick fields out of a message that is JSON: `{{message.title}}` puts in its title, and `{{message.items.0.name}}` the name of its first item. It works on JSON on its own or in a code fence, as agents usually write it, so simple reshaping no longer needs a Script card.
 - A Delay card holds a message for a set time, from a minute to a week, then passes it on as it was. Use it to wait before trying something again, such as a Script that checks whether a job has finished. The card shows when the message goes on. On the Mac, Send it on now skips the rest of the wait.
+- An agent card has an Error output. When the agent's turn ends with an API error, or its session ends while a run waits on it, the message it was given goes out Error and the run goes on. Link Error to a Delay and back to the agent to try again; the link's limit says how many times. With nothing linked to Error, the run stops as before, and its notification now says it failed rather than stopped.
+- An End card can end the run as failed. A message that reaches it stops the run straight away and the run shows as failed. Use it at the end of an Error path. In a sub-flow, the Flow card that runs it goes out Fail.
+- After an agent's turn ends with an API error, its card offers Restart agent, on the Mac and on a paired iPhone or iPad. Its conversation carries on.
 
 ### Fixed
 
+- A message handed to an agent whose last turn ended with an API error is now typed in. Before, it waited until the agent next finished a turn, which might never happen.
 - A Flow card whose flow is no longer in the project, for example because it went to the Trash, now warns "Its flow isn't in this project" on the canvas, in its settings and on a paired iPhone or iPad, and the orchestrator sees the warning too. Before, nothing said so until a run reached the card and went out Fail. Moving a flow to the Trash on the Mac now says which flows run it.
 
 ## [0.9.0] - 2026-11-04

@@ -53,6 +53,8 @@ final class AgentCardView: CardView {
     /// The card's browser half, while its Browser switch is on.
     private(set) var browserPane: BrowserPaneView?
     private let browserRule = NSView()
+    /// The Error output's row at the card's foot, below the terminal.
+    private let errorRow = PortRowView()
 
     override var overviewText: String { stateText }
 
@@ -68,6 +70,7 @@ final class AgentCardView: CardView {
         content.addSubview(terminalHolder)
 
         content.addSubview(startButton)
+        content.addSubview(errorRow)
 
         browserRule.wantsLayer = true
         browserRule.isHidden = true
@@ -137,36 +140,49 @@ final class AgentCardView: CardView {
         restartBadge.set(context.needsRestart ? "restart to apply" : "", tone: .live)
         costBadge.set(context.cost ?? "", tone: .plain)
         let live = state != .notStarted && state != .exited
-        startButton.isHidden = live && !context.isSlowToStart
-        startTitle = context.isSlowToStart ? "Retry" : state == .exited ? "Restart agent" : "Start agent"
-        startButton.toolTip = context.isSlowToStart ? "Stop this agent's Claude Code and start it again" : nil
+        // A turn that ended with an error leaves the session going, and it can be typed to, or restarted.
+        lastTurnFailed = state == .failed && !context.isSlowToStart
+        startButton.isHidden = live && !context.isSlowToStart && !lastTurnFailed
+        startTitle = context.isSlowToStart ? "Retry" : state == .exited || lastTurnFailed ? "Restart agent" : "Start agent"
+        startButton.toolTip = context.isSlowToStart ? "Stop this agent's Claude Code and start it again"
+            : lastTurnFailed ? "Stop this agent's Claude Code and start it again, carrying on its conversation" : nil
         isSlowToStart = context.isSlowToStart
+        errorRow.set(name: portLabel("error"), count: context.mark.ports["error"] ?? 0,
+                     isLatest: context.mark.lastPort == "error", isRunning: context.isRunning)
         super.update(card: new, context: context)
     }
 
     /// While a slow start is shown, the note and Retry sit in a strip above the terminal, which may be asking something.
     private var isSlowToStart = false
+    /// So do a note and Restart agent after a turn that ended with an error, which the terminal shows.
+    private var lastTurnFailed = false
 
     override func layoutContent() {
-        // With a browser the card is split down the middle: terminal on the left, page on the right.
-        var left = content.bounds
+        // The Error row takes the foot. Above it, with a browser, the card is split down the middle: terminal on
+        // the left, page on the right.
+        let foot = CanvasGeometry.portRowHeight
+        let above = max(0, content.bounds.height - foot)
+        errorRow.frame = NSRect(x: 1, y: above, width: max(0, content.bounds.width - 2), height: foot)
+        var left = CGRect(x: 0, y: 0, width: content.bounds.width, height: above)
         if let browserPane {
             left.size.width = (content.bounds.width / 2).rounded()
-            browserRule.frame = CGRect(x: left.maxX, y: 0, width: 1, height: content.bounds.height)
-            browserPane.frame = CGRect(x: left.maxX + 1, y: 0, width: content.bounds.width - left.maxX - 1, height: content.bounds.height)
+            browserRule.frame = CGRect(x: left.maxX, y: 0, width: 1, height: above)
+            browserPane.frame = CGRect(x: left.maxX + 1, y: 0, width: content.bounds.width - left.maxX - 1, height: above)
         }
         terminalHolder.frame = left
+        let inStrip = isSlowToStart || lastTurnFailed
         // A few points of padding so text doesn't touch the card's edge or the resize corner.
-        let note = isSlowToStart ? "Claude Code may be asking whether to trust this folder. Answer in the terminal below, or press Retry if it is stuck." : nil
+        let note = isSlowToStart ? "Claude Code may be asking whether to trust this folder. Answer in the terminal below, or press Retry if it is stuck."
+            : lastTurnFailed ? "Its last turn ended with an error. Type to it below, or restart it." : nil
         startButton.rootView = StartPrompt(title: startTitle, note: note, width: max(0, left.width - 2 * DS.Space.s)) { [weak self] in
             self?.startSession()
         }
         startButton.frame.size = startButton.fittingSize
         startButton.frame.origin = CGPoint(x: left.minX + (left.width - startButton.frame.width) / 2,
-                                           y: isSlowToStart ? DS.Space.xs : (left.height - startButton.frame.height) / 2)
+                                           y: inStrip ? DS.Space.xs : (left.height - startButton.frame.height) / 2)
         // The strip sits above the terminal, not over it, so the foot of the terminal stays in view.
         var area = terminalHolder.bounds.insetBy(dx: 6, dy: 4)
-        if isSlowToStart {
+        if inStrip {
             let strip = startButton.frame.maxY + DS.Space.xs
             area.origin.y = max(area.origin.y, strip)
             area.size.height = max(0, terminalHolder.bounds.height - 4 - area.origin.y)

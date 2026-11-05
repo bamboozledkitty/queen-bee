@@ -23,14 +23,13 @@ nonisolated enum CanvasGeometry {
         CGPoint(x: card.x, y: card.y + titleHeight / 2)
     }
 
-    /// An output dot's centre on the card's right edge: one output sits beside the title; named outputs get
-    /// a row each at the card's foot.
+    /// An output dot's centre on the card's right edge, beside the title or in its row at the card's foot, as
+    /// `outputRow(of:port:)` says.
     static func outputPoint(of card: Card, port: String) -> CGPoint {
-        let all = ports(of: card)
-        guard all.count > 1, let i = all.firstIndex(of: port) else {
+        guard let row = outputRow(of: card, port: port) else {
             return CGPoint(x: card.x + card.width, y: card.y + titleHeight / 2)
         }
-        let fromBottom = CGFloat(all.count - i)
+        let fromBottom = CGFloat(row)
         return CGPoint(x: card.x + card.width, y: card.y + card.height - fromBottom * portRowHeight + portRowHeight / 2)
     }
 
@@ -122,6 +121,7 @@ nonisolated enum CardSummary {
         case .loop: return "\(check(card)), up to \(card.maxTries ?? 3) tries"
         case .end:
             let file = card.saveTo ?? ""
+            if card.failsRun == true { return file.isEmpty ? "Ends the run as failed" : "Ends the run as failed, saves to \(file)" }
             return file.isEmpty ? "The final answer shows here" : "Saves to \(file)"
         case .note: return card.text ?? ""
         case .approval:
