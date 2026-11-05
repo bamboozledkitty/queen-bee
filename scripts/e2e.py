@@ -3268,6 +3268,17 @@ def scenario_panels():
               p.get("cost", {}).get("runTotal") == "$0.37" and p["cost"]["runLines"] == [["Writer", "$0.37", "57k tokens"]]
               and p["cost"]["runTitle"] == "Latest run" and p["cost"]["total"] == "$1.08", str(p.get("cost")))
         both("panels-04-runs")
+        # Compare two runs, with the two latest: the earlier stopped at the Style guide's Fail, the later went through.
+        s = play(3, "-qbShow", "runs", "-qbCompare", "1", also=lambda s: panel(s).get("compare"))
+        c = panel(s)["compare"]
+        rows = {r["name"]: r for r in c.get("rows", [])}
+        check("Compare two runs sets the two latest side by side, older first",
+              (c.get("before"), c.get("after")) == ("the earlier run", "the later run")
+              and "Ended: failed in the earlier run, finished in the later run" in c.get("changes", []), str(c)[:400])
+        check("and says where they went different ways",
+              rows.get("Style guide", {}).get("changes", [None])[0] == "Stopped the run in the earlier run" and rows["Style guide"]["after"] == "Pass"
+              and rows.get("Sent", {}).get("changes") == ["Reached only in the later run"], str(rows)[:600])
+        both("panels-04-runs-compare")
         for page in ("log", "output", "cost"):
             s = play(3, "-qbShow", page, also=lambda s: panel(s).get("page") == page)
             both(f"panels-0{5 + ('log', 'output', 'cost').index(page)}-{page}")
@@ -5144,6 +5155,18 @@ def scenario_gates(app):
     check("a rejected message goes out Rejected with the reason ahead of it",
           list(s["results"]) == ["Binned"] and binned.startswith("Too loud\n") and binned.endswith("\nHELLO FROM THE START CARD"), str(s["results"]))
     check("both runs are kept", [r["outcome"] for r in s["runs"]] == ["finished", "finished"], str(s["runs"]))
+
+    # Compare with…: one run went out Approved to Done, the other out Rejected to Binned.
+    c = app.op(fid, "compare", runs=[s["runs"][1]["id"], s["runs"][0]["id"]])
+    rows = {r["name"]: r for r in c.get("rows", [])}
+    check("two runs compared come older first", (c.get("before"), c.get("after")) == ("#1", "#2"), str(c)[:300])
+    check("the comparison says where they went different ways",
+          rows.get("Check it", {}).get("changes") == ["Went a different way"]
+          and (rows["Check it"]["before"], rows["Check it"]["after"]) == ("Approved", "Rejected")
+          and rows.get("Done", {}).get("changes") == ["Reached only in #1"] and rows.get("Binned", {}).get("changes") == ["Reached only in #2"],
+          str(rows)[:600])
+    check("and what stayed the same", rows.get("Shout", {}).get("changes") == [] and rows["Shout"]["before"] == "Pass"
+          and c.get("comparesReplies") is True, str(rows.get("Shout")))
 
     first = s["runs"][0]["id"]
     app.op(fid, "viewRun", run=first)

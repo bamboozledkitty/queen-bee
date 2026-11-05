@@ -14,12 +14,7 @@ nonisolated enum Clock {
     static func run(_ date: Date) -> String { RunClock.moment(date) }
 
     /// How long a run took: "42 sec", "3 min 5 sec", "1 hr 4 min".
-    static func length(from start: Date, to end: Date) -> String {
-        let seconds = max(0, Int(end.timeIntervalSince(start).rounded()))
-        if seconds < 60 { return "\(seconds) sec" }
-        if seconds < 3600 { return "\(seconds / 60) min \(seconds % 60) sec" }
-        return "\(seconds / 3600) hr \(seconds % 3600 / 60) min"
-    }
+    static func length(from start: Date, to end: Date) -> String { RunClock.length(from: start, to: end) }
 }
 
 /// The run the panels and the canvas are showing: the latest, or an earlier one picked on this device.

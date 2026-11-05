@@ -106,7 +106,7 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
     /// How many runs are kept, and for how many of them what links carried. How much of each message is kept is
     /// `CarriedMessages`'s to say.
-    private static let keptRuns = 20, runsWithMessages = 3
+    private static let keptRuns = 20, runsWithMessages = RunComparison.runsWithMessages
     /// The whole text of the messages in `messages` that are kept there cut short, by message id: what Retry and
     /// "run from here" give a card again.
     @ObservationIgnored private var wholeMessages: [UUID: String] = [:]

@@ -82,6 +82,10 @@ public enum DS {
         /// A run's number, and when it started, at the two ends of its row, in columns so they line up.
         public static let runNumberColumn: CGFloat = 40
         public static let runTimeColumn: CGFloat = 84
+        /// The sheet that sets two runs side by side on the Mac: room for a card's name and a column for each run.
+        public static let compareSheet: CGFloat = 720
+        /// The column of a card's name in it.
+        public static let compareName: CGFloat = 180
         /// A small rounded tag with a flow's name in it.
         public static let tag: CGFloat = 22
         /// How tall a sheet of settings is on the Mac: the shortest it is let get, what it opens at, and the tallest.

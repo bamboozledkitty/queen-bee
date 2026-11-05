@@ -13,6 +13,7 @@ All notable changes to Queen Bee are listed here. The format follows
 - An agent card has an Error output. When the agent's turn ends with an API error, or its session ends while a run waits on it, the message it was given goes out Error and the run goes on. Link Error to a Delay and back to the agent to try again; the link's limit says how many times. With nothing linked to Error, the run stops as before, and its notification now says it failed rather than stopped.
 - An End card can end the run as failed. A message that reaches it stops the run straight away and the run shows as failed. Use it at the end of an Error path. In a sub-flow, the Flow card that runs it goes out Fail.
 - After an agent's turn ends with an API error, its card offers Restart agent, on the Mac and on a paired iPhone or iPad. Its conversation carries on.
+- Compare two runs of a flow. On the Mac, pick a run on the Runs page and choose Compare with…; on an iPhone or iPad, Compare two runs is on the flow's Runs page. It shows how each run ended, how long it took and what it cost, then card by card which way each went and what it cost, with the cards that changed first. What agents said is compared too when both runs are among the 3 latest, which are the runs that keep it.
 
 ### Fixed
 
