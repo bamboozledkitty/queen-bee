@@ -53,6 +53,17 @@ import Testing
 
     // MARK: Going through them
 
+    @Test func theSnapshotSaysWhichItemIsOut() async throws {
+        let flow = try eachFlow(command: "a\nb\nc")
+        let worker = try id("Worker", in: flow), each = try id("Each", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        let started = await engine.start(flow: flow, startCardID: nil, command: nil)
+        #expect(started.snapshot?.items == [each: RunSnapshot.Items(current: 0, count: 3)])
+        let second = await engine.agentReplied(flow: flow, cardID: worker, text: "A")
+        #expect(second.snapshot?.items == [each: RunSnapshot.Items(current: 1, count: 3)])
+        #expect(second.snapshot?.waitingOn == [worker])
+    }
+
     @Test func eachItemGoesOutInTurnAndDoneCarriesEveryResult() async throws {
         // More items than a link's usual 3 passes: each item is a fresh pass through the cards on Each.
         let flow = try eachFlow(command: "a\nb\nc\nd\ne")

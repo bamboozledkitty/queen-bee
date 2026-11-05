@@ -483,6 +483,21 @@ actor ScriptedJudge: Judge {
         #expect(done.finished)
     }
 
+    @Test func theSnapshotSaysWhoTheRunWaitsOnAndHowManyTriesALoopHasHad() async throws {
+        let flow = try loopFlow(patch { $0.check = .contains; $0.value = "FINAL"; $0.maxTries = 5 })
+        let engine = Engine(judge: ScriptedJudge())
+        let writer = try id("Writer", in: flow), polish = try id("Polish", in: flow)
+        let started = await engine.start(flow: flow, startCardID: nil, command: nil)
+        #expect(started.snapshot == RunSnapshot(waitingOn: [writer]))
+        let again = await engine.agentReplied(flow: flow, cardID: writer, text: "draft")
+        #expect(again.snapshot?.tries == [polish: 1])
+        #expect(again.snapshot?.waitingOn == [writer])
+        // Done clears the count, and a call that ends the run says nothing.
+        let done = await engine.agentReplied(flow: flow, cardID: writer, text: "FINAL")
+        #expect(done.finished)
+        #expect(done.snapshot == nil)
+    }
+
     @Test func loopGivesUpAfterMaxTries() async throws {
         let flow = try loopFlow(patch { $0.check = .judge; $0.value = "It is perfect"; $0.maxTries = 2 })
         // One real "no" and one failed judge call: both count as a try.

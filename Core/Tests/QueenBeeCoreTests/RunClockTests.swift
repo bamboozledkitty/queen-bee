@@ -41,4 +41,12 @@ import Testing
         let other = RunClock.moment(at, now: at.addingTimeInterval(86_400), calendar: calendar, locale: gb)
         #expect(other.contains("4") && other.contains("Mar") && other.contains("13:10"))
     }
+
+    @Test func aSpanIsShortAndGrowsItsUnits() {
+        #expect(RunClock.span(0) == "0s")
+        #expect(RunClock.span(40.9) == "40s")
+        #expect(RunClock.span(130) == "2m 10s")
+        #expect(RunClock.span(3600 + 5 * 60 + 9) == "1h 05m")
+        #expect(RunClock.span(-5) == "0s")
+    }
 }

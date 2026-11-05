@@ -6,6 +6,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- On the Mac, a pill at the top of the canvas shows how far a run has got while it goes: a ring, a percentage, and where the run is now, such as "Reviewer working · 2m 10s" or "Needs you: Approval". Click it to see the run's line of stops, one per agent, Approval, Script and Flow card. Each stop shows whether the run has passed it, is at it, still has it to come or went another way. A For each shows which item is out, a Loop shows which try it is on, and a Flow card can show its own flow's line. The percentage counts the longest way still left, so a branch the run didn't take never holds it back, a loop going round again never takes it backward, and it reads 100% only once an answer reaches an End. After the run it stays until the next one starts, or until you close it.
+
 ## [0.9.0] - 2026-11-04
 
 ### Changed

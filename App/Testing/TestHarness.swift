@@ -400,6 +400,12 @@ enum TestHarness {
             guard let name = payload["name"]?.stringValue else { return ["error": "tool needs name"] }
             let result = await Tools.call(name: name, arguments: payload["arguments"] ?? [:], host: controller)
             return ["text": .string(result.text), "isError": .bool(result.isError)]
+        case "progress":
+            // Opens or closes the progress pill's line of stops, and says what the pill shows.
+            if let open = payload["open"]?.boolValue { controller.showsProgressLine = open }
+            guard let progress = controller.runProgress else { return ["shown": false] }
+            return ["shown": true, "percent": .number(Double(progress.percent)), "headline": .string(progress.headline.text),
+                    "stops": .array(progress.stops.map { ["name": .string($0.name), "state": .string($0.state.rawValue)] })]
         case "retry":
             guard let cardID else { return ["error": "retry needs card"] }
             controller.retry(cardID)

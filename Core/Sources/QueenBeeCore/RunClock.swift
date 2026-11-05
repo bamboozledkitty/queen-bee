@@ -15,6 +15,15 @@ public enum RunClock {
             : format(date, template: "dMMMjmm", calendar: calendar, locale: locale)
     }
 
+    /// How long something has been going, short: "40s", "2m 10s", "1h 05m".
+    public static func span(_ seconds: TimeInterval) -> String {
+        let whole = max(0, Int(seconds))
+        let hours = whole / 3600, minutes = whole % 3600 / 60, rest = whole % 60
+        if hours > 0 { return "\(hours)h " + String(format: "%02dm", minutes) }
+        if minutes > 0 { return "\(minutes)m " + String(format: "%02ds", rest) }
+        return "\(rest)s"
+    }
+
     /// One formatter per way of writing, made the first time it is asked for: a log can ask hundreds of times a redraw.
     private static let formatters = Mutex<[String: DateFormatter]>([:])
 

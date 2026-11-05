@@ -79,6 +79,31 @@ public struct Hold: Equatable, Sendable {
     }
 }
 
+/// Where a run that is going stands: what it is waiting on, and how far its loops and For each cards have got.
+public struct RunSnapshot: Equatable, Sendable, Codable {
+    /// How far a For each card has got through its items.
+    public struct Items: Equatable, Sendable, Codable {
+        /// The item out now, counting from 0.
+        public var current: Int
+        public var count: Int
+
+        public init(current: Int, count: Int) { self.current = current; self.count = count }
+    }
+
+    /// Agents handed a message and not heard from since.
+    public var waitingOn: [String]
+    /// Cards holding a message: Approval, Script and Flow cards.
+    public var holding: [String]
+    /// For each Loop card part-way through its tries, the tries it has failed so far. The try under way is one more.
+    public var tries: [String: Int]
+    /// For each For each card going through its items, where it has got.
+    public var items: [String: Items]
+
+    public init(waitingOn: [String] = [], holding: [String] = [], tries: [String: Int] = [:], items: [String: Items] = [:]) {
+        self.waitingOn = waitingOn; self.holding = holding; self.tries = tries; self.items = items
+    }
+}
+
 /// Everything one event caused.
 public struct RunOutput: Equatable, Sendable {
     public var deliveries: [Delivery]
@@ -107,6 +132,9 @@ public struct RunOutput: Equatable, Sendable {
     /// Agents the run was still waiting on when it ended. They may be in the middle of a turn that
     /// nothing will use now, so the app interrupts them.
     public var leftWaiting: [String] = []
+    /// Where the run stands once this call is done, for showing how far it has got. Nil when the call ended the
+    /// run or didn't touch it, so what was known before still stands until the app clears it.
+    public var snapshot: RunSnapshot?
 
     public init(deliveries: [Delivery] = [], log: [String] = [], results: [EndResult] = [],
                 visits: [CardVisit] = [], holds: [Hold] = [], finished: Bool = false, runID: String? = nil,
@@ -489,6 +517,10 @@ public actor Engine {
             output.asking = state.asking.sorted()
             output.isStalled = stalled
             state.saidStalled = stalled
+            output.snapshot = RunSnapshot(waitingOn: Self.agents(in: state.pending),
+                                          holding: Array(Set(state.held.values.map(\.cardID))).sorted(),
+                                          tries: state.tries,
+                                          items: state.rounds.mapValues { RunSnapshot.Items(current: $0.current, count: $0.items.count) })
             run = state
         }
     }
