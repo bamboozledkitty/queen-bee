@@ -158,6 +158,14 @@ private struct CardSettings: View {
                     ScriptReview(controller: controller, hold: hold)
                         .id(hold.id)
                 }
+            case .delay:
+                DelaySettings(card: card, patch: patch)
+                if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
+                    DelayReview(controller: controller, hold: hold)
+                        .id(hold.id)
+                } else {
+                    note("Holds each message for this long, then passes it on as it was. The run keeps going while it waits.")
+                }
             }
 
             if let warning = controller.warnings[card.id] {
@@ -509,6 +517,47 @@ private struct ApprovalReview: View {
         .liveRule()
         .overlay(alignment: .top) { rule }
         .onAppear { draft = hold.text }
+    }
+}
+
+/// How long a Delay card holds its message.
+private struct DelaySettings: View {
+    let card: Card
+    let patch: ((inout CardPatch) -> Void) -> Void
+
+    private static let choices = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 24 * 60, 2 * 24 * 60, 7 * 24 * 60]
+
+    var body: some View {
+        let minutes = DelayTime.minutes(for: card)
+        let options = (Self.choices + (Self.choices.contains(minutes) ? [] : [minutes])).sorted()
+        row("Wait") {
+            MenuField(options: options.map { (value: $0, label: HoldTimeLimit.describe(minutes: $0)) },
+                      selection: minutes) { v in patch { $0.waitMinutes = v } }
+        }
+    }
+}
+
+/// A message waiting at a Delay card, with a way to send it on now.
+private struct DelayReview: View {
+    let controller: FlowController
+    let hold: PendingHold
+
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            Text(hold.deadline.map { "From \(hold.from). Goes on at \($0.formatted(date: .omitted, time: .shortened))." } ?? "From \(hold.from). Waiting.")
+                .textRole(.captionLabel)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Send it on now") { controller.sendOnNow(hold.id) }
+                .buttonStyle(.panel())
+                .help("Pass the message on without waiting for the rest of the time")
+        }
+        .foregroundStyle(Theme.liveInk.ui)
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .liveRule()
+        .overlay(alignment: .top) { rule }
     }
 }
 

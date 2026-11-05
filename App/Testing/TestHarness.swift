@@ -347,6 +347,7 @@ enum TestHarness {
             case "reject": controller.reject(hold.id, note: payload["text"]?.stringValue ?? "")
             case "allow": controller.allowScript(hold.id)
             case "refuse": controller.refuseScript(hold.id)
+            case "sendOn": controller.sendOnNow(hold.id)
             default: return ["error": "hold needs answer"]
             }
             return [:]
@@ -505,7 +506,7 @@ enum TestHarness {
                                                   "ending": $0.ending.map { .string($0.rawValue) } ?? .null, "summary": .string($0.summary)] }),
             "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
             "messages": .number(Double(controller.messages.values.reduce(0) { $0 + $1.count })),
-            "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "text": .string($0.text), "needsAllow": .bool($0.needsAllow), "allowOnMac": .bool($0.allowOnMac == true)] }),
+            "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "kind": .string($0.kind.rawValue), "text": .string($0.text), "needsAllow": .bool($0.needsAllow), "allowOnMac": .bool($0.allowOnMac == true)] }),
             "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
             "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),
             "isRunning": .bool(controller.isRunning),

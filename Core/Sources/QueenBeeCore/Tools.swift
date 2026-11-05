@@ -237,6 +237,8 @@ public enum Tools {
                 fields["max_items"] = .number(Double(card.maxItems ?? Engine.defaultItems))
             case .flow:
                 fields["flow"] = text(snapshot.innerFlowNames[card.id])
+            case .delay:
+                fields["wait_minutes"] = .number(Double(DelayTime.minutes(for: card)))
             case .and, .or:
                 break
             }

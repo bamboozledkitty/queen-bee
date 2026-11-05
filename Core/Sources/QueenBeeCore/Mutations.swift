@@ -276,6 +276,8 @@ extension Flow {
             if let items = patch.maxItems { card.maxItems = min(max(items, 1), Engine.mostItems) }
         case .flow:
             if let flowRef = patch.flowRef { card.flowRef = Self.setOrCleared(flowRef) }
+        case .delay:
+            if let minutes = patch.waitMinutes { card.waitMinutes = DelayTime.clamped(minutes) }
         case .and, .or:
             break
         }

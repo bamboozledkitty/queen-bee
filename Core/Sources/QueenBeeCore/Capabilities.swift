@@ -166,6 +166,18 @@ public enum Capabilities {
                     "A message with no items goes straight out done, unchanged. A message that reaches it from anywhere but the cards on each while items are out is dropped.",
                     "Have one message come back per item. Don't send an item to several agents and gather them with an Or: a slower agent's reply would come back as the next item's result. Use an And to wait for all of them.",
                 ])
+        case .delay:
+            CardCapability(.delay,
+                does: "Holds the message for wait_minutes, then passes it on out unchanged, still from whoever sent it.",
+                settings: [
+                    SettingCapability("wait_minutes", ["type": "integer", "minimum": 1, "maximum": .number(Double(HoldTimeLimit.longestMinutes))],
+                                      "How many minutes it holds the message, from 1 to \(grouped(HoldTimeLimit.longestMinutes)) (a week). Less than 1 counts as 1. Defaults to \(DelayTime.defaultMinutes)."),
+                ],
+                notes: [
+                    "Use it to wait before trying something again, such as a Script that checks whether a job is done: link its fail to a Delay and the Delay back to the Script. The link's max_passes still limits how many times it goes round.",
+                    "The run is still going while it waits, and the person can send the message on early from the Mac. Stopping the run drops the message.",
+                    "It counts in whole minutes. It doesn't wait for a time of day: for that, put a schedule on the Start card.",
+                ])
         }
     }
 

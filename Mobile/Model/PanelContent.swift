@@ -235,6 +235,15 @@ nonisolated struct Details: Equatable {
             add(.row, "Runs", CanvasContent.innerFlow(of: card, in: siblings, excluding: flow.id)?.name ?? (chosen ? "A flow that isn't in this project" : "Nothing yet"))
             add(.note, "This card runs a whole flow as one step. The message that arrives here goes to that flow's Input, and what reaches its Output comes back out Done. If it stops early or fails, the message goes out Fail.")
             if let hold { add(.waiting, "Running \(hold.command)…") }
+        case .delay:
+            add(.row, "Wait", HoldTimeLimit.describe(minutes: DelayTime.minutes(for: card)))
+            if let hold {
+                let stop = hold.from.last.map { "?!.".contains($0) } == true ? "" : "."
+                let at = hold.deadline.map { " Goes on at \($0.formatted(date: .omitted, time: .shortened))." } ?? " Waiting."
+                add(.waiting, "From \(hold.from)\(stop)" + at, hold.text)
+            } else {
+                add(.note, EditForm.delayText)
+            }
         case .script:
             add(.code, "Command", said(card.command))
             if let line = EditForm.waitLine(card) { add(.row, "If nobody allows it", line) }

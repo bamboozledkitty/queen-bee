@@ -99,7 +99,7 @@ nonisolated struct FieldKey: Hashable, Sendable {
             case .saveTo: return .text(card.saveTo ?? "")
             case .text: return .text(card.text ?? "")
             case .flowRef: return .text(CanvasContent.innerFlow(of: card, in: siblings, excluding: flow.id)?.id ?? "")
-            case .waitMinutes: return .text("\(card.waitMinutes ?? 0)")
+            case .waitMinutes: return .text("\(card.kind == .delay ? DelayTime.minutes(for: card) : card.waitMinutes ?? 0)")
             case .whenNoAnswer: return .text(card.whenNoAnswer ?? "rejected")
             case .split: return .text((card.split ?? .auto).rawValue)
             case .maxItems: return .number(card.maxItems ?? 20)
@@ -439,6 +439,9 @@ nonisolated struct EditForm: Equatable {
             caution(Self.scriptLine)
             add(.waitMinutes, "Wait to be allowed", Self.waitChoices(card))
             note("Runs this command in the project's folder, as if you had typed it in Terminal. If the command succeeds, the run carries on from Pass. If it fails, from Fail. Whatever the command prints is what gets passed on.")
+        case .delay:
+            add(.waitMinutes, "Wait", Self.delayChoices(card))
+            if !details.items.contains(where: { $0.style == .waiting }) { note(Self.delayText) }
         }
         // What a run is waiting with at this card, what is wrong with its wiring, that the run stopped here, and what its
         // session doesn't have yet.
@@ -526,6 +529,17 @@ nonisolated struct EditForm: Equatable {
             EditField.Choice(value: "\($0)", label: $0 == 0 ? "As long as it takes" : "Up to \(HoldTimeLimit.describe(minutes: $0))")
         })
     }
+
+    /// The Mac's choices for how long a Delay card waits, and the card's own if it is another.
+    static func delayChoices(_ card: Card) -> EditField.Control {
+        let minutes = DelayTime.minutes(for: card), all = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 24 * 60, 2 * 24 * 60, 7 * 24 * 60]
+        return .choice((all + (all.contains(minutes) ? [] : [minutes])).sorted().map {
+            EditField.Choice(value: "\($0)", label: HoldTimeLimit.describe(minutes: $0))
+        })
+    }
+
+    /// What a Delay card does, as the Mac says it.
+    static let delayText = "Holds each message for this long, then passes it on as it was. The run keeps going while it waits."
 
     /// What a card with a time limit does when it is up, or nil for one that waits for good.
     static func waitLine(_ card: Card) -> String? {

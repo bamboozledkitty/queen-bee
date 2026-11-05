@@ -3520,7 +3520,7 @@ def scenario_editing():
     on = ("-qbControl", "1")
     away, gone = "Not connected to your Mac right now.", "That card is no longer in the flow."
     # The kinds of card in the Mac's order, with the made-up Mac's two saved roles under Agent, as its palette has them.
-    kinds = ["Agent", "Note writer", "Proof reader", "Start", "If / Else", "Switch", "And", "Or", "Prompt", "Loop until", "For each", "Approval", "Script", "Flow", "End", "Note"]
+    kinds = ["Agent", "Note writer", "Proof reader", "Start", "If / Else", "Switch", "And", "Or", "Prompt", "Loop until", "For each", "Approval", "Script", "Delay", "Flow", "End", "Note"]
     bar = ["undo", "redo", "add", "select", "tidy", "done"]
 
     def edit(state):
@@ -5026,7 +5026,15 @@ UNASKED = flow("Unasked", [
     card("end", "Sent", 1180, 0),
 ], [("Start", "out", "Gate", 3), ("Gate", "approved", "Sender", 3), ("Sender", "out", "Sent", 3)])
 
-FLOWS.update({"gates": GATES, "unasked": UNASKED, "inner": INNER, "subflow": OUTER, "timed": TIMED})
+# Two Delay cards in a row: a short one that passes the message on by itself, and a long one sent on early.
+DELAYS = flow("Delays", [
+    card("start", "Start", 0, 0, command="wait for it"),
+    card("delay", "Short", 312, 0, waitMinutes=2),
+    card("delay", "Long", 624, 0, waitMinutes=600),
+    card("end", "Out", 936, 0),
+], [("Start", "out", "Short", 9), ("Short", "out", "Long", 9), ("Long", "out", "Out", 9)])
+
+FLOWS.update({"gates": GATES, "unasked": UNASKED, "inner": INNER, "subflow": OUTER, "timed": TIMED, "delays": DELAYS})
 
 
 def held(app, fid, card=None, timeout=20):
@@ -5209,7 +5217,7 @@ def scenario_subflow(app):
 
 
 def scenario_timed(app):
-    print("timed: schedules and file triggers start runs, and one that came in a file stays off", flush=True)
+    print("timed: schedules and file triggers start runs, one that came in a file stays off, and Delay cards wait", flush=True)
     fid = TIMED["id"]
     app.op(fid, "select")
     time.sleep(2)
@@ -5231,6 +5239,33 @@ def scenario_timed(app):
     check("the schedule starts a run at its time", s["results"].get("Rang") == "tick", str(s["results"]))
     check("the schedule that came in the file never ran", "Never" not in s["results"])
     app.op(fid, "trigger", card="Clock")
+
+    # Delay cards, with a minute counted as two seconds.
+    did = DELAYS["id"]
+    app.op(did, "holdMinute", seconds=2)
+    try:
+        app.op(did, "select")
+        time.sleep(1)
+        app.op(did, "run")
+        started = time.time()
+        h = held(app, did, "Short")
+        check("a Delay holds the message", h[0]["kind"] == "delay" and h[0]["text"] == "wait for it" and not h[0]["needsAllow"], str(h))
+        s = app.state(did)
+        check("the log says how long it waits", 'Delay "Short" is waiting 2 minutes' in s["log"], str(s["log"][-4:]))
+        check("a Delay doesn't count as needing you", s["isRunning"] and s.get("activity") != "needsYou", str(s.get("activity")))
+        h = held(app, did, "Long", timeout=30)
+        waited = time.time() - started
+        check("it passes the message on by itself once its time is up", waited >= 3, f"after {waited:.1f}s")
+        check("and the next Delay holds it", h[0]["text"] == "wait for it", str(h))
+        app.op(did, "hold", card="Long", answer="sendOn")
+        s = app.wait(did, lambda s: not s["isRunning"] and s["runs"], 20, "the Delay sent on early to finish the run")
+        check("Send it on now passes the message on at once", s["results"].get("Out") == "wait for it", str(s["results"]))
+        check("the log says it went early", "Long was sent on early" in s["log"], str(s["log"][-6:]))
+        check("and the message is still from the Start card", 'End "Out" got the final answer from Start' in s["log"], str(s["log"][-6:]))
+        check("nothing is left held", s["holds"] == [], str(s["holds"]))
+    finally:
+        app.op(did, "holdMinute")
+    app.op(did, "close")
 
 
 # For each: three lines go one at a time through an agent and come back, then out Done together.
@@ -6330,7 +6365,7 @@ def main():
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
     for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "inner", "subflow", "timed"]
                              + [f"level{n}" for n in range(5)] + ["doors", "slow", "edits", "unasked", "browser"]
-                             + ["features", "gaveup", "holds", "spend", "cli", "cliwait"]):
+                             + ["features", "gaveup", "holds", "spend", "cli", "cliwait", "delays"]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)
 

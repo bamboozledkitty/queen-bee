@@ -162,6 +162,8 @@ enum CardSummary {
         case .script:
             let first = (card.command ?? "").split(separator: "\n").first.map(String.init) ?? ""
             return (first.isEmpty ? "Write the command" : first) + timeLimit(card)
+        case .delay:
+            return "Waits \(HoldTimeLimit.describe(minutes: DelayTime.minutes(for: card))), then passes it on"
         }
     }
 

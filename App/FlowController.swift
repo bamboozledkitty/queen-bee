@@ -919,7 +919,7 @@ final class FlowController: ToolHost {
         for hold in holds where flow.card(hold.cardID) == nil {
             holdTasks[hold.id]?.cancel()
             holdTasks[hold.id] = nil
-            resolve(hold.id, port: hold.kind == .approval ? "rejected" : "fail", text: nil)
+            resolve(hold.id, port: hold.kind == .approval ? "rejected" : hold.kind == .delay ? "out" : "fail", text: nil)
         }
         if isOpen, services.environment != nil { startMissingSessions() }
     }
@@ -1840,6 +1840,14 @@ final class FlowController: ToolHost {
             holds.append(pending)
             return runInnerFlow(pending, inner)
         }
+        if hold.kind == .delay {
+            let wait = DelayTime.wait(for: card)
+            let lasts = TestHarness.holdWait(wait)
+            pending.deadline = Date().addingTimeInterval(Self.seconds(lasts))
+            holdClocks[pending.id] = (Date(), wait)
+            holds.append(pending)
+            return passOn(pending.id, after: lasts)
+        }
         if let wait = HoldTimeLimit.wait(for: card), pending.kind == .approval || pending.needsAllow {
             let lasts = TestHarness.holdWait(wait)
             pending.deadline = Date().addingTimeInterval(Self.seconds(lasts))
@@ -1881,6 +1889,23 @@ final class FlowController: ToolHost {
         }
     }
 
+    /// A Delay card's message goes on once its time is up, unless the person sent it on first or the run ended.
+    /// Like a time limit, the clock keeps counting while the Mac sleeps.
+    private func passOn(_ id: String, after lasts: Duration) {
+        holdTasks[id] = Task {
+            try? await Task.sleep(for: lasts, clock: .continuous)
+            guard !Task.isCancelled, self.holds.first(where: { $0.id == id })?.kind == .delay else { return }
+            self.resolve(id, port: "out", text: nil)
+        }
+    }
+
+    /// The person sent a Delay card's message on without waiting for the rest of its time.
+    func sendOnNow(_ id: String) {
+        guard let hold = holds.first(where: { $0.id == id }), hold.kind == .delay else { return }
+        append("\(flow.card(hold.cardID)?.name ?? "A Delay card") was sent on early")
+        resolve(id, port: "out", text: nil, byPerson: true)
+    }
+
     private static func seconds(_ duration: Duration) -> TimeInterval {
         Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
@@ -1888,6 +1913,18 @@ final class FlowController: ToolHost {
     /// A waiting card's time limit was changed: its clock now runs to the new limit, counted from when it began
     /// waiting, and one past it already answers. A limit taken off stops the clock, and one put on starts it now.
     private func retimeHolds() {
+        // A Delay whose time was changed waits the new time, counted from when it began. One already past it goes on.
+        for hold in holds where hold.kind == .delay {
+            guard let card = flow.card(hold.cardID), let clock = holdClocks[hold.id],
+                  let index = holds.firstIndex(where: { $0.id == hold.id }) else { continue }
+            let wait = DelayTime.wait(for: card)
+            guard wait != clock.wait else { continue }
+            holdTasks.removeValue(forKey: hold.id)?.cancel()
+            let deadline = clock.began.addingTimeInterval(Self.seconds(TestHarness.holdWait(wait)))
+            holdClocks[hold.id] = (clock.began, wait)
+            holds[index].deadline = deadline
+            passOn(hold.id, after: .milliseconds(Int(max(deadline.timeIntervalSinceNow, 0) * 1000)))
+        }
         for hold in holds where hold.kind == .approval || hold.needsAllow {
             guard let card = flow.card(hold.cardID) else { continue }
             let wait = HoldTimeLimit.wait(for: card)

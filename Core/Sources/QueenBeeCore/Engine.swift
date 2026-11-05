@@ -57,7 +57,8 @@ public struct Travel: Equatable, Sendable {
 }
 
 /// A message stopped at a card that can't answer straight away: an Approval waiting for the
-/// person, or a Script waiting for its command to finish. The app answers with `holdResolved`.
+/// person, a Script waiting for its command to finish, a Flow card waiting for its flow, or a Delay
+/// waiting out its time. The app answers with `holdResolved`.
 public struct Hold: Equatable, Sendable {
     public let id: String
     public let cardID: String
@@ -385,7 +386,8 @@ public actor Engine {
         if let card = flow.card(held.cardID) {
             var message = held.message
             if let text, !Self.isBlank(text) { message.text = text }
-            if card.kind == .approval { message.approvedBy = card.name } else { message.fromName = card.name; message.fromStart = false; message.approvedBy = nil }
+            // A Delay only held the message, so it goes on from whoever sent it.
+            if card.kind == .approval { message.approvedBy = card.name } else if card.kind != .delay { message.fromName = card.name; message.fromStart = false; message.approvedBy = nil }
             output.log.append("\(Self.title(card)) → \(portLabel(port))")
             output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: port))
             await send(message, from: card, port: port, in: flow, state: &state, output: &output)
@@ -667,7 +669,7 @@ public actor Engine {
             state.answered = true
             return nil
 
-        case .approval, .script, .flow:
+        case .approval, .script, .flow, .delay:
             if card.kind == .flow, Self.isBlank(card.flowRef ?? "") {
                 output.log.append("\(title) has no flow chosen, so it counts as Fail")
                 return ("fail", message)
@@ -681,7 +683,9 @@ public actor Engine {
             state.pending.insert(Self.holdKey(hold.id))
             output.holds.append(hold)
             output.log.append(card.kind == .approval ? "\(title) is waiting for you"
-                              : card.kind == .script ? "\(title) is running its command" : "\(title) is running its flow")
+                              : card.kind == .script ? "\(title) is running its command"
+                              : card.kind == .delay ? "\(title) is waiting \(HoldTimeLimit.describe(minutes: DelayTime.minutes(for: card)))"
+                              : "\(title) is running its flow")
             return nil
 
         case .forEach:

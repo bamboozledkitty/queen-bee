@@ -14,6 +14,8 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
     case flow
     /// Splits its message into items and sends them on one at a time, then passes on what came back for each.
     case forEach = "for-each"
+    /// Holds a message for a set time, then passes it on as it was.
+    case delay
 
     public var label: String {
         switch self {
@@ -31,6 +33,7 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
         case .script: "Script"
         case .flow: "Flow"
         case .forEach: "For each"
+        case .delay: "Delay"
         }
     }
 }
@@ -102,6 +105,7 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     // Approval
     /// How long the person has to answer, in minutes, before the card answers for them. Nil waits for good.
     /// A Script card waiting for its command to be allowed has this too, and goes out fail.
+    /// A Delay card holds its message this long before passing it on; see `DelayTime`.
     public var waitMinutes: Int?
     /// The output an Approval card takes when nobody answered in time: approved or rejected. Nil for rejected.
     public var whenNoAnswer: String?
@@ -151,6 +155,7 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
         case .approval: c.text = ""
         case .script: c.command = ""
         case .forEach: c.split = .auto; c.maxItems = 20
+        case .delay: c.waitMinutes = DelayTime.defaultMinutes
         case .and, .or, .flow: break
         }
         c.height = max(c.height, Card.minimumHeight(for: c))
@@ -260,7 +265,7 @@ public func ports(of card: Card) -> [String] {
     case .flow: ["done", "fail"]
     case .forEach: ["each", "done"]
     case .end, .note: []
-    case .agent, .start, .and, .or, .prompt: ["out"]
+    case .agent, .start, .and, .or, .prompt, .delay: ["out"]
     }
 }
 

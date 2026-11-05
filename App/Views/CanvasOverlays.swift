@@ -192,6 +192,9 @@ enum CardHelp {
         case .forEach:
             ("Splits a list into items and sends them on one at a time. What comes back for each is collected, and when every item is done they all go out Done together.",
              "A list of ten links goes to a Reader one at a time, and the ten summaries go on to a Writer together.")
+        case .delay:
+            ("Holds the message for as long as you set, then passes it on as it was. You can send it on early.",
+             "A Script checks whether a deploy has finished. Fail goes to a 5 minute Delay, and the Delay back to the Script.")
         case .flow:
             ("Runs another of the project's flows as a single step. Build a piece once, then use it wherever you need it.",
              "A “Review loop” flow of four cards becomes one card in three other flows.")

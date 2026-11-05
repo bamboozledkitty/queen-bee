@@ -9,6 +9,7 @@ All notable changes to Queen Bee are listed here. The format follows
 ### Added
 
 - A Prompt card can pick fields out of a message that is JSON: `{{message.title}}` puts in its title, and `{{message.items.0.name}}` the name of its first item. It works on JSON on its own or in a code fence, as agents usually write it, so simple reshaping no longer needs a Script card.
+- A Delay card holds a message for a set time, from a minute to a week, then passes it on as it was. Use it to wait before trying something again, such as a Script that checks whether a job has finished. The card shows when the message goes on. On the Mac, Send it on now skips the rest of the wait.
 
 ### Fixed
 

@@ -74,7 +74,7 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
         // An item's result comes back along a link into this card from the cards on Each.
         if !comesBack(to: card, in: flow) { return "Nothing on Each links back to it" }
         if nothing(on: "done") { return "Nothing on Done" }
-    case .or, .prompt:
+    case .or, .prompt, .delay:
         break
     }
 
