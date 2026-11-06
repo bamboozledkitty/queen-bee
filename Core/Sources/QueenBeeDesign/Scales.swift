@@ -61,6 +61,8 @@ public enum DS {
         public static let link: CGFloat = 1.5
         /// The ring around a selected card or a focused field.
         public static let focus: CGFloat = 2
+        /// The track of the progress ring and of a run's line of stops.
+        public static let track: CGFloat = 3
     }
 
     /// Heights and widths that keep the layout in line from screen to screen.
@@ -122,6 +124,13 @@ public enum DS {
         /// The command menu's search field, a row, and its footer.
         public static let commandField: CGFloat = 52
         public static let commandRow: CGFloat = 38
+        /// The progress pill's ring, a stop on a run's line, and one of a For each's item ticks.
+        public static let progressRing: CGFloat = 18
+        public static let stop: CGFloat = 16
+        public static let itemTick: CGFloat = 6
+        /// The room each stop on a run's line takes, and the widest the line's panel is drawn.
+        public static let stopColumn: CGFloat = 104
+        public static let progressLineWidth: CGFloat = 720
         public static let commandFooter: CGFloat = 36
         /// A small label's least height: a badge.
         public static let badge: CGFloat = 20

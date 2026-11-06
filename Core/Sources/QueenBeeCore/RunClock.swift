@@ -17,7 +17,12 @@ public enum RunClock {
 
     /// How long a run took: "42 sec", "3 min 5 sec", "1 hr 4 min".
     public static func length(from start: Date, to end: Date) -> String {
-        let seconds = max(0, Int(end.timeIntervalSince(start).rounded()))
+        length(end.timeIntervalSince(start))
+    }
+
+    /// How long something took, or has been going: "42 sec", "3 min 5 sec", "1 hr 4 min".
+    public static func length(_ time: TimeInterval) -> String {
+        let seconds = max(0, Int(time.rounded()))
         if seconds < 60 { return "\(seconds) sec" }
         if seconds < 3600 { return "\(seconds / 60) min \(seconds % 60) sec" }
         return "\(seconds / 3600) hr \(seconds % 3600 / 60) min"

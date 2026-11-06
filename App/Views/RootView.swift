@@ -203,10 +203,14 @@ struct CanvasControls: View {
                 }
             }
             .overlay(alignment: .top) {
-                if let message = services.problem ?? controller.banner {
-                    BannerView(text: message) {
-                        if services.problem != nil { services.dismissProblem() } else { controller.banner = nil }
+                VStack(spacing: DS.Space.s) {
+                    if let message = services.problem ?? controller.banner {
+                        BannerView(text: message) {
+                            if services.problem != nil { services.dismissProblem() } else { controller.banner = nil }
+                        }
                     }
+                    RunProgressPill(controller: controller)
+                        .padding(.top, DS.Space.s)
                 }
             }
             .overlay(alignment: .bottomLeading) { StatusStrip(controller: controller, showLog: showLog) }

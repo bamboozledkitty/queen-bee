@@ -77,6 +77,21 @@ final class FlowController: ToolHost {
     private(set) var sessionsRevision = 0
     /// Where the latest run has been, card by card. Kept after the run ends, cleared when the next starts.
     private(set) var marks: [String: RunMark] = [:]
+    /// The engine's last word on the run that is going: who it waits on, and how far its loops and For each cards
+    /// have got. Nil when no run is going.
+    private(set) var runSnapshot: RunSnapshot?
+    /// When each card the run is at now got there, for saying how long it has been at it.
+    private(set) var liveSince: [String: Date] = [:]
+    /// How the latest run ended, while its progress is still on show. Nil while a run goes and before the first.
+    private(set) var lastEnding: RunEnding?
+    /// The person closed the progress of a run that has ended. The next run shows it again.
+    var progressDismissed = false
+    /// The progress pill is open on its line of stops.
+    var showsProgressLine = false
+    /// The fraction last shown for the run, so its number never goes back while it is going.
+    @ObservationIgnored private var progressFloor = 0.0
+    /// The cards the latest run was still at when it ended.
+    private(set) var endedAt: Set<String> = []
     /// How many times each link has fired in the latest run.
     private(set) var linkPasses: [String: Int] = [:]
     /// The links each waiting agent's hand-off travelled, by that agent's card id.
@@ -114,6 +129,8 @@ final class FlowController: ToolHost {
     @ObservationIgnored let subflowTurns = RunTurns()
     /// The flows the run that is going is inside, by id, when a Flow card began it. Empty for a run begun here.
     @ObservationIgnored private var runInside: Set<String> = []
+    /// The Flow card's hold, in the flow above, that the run going now was started for. Nil for a run started here.
+    private(set) var runForHold: String?
     /// Flow cards waiting for a run of this flow to end, by run id.
     @ObservationIgnored private var endWaiters: [String: [CheckedContinuation<RunRecord?, Never>]] = [:]
     /// The run each agent's turn under way is working for, read off the hand-off that began the turn.
@@ -564,6 +581,12 @@ final class FlowController: ToolHost {
         wholeMessages.removeAll()
         handOffs = 0
         viewedRunID = nil
+        runSnapshot = nil
+        endedAt = []
+        liveSince.removeAll()
+        lastEnding = nil
+        progressFloor = 0
+        progressDismissed = false
         runLogStart = log.count
         usageAtRunStart = usage
         watchSpending()
@@ -1783,6 +1806,10 @@ final class FlowController: ToolHost {
         guard !isClosed else { return [] }
         output.log.forEach { append($0) }
         record(output.visits, sender: sender)
+        if let snapshot = output.snapshot { take(snapshot) }
+        // A card handed a new message, for its next item or its next try, starts its time again.
+        let now = Date()
+        for id in output.deliveries.map(\.toCardID) + output.holds.map(\.cardID) where liveSince[id] != nil { liveSince[id] = now }
         handOffs += output.deliveries.count
         for result in output.results {
             results[result.cardID] = result.text
@@ -1835,6 +1862,12 @@ final class FlowController: ToolHost {
             holdClocks.removeAll()
             holds.removeAll()
             lastRunEnded = Date()
+            // Where the run still was when it ended, less the cards this last step moved on from.
+            let movedOn = Set(output.visits.filter { $0.port != nil }.map(\.cardID))
+            endedAt = Set((runSnapshot?.waitingOn ?? []) + (runSnapshot?.holding ?? [])).subtracting(movedOn)
+            runSnapshot = nil
+            liveSince.removeAll()
+            lastEnding = output.ending ?? .stopped
             finishRecord(output)
             subflowTurns.somethingEnded()
             notifyOrchestrator(of: output)
@@ -1844,7 +1877,71 @@ final class FlowController: ToolHost {
         } else if output.runID != nil {
             isRunning = true
         }
+        // Kept up even while the progress is closed or an older run is on show, so it is right when it comes back.
+        progressFloor = latestProgress?.fraction ?? progressFloor
         return forPlugin
+    }
+
+    // MARK: Progress
+
+    /// Takes in the engine's word on where the run stands, and notes when each card it is at got there.
+    private func take(_ snapshot: RunSnapshot) {
+        runSnapshot = snapshot
+        let now = Date()
+        let live = Set(snapshot.waitingOn + snapshot.holding)
+        for id in live where liveSince[id] == nil { liveSince[id] = now }
+        for id in liveSince.keys where !live.contains(id) { liveSince[id] = nil }
+    }
+
+    /// How far the latest run has got, while it goes and after it ends until the next one starts. Nil when there
+    /// is nothing to show: no run yet, an older run on show, or the person closed it.
+    var runProgress: RunProgress? {
+        guard !progressDismissed, viewedRunID == nil else { return nil }
+        return latestProgress
+    }
+
+    /// How far the latest run has got, whether or not it is on show. Nil before the first run.
+    var latestProgress: RunProgress? {
+        guard isRunning || lastEnding != nil else { return nil }
+        var needs: [String: RunProgress.Need] = [:]
+        for hold in holds {
+            if hold.kind == .approval { needs[hold.cardID] = .approval } else if hold.needsAllow { needs[hold.cardID] = .allowCommand }
+        }
+        for card in flow.cards where card.kind == .agent && sessions[card.id]?.state == .needsYou { needs[card.id] = .session }
+        for id in awaitingAnswer { needs[id] = .question }
+        var inner: [String: Double] = [:]
+        for hold in holds where hold.kind == .flow {
+            // Only the run this hold started counts. One its flow is doing for another Flow card, which this one waits
+            // its turn behind, is no part of it, and two flows waiting on each other would go round for ever.
+            guard let card = flow.card(hold.cardID), let below = innerFlow(of: card), below.isRunning(forHold: hold.id),
+                  let progress = below.latestProgress else { continue }
+            inner[card.id] = progress.fraction
+        }
+        return RunProgress(flow: flow, marks: marks, snapshot: isRunning ? runSnapshot : nil, inner: inner, needs: needs,
+                           ending: isRunning ? nil : lastEnding, shownBefore: progressFloor, endedAt: isRunning ? [] : endedAt)
+    }
+
+    /// Whether this flow's run is the one a Flow card started for the message it holds as `holdID`. Another Flow
+    /// card that runs the same flow, here or in another flow, waits its turn and gets a run of its own.
+    func isRunning(forHold holdID: String) -> Bool { isRunning && runForHold == holdID }
+
+    /// How long the run on show has been going, or took once it ended. Nil before the first run.
+    func runTime(at now: Date) -> TimeInterval? {
+        if let run = currentRun { return now.timeIntervalSince(run.started) }
+        guard lastEnding != nil, let last = runs.last else { return nil }
+        return last.ended.timeIntervalSince(last.started)
+    }
+
+    /// What the agents have spent in the run on show.
+    var runSpend: Usage {
+        flow.cards.filter { $0.kind == .agent }.compactMap { runUsage(forCard: $0.id) }.reduce(Usage(), +)
+    }
+
+    /// Selects a card and brings it into view, unfolding its group if it is folded away.
+    func show(card id: String) {
+        select(.card(id))
+        if let group = flow.group(containing: id), group.isFolded { setFolded(false, group: group.id) }
+        canvas?.zoom(toCard: id)
     }
 
     // MARK: Approval, Script and Flow cards
@@ -1991,7 +2088,7 @@ final class FlowController: ToolHost {
         }
         holdTasks[hold.id] = Task {
             // Cancelling this stops the inner run, if it has begun: see `runToEnd`.
-            let answer = await inner.runToEnd(command: hold.text, levelsLeft: levels, inside: inside)
+            let answer = await inner.runToEnd(command: hold.text, levelsLeft: levels, inside: inside, forHold: hold.id)
             guard !Task.isCancelled else { return }
             self.holdTasks[hold.id] = nil
             self.resolve(hold.id, port: answer.finished ? "done" : "fail", text: answer.text)
@@ -2296,11 +2393,13 @@ final class FlowController: ToolHost {
     /// Runs the flow for a Flow card and waits for the run to end. The answer is what reached its End cards.
     /// A flow has one run at a time: this waits its turn behind other Flow cards running it, and behind a run
     /// started some other way. Cancelling it gives up its place, or stops the run it began.
-    func runToEnd(command: String, levelsLeft: Int, inside: Set<String>) async -> (finished: Bool, text: String) {
+    func runToEnd(command: String, levelsLeft: Int, inside: Set<String>, forHold holdID: String? = nil) async -> (finished: Bool, text: String) {
         guard await subflowTurns.take(whenFree: { !self.isRunning && !self.isStartingRun }) else { return (false, "The run was stopped.") }
         defer { subflowTurns.release() }
         let started = await start(command: command, levelsLeft: levelsLeft, inside: inside)
         guard started.began, let id = started.runID else { return (false, started.status) }
+        runForHold = holdID
+        defer { if runForHold == holdID { runForHold = nil } }
         let ended = await withTaskCancellationHandler {
             await runEnded(id)
         } onCancel: {
