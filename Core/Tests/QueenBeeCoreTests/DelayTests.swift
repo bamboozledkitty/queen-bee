@@ -73,6 +73,17 @@ import Testing
         #expect(HoldTimeLimit.wait(for: made) == nil)
     }
 
+    @Test func theWaitsOfferedIncludeTheCardsOwn() {
+        var card = Card(id: "d1", kind: .delay, name: "Wait", x: 0, y: 0, width: 240, height: 96)
+        card.waitMinutes = 5
+        let offered = DelayTime.choices(for: card)
+        #expect(offered.first == 1 && offered.last == HoldTimeLimit.longestMinutes && offered == offered.sorted())
+        // One set in a file or by the orchestrator to a time not on the list is offered too, in its place.
+        card.waitMinutes = 7
+        let withOwn = DelayTime.choices(for: card)
+        #expect(withOwn.count == offered.count + 1 && withOwn.contains(7) && withOwn == withOwn.sorted())
+    }
+
     @Test func aDelayNeedsOnlySomethingLinkedIn() throws {
         var flow = try delayed()
         #expect(warnings(for: flow).isEmpty)

@@ -18,7 +18,7 @@ A live Claude Code agent that does work. When its turn ends, its reply goes out 
 - Setting `cwd` (text): The folder the agent works in. An empty string goes back to the project folder.
 - Setting `browser` (true or false): true gives the agent a web browser in its card, which the person can watch and use too, and makes the card twice as wide. Turn it on only for an agent whose work needs the web. Its tools and limits are listed under "An agent with a browser".
 - New settings apply the next time the agent's session starts.
-- error is for when the agent fails while the run is waiting on it: its turn ends with an API error, or its session ends or is restarted. With something linked to error, the message it was working on goes out there as it was handed over, still from whoever sent it, and the run goes on. With nothing linked to error, the run stops.
+- error is for when the agent fails while the run is waiting on it: its turn ends with an API error, or its session ends or is restarted. With something linked to error, the message it was working on goes out there as it was handed over, still from whoever sent it, and the run goes on. When its session has ended, every message it was given and hadn't answered goes out there, oldest first. With nothing linked to error, the run stops.
 - To try again after a failure, link error to a Delay card and the Delay back to the agent. The link's max_passes limits the tries; after them, link error somewhere else, such as an End card with fails_run set, to end the run. A message that reaches an agent whose session has ended starts it again.
 
 ### Start (`start`)

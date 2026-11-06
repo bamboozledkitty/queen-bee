@@ -69,7 +69,7 @@ public enum Capabilities {
                 ],
                 notes: [
                     "New settings apply the next time the agent's session starts.",
-                    "error is for when the agent fails while the run is waiting on it: its turn ends with an API error, or its session ends or is restarted. With something linked to error, the message it was working on goes out there as it was handed over, still from whoever sent it, and the run goes on. With nothing linked to error, the run stops.",
+                    "error is for when the agent fails while the run is waiting on it: its turn ends with an API error, or its session ends or is restarted. With something linked to error, the message it was working on goes out there as it was handed over, still from whoever sent it, and the run goes on. When its session has ended, every message it was given and hadn't answered goes out there, oldest first. With nothing linked to error, the run stops.",
                     "To try again after a failure, link error to a Delay card and the Delay back to the agent. The link's max_passes limits the tries; after them, link error somewhere else, such as an End card with fails_run set, to end the run. A message that reaches an agent whose session has ended starts it again.",
                 ])
         case .start:

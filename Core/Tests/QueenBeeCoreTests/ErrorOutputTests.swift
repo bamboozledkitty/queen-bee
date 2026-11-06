@@ -105,7 +105,7 @@ import Testing
         #expect(replied.deliveries.map(\.toCardID) == [sender])
     }
 
-    @Test func aSessionThatEndsAnswersNothingMoreItWasGiven() async throws {
+    @Test func aSessionThatEndsSendsEverythingItWasGivenOutError() async throws {
         var flow = Flow(name: "Test")
         var start = CardPatch()
         start.command = "Go"
@@ -123,8 +123,9 @@ import Testing
         let writer = try id("Writer", in: flow)
 
         let ended = await engine.agentFailed(flow: flow, cardID: writer, reason: "its session ended")
-        #expect(ended.deliveries.map(\.fromName) == ["A"])
-        #expect(ended.log.contains("Writer had 1 more message it will never answer"))
+        // Both messages it was given go out Error, oldest first, so nothing is left waiting on it.
+        #expect(ended.deliveries.map(\.fromName) == ["A", "B"])
+        #expect(ended.log.contains("Writer failed: its session ended → Error, with all 2 messages it was given"))
         #expect(await engine.agentReplied(flow: flow, cardID: writer, text: "Late").deliveries.isEmpty)
     }
 

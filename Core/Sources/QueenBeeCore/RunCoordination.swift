@@ -196,6 +196,13 @@ public enum DelayTime {
         min(max(minutes, 1), HoldTimeLimit.longestMinutes)
     }
 
+    /// The waits offered in a Delay card's settings, shortest first, with the card's own when it is another.
+    public static func choices(for card: Card) -> [Int] {
+        let offered = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 24 * 60, 2 * 24 * 60, 7 * 24 * 60]
+        let own = minutes(for: card)
+        return (offered + (offered.contains(own) ? [] : [own])).sorted()
+    }
+
     /// How long the card waits.
     public static func wait(for card: Card) -> Duration {
         .seconds(minutes(for: card) * 60)

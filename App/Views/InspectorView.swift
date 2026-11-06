@@ -533,14 +533,10 @@ private struct DelaySettings: View {
     let card: Card
     let patch: ((inout CardPatch) -> Void) -> Void
 
-    private static let choices = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 24 * 60, 2 * 24 * 60, 7 * 24 * 60]
-
     var body: some View {
-        let minutes = DelayTime.minutes(for: card)
-        let options = (Self.choices + (Self.choices.contains(minutes) ? [] : [minutes])).sorted()
         row("Wait") {
-            MenuField(options: options.map { (value: $0, label: HoldTimeLimit.describe(minutes: $0)) },
-                      selection: minutes) { v in patch { $0.waitMinutes = v } }
+            MenuField(options: DelayTime.choices(for: card).map { (value: $0, label: HoldTimeLimit.describe(minutes: $0)) },
+                      selection: DelayTime.minutes(for: card)) { v in patch { $0.waitMinutes = v } }
         }
     }
 }
@@ -552,7 +548,7 @@ private struct DelayReview: View {
 
     var body: some View {
         HStack(spacing: DS.Space.s) {
-            Text(hold.deadline.map { "From \(hold.from). Goes on at \($0.formatted(date: .omitted, time: .shortened))." } ?? "From \(hold.from). Waiting.")
+            Text(hold.deadline.map { "From \(hold.from). Goes on at \(RunClock.moment($0))." } ?? "From \(hold.from). Waiting.")
                 .textRole(.captionLabel)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()

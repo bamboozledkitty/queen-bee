@@ -235,7 +235,7 @@ nonisolated struct Details: Equatable {
             add(.row, "Wait", HoldTimeLimit.describe(minutes: DelayTime.minutes(for: card)))
             if let hold {
                 let stop = hold.from.last.map { "?!.".contains($0) } == true ? "" : "."
-                let at = hold.deadline.map { " Goes on at \($0.formatted(date: .omitted, time: .shortened))." } ?? " Waiting."
+                let at = hold.deadline.map { " Goes on at \(RunClock.moment($0))." } ?? " Waiting."
                 add(.waiting, "From \(hold.from)\(stop)" + at, hold.text)
             } else {
                 add(.note, EditForm.delayText)

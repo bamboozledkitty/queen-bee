@@ -132,7 +132,7 @@ nonisolated struct CanvasContent: Equatable {
                 context.isLive = true
                 context.waiting = hold.kind == .approval ? "Waiting for you to approve"
                     : hold.kind == .flow ? "Running \(hold.command)…"
-                    : hold.kind == .delay ? hold.deadline.map { "Waiting until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Waiting"
+                    : hold.kind == .delay ? hold.deadline.map { "Waiting until \(RunClock.moment($0))" } ?? "Waiting"
                     : hold.allowOnMac == true && hold.needsAllow ? "Allow its command on your Mac"
                     : hold.needsAllow ? "Waiting for you to let its command run" : "Running its command…"
             }

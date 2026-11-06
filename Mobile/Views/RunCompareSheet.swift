@@ -19,11 +19,17 @@ struct RunCompareSheet: View {
         }
     }
 
+    /// A picked run, while it is still kept. One that has since dropped out of the kept runs goes back to the
+    /// default, so the sheet never asks for a run it no longer has.
+    private static func kept(_ id: String?, in runs: [RunRecord]) -> String? {
+        id.flatMap { id in runs.contains { $0.id == id } ? id : nil }
+    }
+
     var body: some View {
         let snapshot = client.mirror.snapshot
         let runs = snapshot?.runs ?? []
-        let first = pickedFirst ?? runs.dropLast().last?.id ?? ""
-        let second = pickedSecond ?? runs.last?.id ?? ""
+        let first = Self.kept(pickedFirst, in: runs) ?? runs.dropLast().last?.id ?? ""
+        let second = Self.kept(pickedSecond, in: runs) ?? runs.last?.id ?? ""
         let comparison = snapshot.flatMap { snapshot in
             runs.first { $0.id == first }.flatMap { one in
                 runs.first { $0.id == second }.flatMap { RunComparison(one, $0, in: snapshot.flow) }

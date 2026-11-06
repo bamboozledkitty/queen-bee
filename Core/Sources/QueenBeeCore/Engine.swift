@@ -410,9 +410,9 @@ public actor Engine {
     /// other agent, one the run hasn't reached or has already heard from, can come and go.
     /// With something linked to the card's Error output, the message it was working on goes out there, as it was
     /// handed over, and the run goes on. With nothing linked there, the run stops.
-    /// `wholeSession` is for a session that has gone: nothing it was handed will be answered, so the run stops
-    /// waiting on all of it, and only the oldest message goes out Error. Without it, one turn failed: the session
-    /// goes on with whatever else it was handed.
+    /// `wholeSession` is for a session that has gone: nothing it was handed will be answered, so every message it
+    /// hadn't answered goes out Error, oldest first. Without it, one turn failed: only the oldest goes out Error,
+    /// and the session goes on with whatever else it was handed.
     /// `forRun` is the run the failed turn worked for, if the app knows it. A turn left over from a run that has
     /// ended says nothing about this one.
     /// `name` is the card's name for one that has just been taken out of `flow`.
@@ -434,20 +434,25 @@ public actor Engine {
             return output
         }
         var output = RunOutput(runID: state.id)
+        var failed = [message]
         let owed = state.owed[cardID, default: 0] - 1
         if wholeSession || owed <= 0 {
-            let dropped = wholeSession ? state.handed[cardID]?.count ?? 0 : 0
+            // A session that has gone answers none of what it was handed, so each of those goes out Error too,
+            // oldest first, rather than leaving whoever waits on it waiting for good.
+            if wholeSession { failed += state.handed[cardID] ?? [] }
             state.owed[cardID] = nil
             state.handed[cardID] = nil
             state.pending.remove(cardID)
-            if dropped > 0 { output.log.append("\(name) had \(dropped) more \(dropped == 1 ? "message" : "messages") it will never answer") }
         } else {
             state.owed[cardID] = owed
         }
         state.asking.remove(cardID)
-        output.log.insert("\(name) failed\(why) → Error", at: 0)
-        output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: "error"))
-        await send(message, from: card, port: "error", in: flow, state: &state, output: &output)
+        output.log.append("\(name) failed\(why) → Error" + (failed.count > 1 ? ", with all \(failed.count) messages it was given" : ""))
+        for message in failed {
+            output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: "error"))
+            await send(message, from: card, port: "error", in: flow, state: &state, output: &output)
+            if state.hitLimit || state.failedAt != nil { break }
+        }
         settle(state, in: flow, &output)
         return output
     }

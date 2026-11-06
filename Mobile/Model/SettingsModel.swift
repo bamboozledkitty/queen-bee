@@ -536,16 +536,13 @@ nonisolated struct EditForm: Equatable {
 
     /// The Mac's choices for how long a Delay card waits, and the card's own if it is another.
     static func delayChoices(_ card: Card) -> EditField.Control {
-        let minutes = DelayTime.minutes(for: card), all = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 24 * 60, 2 * 24 * 60, 7 * 24 * 60]
-        return .choice((all + (all.contains(minutes) ? [] : [minutes])).sorted().map {
-            EditField.Choice(value: "\($0)", label: HoldTimeLimit.describe(minutes: $0))
-        })
+        .choice(DelayTime.choices(for: card).map { EditField.Choice(value: "\($0)", label: HoldTimeLimit.describe(minutes: $0)) })
     }
 
-    /// What a Delay card does, as the Mac says it.
     /// The Mac's note under its End the run as failed switch.
     static let failsRunLine = "For the end of a path where something went wrong, such as an agent's Error output. A message that reaches it ends the run straight away as failed."
 
+    /// What a Delay card does, as the Mac says it.
     static let delayText = "Holds each message for this long, then passes it on as it was. The run keeps going while it waits."
 
     /// What a card with a time limit does when it is up, or nil for one that waits for good.
