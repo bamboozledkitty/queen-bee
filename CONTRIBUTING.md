@@ -147,8 +147,6 @@ profile and update key it needs.
 
 Bugs:
 
-- **Retry hangs after an API failure.** A hand-off to an agent whose last turn failed is queued and never typed
-  (`App/Sessions/TerminalSession.swift`, `flushSoon`).
 - **A Loop set above 3 tries stops early.** Links default to 3 passes, so the run ends at the link's limit before
   the Loop card gives up (`Core/Sources/QueenBeeCore/Engine.swift`, `send`).
 - **A reply from a stopped run can still leak into the next run** when the app never saw the hand-off that
@@ -161,7 +159,6 @@ Bugs:
 - **Two project folders holding the same flow id cross-wire**, as a copied project does. The app keeps one
   list of open flows by id, and a session's secret names only the flow id and card id
   (`App/AppServices.swift`, `register` and `credential`).
-- **Deleting a sub-flow leaves its Flow card pointing at nothing**, with no warning.
 - **Sessions sometimes stay at "starting"** when many start together. The end-to-end `fanout` scenario times out
   on this now and then and passes when run again by itself.
 - **Nothing notices a stalled run.** A scheduled run waiting on an Approval card with no time limit waits for good.
