@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-06
+
 ### Added
 
 - On the Mac, a pill at the top of the canvas shows how far a run has got while it goes: a ring, a percentage, and where the run is now, such as "Reviewer working · 2 min 10 sec" or "Needs you: Approval". Click it to see the run's line of stops, one per agent, Approval, Script, Flow and Delay card. Each stop shows whether the run has passed it, is at it, still has it to come or went another way. A For each shows which item is out, a Loop shows which try it is on, and a Flow card can show its own flow's line. The percentage counts the longest way still left, so a branch the run didn't take never holds it back, a loop going round again never takes it backward, and it reads 100% only once an answer reaches an End. After the run it stays until the next one starts, or until you close it.
@@ -341,7 +343,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.0...v0.7.1

@@ -3,6 +3,33 @@
     <channel>
         <title>QueenBee</title>
         <item>
+            <title>0.10.0</title>
+            <pubDate>Fri, 06 Nov 2026 19:42:03 +0400</pubDate>
+            <link>https://github.com/bamboozledkitty/queen-bee</link>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>0.10.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[
+### Added
+
+- On the Mac, a pill at the top of the canvas shows how far a run has got while it goes: a ring, a percentage, and where the run is now, such as "Reviewer working · 2 min 10 sec" or "Needs you: Approval". Click it to see the run's line of stops, one per agent, Approval, Script, Flow and Delay card. Each stop shows whether the run has passed it, is at it, still has it to come or went another way. A For each shows which item is out, a Loop shows which try it is on, and a Flow card can show its own flow's line. The percentage counts the longest way still left, so a branch the run didn't take never holds it back, a loop going round again never takes it backward, and it reads 100% only once an answer reaches an End. After the run it stays until the next one starts, or until you close it.
+- A Prompt card can pick fields out of a message that is JSON: `{{message.title}}` puts in its title, and `{{message.items.0.name}}` the name of its first item. It works on JSON on its own or in a code fence, as agents usually write it, so simple reshaping no longer needs a Script card.
+- A Delay card holds a message for a set time, from a minute to a week, then passes it on as it was. Use it to wait before trying something again, such as a Script that checks whether a job has finished. The card shows when the message goes on. On the Mac, Send it on now skips the rest of the wait.
+- An agent card has an Error output. When the agent's turn ends with an API error, or its session ends while a run waits on it, the message it was given goes out Error and the run goes on. Link Error to a Delay and back to the agent to try again; the link's limit says how many times. With nothing linked to Error, the run stops as before, and its notification now says it failed rather than stopped.
+- An End card can end the run as failed. A message that reaches it stops the run straight away and the run shows as failed. Use it at the end of an Error path. In a sub-flow, the Flow card that runs it goes out Fail.
+- After an agent's turn ends with an API error, its card offers Restart agent, on the Mac and on a paired iPhone or iPad. Its conversation carries on.
+- Compare two runs of a flow. On the Mac, pick a run on the Runs page and choose Compare with…; on an iPhone or iPad, Compare two runs is on the flow's Runs page. It shows how each run ended, how long it took and what it cost, then card by card which way each went and what it cost, with the cards that changed first. What agents said is compared too when both runs are among the 3 latest, which are the runs that keep it.
+
+### Fixed
+
+- When you type to an agent that a run is about to hand a message to, the reply to what you typed is no longer passed on as the run's, and an API error in that turn no longer counts as the agent failing the run. The run's own message is answered in its own turn. An answer you type to an agent's question still carries the run on.
+- A message handed to an agent whose last turn ended with an API error is now typed in. Before, it waited until the agent next finished a turn, which might never happen.
+- A Flow card whose flow is no longer in the project, for example because it went to the Trash, now warns "Its flow isn't in this project" on the canvas, in its settings and on a paired iPhone or iPad, and the orchestrator sees the warning too. Before, nothing said so until a run reached the card and went out Fail. Moving a flow to the Trash on the Mac now says which flows run it.
+
+]]></description>
+            <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.10.0/QueenBee-0.10.0.dmg" length="18672927" type="application/octet-stream" sparkle:edSignature="chHkf1EZG0ZFCkIKpro3D6+xX08zemedUCvHPlMoc8ZTxg5ULYdsL9MduKWhPV2np4XkKP8Qg3Y5rqQ4V9XSAg=="/>
+        </item>
+        <item>
             <title>0.9.0</title>
             <pubDate>Wed, 04 Nov 2026 15:02:42 +0400</pubDate>
             <link>https://github.com/bamboozledkitty/queen-bee</link>
@@ -73,22 +100,6 @@
 
 ]]></description>
             <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.8.0/QueenBee-0.8.0.dmg" length="15781361" type="application/octet-stream" sparkle:edSignature="l9JHDzPWNiaLGyieWWJtjuXBOfDZo4+ddnCoC2QfBm4B0uCP4m40XMgVkSLcxV3ldxZ9Ri5v/5uAJ5yYPrgmDA=="/>
-        </item>
-        <item>
-            <title>0.7.1</title>
-            <pubDate>Mon, 26 Oct 2026 17:04:15 +0400</pubDate>
-            <link>https://github.com/bamboozledkitty/queen-bee</link>
-            <sparkle:version>13</sparkle:version>
-            <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[
-### Fixed
-
-- Turning on a schedule that came with the flow, in its file or from an undo, starts it at once. Before, the Start card kept saying "off" and nothing ran until Queen Bee was opened again.
-- The question of where a flow works, and the title bar's branch chip, fit any project. Long branch names are cut short in the middle, the branch the folder is on is named in full below the menu, and branches open in other worktrees are counted rather than listed one by one. In a light window, the chip's popover no longer turns dark over a terminal behind it.
-
-]]></description>
-            <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.7.1/QueenBee-0.7.1.dmg" length="15700086" type="application/octet-stream" sparkle:edSignature="YjiaSeTQ/h2vVM4t98UJR4Qr5yMiaq/xav0IgdK+MDjkA46kHxatxP4AZXkyQw0ArlU+kaoXHTkpo4DTVkR+CA=="/>
         </item>
     </channel>
 </rss>
