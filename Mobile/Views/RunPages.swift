@@ -147,6 +147,7 @@ struct OutputPage: View {
 struct RunsPage: View {
     @Environment(RemoteClient.self) private var client
     let snapshot: RemoteFlowSnapshot
+    @State private var compares = false
 
     var body: some View {
         let rows = RunRow.all(in: snapshot, viewed: client.canvas.viewedRun)
@@ -165,6 +166,11 @@ struct RunsPage: View {
                         .foregroundStyle(Theme.inkSecondary.ui)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if snapshot.runs.count >= 2 {
+                    Button("Compare two runs") { compares = true }
+                        .buttonStyle(.panel(wide: true))
+                        .accessibilityHint("Sets two of this flow's runs side by side: where each went and what it cost.")
+                }
                 ForEach(rows) { row in
                     Button { client.show(run: row.id) } label: { RunRowView(row: row) }
                         .buttonStyle(.plain)
@@ -178,6 +184,10 @@ struct RunsPage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Theme.Space.l)
         }
+        .sheet(isPresented: $compares) { RunCompareSheet() }
+        #if DEBUG
+        .onAppear { if DebugLaunch.opensCompare, snapshot.runs.count >= 2 { compares = true } }
+        #endif
     }
 
 }

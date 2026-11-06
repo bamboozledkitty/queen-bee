@@ -260,6 +260,8 @@ extension Flow {
                 }
                 card.saveTo = saveTo
             }
+            // Off is left out of the file, as it is for a card that never had it.
+            if let fails = patch.failsRun { card.failsRun = fails ? true : nil }
         case .note, .approval:
             if let text = patch.text { card.text = text }
             guard card.kind == .approval else { break }
@@ -276,6 +278,8 @@ extension Flow {
             if let items = patch.maxItems { card.maxItems = min(max(items, 1), Engine.mostItems) }
         case .flow:
             if let flowRef = patch.flowRef { card.flowRef = Self.setOrCleared(flowRef) }
+        case .delay:
+            if let minutes = patch.waitMinutes { card.waitMinutes = DelayTime.clamped(minutes) }
         case .and, .or:
             break
         }

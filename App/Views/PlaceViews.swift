@@ -326,6 +326,8 @@ private struct RunPeek: View {
     let controller: FlowController
     let record: RunRecord
     let close: () -> Void
+    /// The run it is being compared with, while the comparison is open.
+    @State private var comparedWith: RunRecord?
     private var services: AppServices { AppServices.shared }
 
     var body: some View {
@@ -365,13 +367,38 @@ private struct RunPeek: View {
                 .padding(DS.Space.l)
             }
             DSDivider()
-            Button {
-                services.show(controller)
-                controller.view(run: record.id)
-            } label: { Text("Show on the canvas").frame(maxWidth: .infinity) }
-                .buttonStyle(.ds(.secondary, wide: true))
-                .padding(DS.Space.m)
+            VStack(spacing: DS.Space.s) {
+                compareMenu
+                Button {
+                    services.show(controller)
+                    controller.view(run: record.id)
+                } label: { Text("Show on the canvas").frame(maxWidth: .infinity) }
+                    .buttonStyle(.ds(.secondary, wide: true))
+            }
+            .padding(DS.Space.m)
         }
+        .sheet(item: $comparedWith) { other in
+            if let comparison = RunComparison(record, other, in: controller.flow) {
+                RunCompareSheet(flowName: controller.flow.name, comparison: comparison) { comparedWith = nil }
+                    .presentationBackground(Palette.panel.color)
+            }
+        }
+    }
+
+    /// The flow's other kept runs, newest first, to set beside this one.
+    @ViewBuilder
+    private var compareMenu: some View {
+        let others = controller.runs.reversed().filter { $0.id != record.id }
+        Menu {
+            ForEach(others) { other in
+                Button("\(other.number.map { "Run \($0) · " } ?? "")\(RunPicker.label(for: other.started)) · \(other.summary)") { comparedWith = other }
+            }
+        } label: { Text("Compare with…").frame(maxWidth: .infinity) }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.ds(.secondary, wide: true))
+            .disabled(others.isEmpty)
+            .help(others.isEmpty ? "This flow has no other kept run to compare with" : "Set another run of this flow beside this one")
     }
 }
 

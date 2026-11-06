@@ -41,6 +41,42 @@ import Testing
         #expect(Checks.fillTemplate("Keep {{this}}: {{message}}", message: "x", from: "W") == "Keep {{this}}: x")
     }
 
+    @Test func templatesFillInFieldsOfAJSONMessage() {
+        let message = #"{"title": "Fix login", "count": 3, "done": false, "items": [{"name": "a"}, {"name": "b"}], "tags": ["x"], "note": null}"#
+        #expect(Checks.fillTemplate("{{message.title}} ({{ message.count }}, {{message.done}})", message: message, from: "W")
+            == "Fix login (3, false)")
+        #expect(Checks.fillTemplate("Second: {{message.items.1.name}}", message: message, from: "W") == "Second: b")
+        // A field that holds more than one value goes in as JSON, and an empty one as nothing.
+        #expect(Checks.fillTemplate("{{message.tags}}|{{message.note}}|{{message.items.0}}", message: message, from: "W")
+            == #"["x"]||{"name":"a"}"#)
+        // The word "message" ignores case, as it always has; the field's name doesn't.
+        #expect(Checks.fillTemplate("{{Message.title}}", message: message, from: "W") == "Fix login")
+        #expect(Checks.fillTemplate("{{message.Title}}: {{message.title}}", message: message, from: "W") == "{{message.Title}}: Fix login")
+    }
+
+    @Test func aJSONMessageCanBeAListOrInACodeFence() {
+        #expect(Checks.fillTemplate("{{message.0}} then {{message.1}}", message: #"["one", "two"]"#, from: "W") == "one then two")
+        let fenced = "```json\n{\"title\": \"Fix login\"}\n```"
+        #expect(Checks.fillTemplate("Title: {{message.title}}", message: fenced, from: "W") == "Title: Fix login")
+    }
+
+    @Test func aFieldThatIsntThereIsLeftAsWritten() {
+        // The message still counts as used, so it isn't added again at the end.
+        #expect(Checks.fillTemplate("{{message.title}} / {{message.missing}} / {{message.items.9}}",
+                                    message: #"{"title": "T", "items": []}"#, from: "W") == "T / {{message.missing}} / {{message.items.9}}")
+        #expect(Checks.fillTemplate("{{message.title.}}", message: #"{"title": "T"}"#, from: "W") == #"{{message.title.}}"# + "\n\n" + #"{"title": "T"}"#)
+    }
+
+    @Test func fieldsOfAMessageThatIsntJSONAddTheMessageAtTheEnd() {
+        // Nothing was filled from the message, so it is kept rather than lost.
+        #expect(Checks.fillTemplate("Title: {{message.title}}", message: "Just words", from: "W") == "Title: {{message.title}}\n\nJust words")
+        #expect(Checks.fillTemplate("{{message.title}}", message: "{not json", from: "W") == "{{message.title}}\n\n{not json")
+    }
+
+    @Test func aFieldsTextIsNotFilledAgain() {
+        #expect(Checks.fillTemplate("{{message.a}} by {{from}}", message: #"{"a": "{{from}}"}"#, from: "Writer") == "{{from}} by Writer")
+    }
+
     @Test func combineHeadsEachMessageWithItsSender() {
         let text = Checks.combine([(from: "Writer", text: "  Draft one\n"), (from: "Critic", text: "Too long")])
         #expect(text == "## From Writer\nDraft one\n\n## From Critic\nToo long")

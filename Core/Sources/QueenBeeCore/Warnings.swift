@@ -13,6 +13,23 @@ public func warnings(for flow: Flow) -> [String: String] {
     return found
 }
 
+/// The wiring warnings, with the ones that need the rest of the project laid over them. A Flow card whose flow
+/// is not in the project says so ahead of anything else about it, because a run that reaches it fails there.
+/// `flows` is every flow in the project by id and name, this one included. When it is empty the project isn't
+/// known yet, so only the wiring is checked rather than warning about every Flow card.
+public func warnings(for flow: Flow, among flows: [(id: String, name: String)]) -> [String: String] {
+    var found = warnings(for: flow)
+    guard !flows.isEmpty else { return found }
+    for card in flow.cards where card.kind == .flow {
+        let ref = (card.flowRef ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ref.isEmpty, Nesting.resolve(ref, among: flows, excluding: flow.id) == nil else { continue }
+        // A hand-edited file can name the flow the card sits in, which the app never lets a card run.
+        let own = ref == flow.id || ref.caseInsensitiveCompare(flow.name) == .orderedSame
+        found[card.id] = own ? "It runs its own flow" : "Its flow isn't in this project"
+    }
+    return found
+}
+
 private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
     let outgoing = flow.links(from: card.id)
     let incoming = flow.links(into: card.id)
@@ -57,7 +74,7 @@ private func warning(for card: Card, in flow: Flow, circling: Bool) -> String? {
         // An item's result comes back along a link into this card from the cards on Each.
         if !comesBack(to: card, in: flow) { return "Nothing on Each links back to it" }
         if nothing(on: "done") { return "Nothing on Done" }
-    case .or, .prompt:
+    case .or, .prompt, .delay:
         break
     }
 

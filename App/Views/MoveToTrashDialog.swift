@@ -13,7 +13,8 @@ extension View {
                 flow.wrappedValue = nil
             }
         } message: {
-            Text("Its agents are stopped and the flow's file goes to the Trash, so you can put it back from there with its run history. What the agents said stays in Claude Code's history.")
+            let usedBy = flow.wrappedValue?.runByOthersLine.map { "\n\n" + $0 } ?? ""
+            Text("Its agents are stopped and the flow's file goes to the Trash, so you can put it back from there with its run history. What the agents said stays in Claude Code's history." + usedBy)
         }
     }
 }

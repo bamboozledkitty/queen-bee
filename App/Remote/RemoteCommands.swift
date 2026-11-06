@@ -380,6 +380,7 @@ enum RemoteCommands {
             guard !controller.isRunning else { return alreadyRunning }
             // Retry is only offered on a card the last run stopped at: see `FlowController.canRetry`.
             guard controller.marks[cardID]?.failed == true else { return "The last run didn't stop at \(called(cardID)), so there is nothing to retry." }
+            guard controller.flow.card(cardID)?.kind != .end else { return "\(called(cardID)) ended the run as failed, so there is nothing to retry there." }
             guard let last = controller.lastMessage(into: cardID) else { return "There is no message to give this card again." }
             let start = await controller.start(from: cardID, message: last.text, sender: last.from, note: "\(name) retried \(called(cardID))")
             return start.began ? nil : start.status
@@ -852,7 +853,7 @@ enum RemoteCommands {
             (patch.trigger != nil || patch.removesTrigger == true, "schedule"), (patch.check != nil || patch.value != nil, "check"),
             (patch.maxTries != nil, "number of tries"), (patch.branches != nil, "branches"), (patch.template != nil, "template"),
             (patch.saveTo != nil, "file to save to"), (patch.text != nil, "text"), (patch.flowRef != nil, "flow"),
-            (patch.browser != nil, "browser"),
+            (patch.browser != nil, "browser"), (patch.failsRun != nil, "whether it fails the run"),
         ]
         return named.filter(\.0).map(\.1)
     }

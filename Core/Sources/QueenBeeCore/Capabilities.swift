@@ -58,7 +58,7 @@ public enum Capabilities {
         switch kind {
         case .agent:
             CardCapability(.agent,
-                does: "A live Claude Code agent that does work. When its turn ends, its reply goes out along its links.",
+                does: "A live Claude Code agent that does work. When its turn ends, its reply goes out along its links from out.",
                 settings: [
                     SettingCapability("instructions", "A standing brief the agent always follows. Name the files and folders it reads and writes. It finds files with ls, find and grep in the shell, which need no approval, so don't forbid the shell outright."),
                     SettingCapability("model", "A model alias or id, such as opus, sonnet or haiku. An empty string goes back to the person's default."),
@@ -67,7 +67,11 @@ public enum Capabilities {
                     SettingCapability("cwd", "The folder the agent works in. An empty string goes back to the project folder."),
                     SettingCapability("browser", ["type": "boolean"], "true gives the agent a web browser in its card, which the person can watch and use too, and makes the card twice as wide. Turn it on only for an agent whose work needs the web. Its tools and limits are listed under \"An agent with a browser\"."),
                 ],
-                notes: ["New settings apply the next time the agent's session starts."])
+                notes: [
+                    "New settings apply the next time the agent's session starts.",
+                    "error is for when the agent fails while the run is waiting on it: its turn ends with an API error, or its session ends or is restarted. With something linked to error, the message it was working on goes out there as it was handed over, still from whoever sent it, and the run goes on. When its session has ended, every message it was given and hadn't answered goes out there, oldest first. With nothing linked to error, the run stops.",
+                    "To try again after a failure, link error to a Delay card and the Delay back to the agent. The link's max_passes limits the tries; after them, link error somewhere else, such as an End card with fails_run set, to end the run. A message that reaches an agent whose session has ended starts it again.",
+                ])
         case .start:
             CardCapability(.start,
                 does: "Holds the command a run begins with, and sends it to every card linked from it. Takes no input.",
@@ -95,7 +99,8 @@ public enum Capabilities {
         case .prompt:
             CardCapability(.prompt,
                 does: "Rewrites the message from a template.",
-                settings: [SettingCapability("template", "The rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from.")])
+                settings: [SettingCapability("template", "The rewritten message. {{message}} becomes the incoming message and {{from}} the name of the agent it came from. When the message is a JSON object or list, alone or in a code fence, {{message.title}} becomes one field of it, and {{message.items.0.name}} goes further in: a number picks from a list, counting from 0. A field holding text goes in as the text, one holding an object or a list as JSON, and one holding null as nothing.")],
+                notes: ["A template that uses no part of the message gets the whole message added at the end. A field that isn't in the message, or a field of a message that isn't JSON, is left as written, and if no part of the message was filled in, the whole message is added at the end too. Field names match exactly, capitals included; a name with a dot in it can't be reached."])
         case .loop:
             CardCapability(.loop,
                 does: "Checks the message. It goes out done when the check holds, again when it doesn't, and gave-up when max_tries is used up without the check holding.",
@@ -110,7 +115,10 @@ public enum Capabilities {
         case .end:
             CardCapability(.end,
                 does: "Records the final answer, and saves it to a file if save_to is set.",
-                settings: [SettingCapability("save_to", "A file to save the final answer to, relative to the project folder. Not inside \(Checks.protectedSaveFolders.joined(separator: ", ")).")])
+                settings: [
+                    SettingCapability("save_to", "A file to save the final answer to, relative to the project folder. Not inside \(Checks.protectedSaveFolders.joined(separator: ", "))."),
+                    SettingCapability("fails_run", ["type": "boolean"], "true ends the run as failed as soon as a message reaches this card. Agents still working on the run are stopped and messages waiting at cards are dropped. The message is still recorded, and saved if save_to is set. In a sub-flow, the Flow card that runs it goes out fail with the message. Use it at the end of a path for when something went wrong. Defaults to false."),
+                ])
         case .note:
             CardCapability(.note,
                 does: "Text for people. It carries no messages and can't be linked.",
@@ -164,6 +172,18 @@ public enum Capabilities {
                     "Each item is a fresh pass through the cards on each: their links count passes from 0 again and their Or cards pass on a first message again.",
                     "A message with no items goes straight out done, unchanged. A message that reaches it from anywhere but the cards on each while items are out is dropped.",
                     "Have one message come back per item. Don't send an item to several agents and gather them with an Or: a slower agent's reply would come back as the next item's result. Use an And to wait for all of them.",
+                ])
+        case .delay:
+            CardCapability(.delay,
+                does: "Holds the message for wait_minutes, then passes it on out unchanged, still from whoever sent it.",
+                settings: [
+                    SettingCapability("wait_minutes", ["type": "integer", "minimum": 1, "maximum": .number(Double(HoldTimeLimit.longestMinutes))],
+                                      "How many minutes it holds the message, from 1 to \(grouped(HoldTimeLimit.longestMinutes)) (a week). Less than 1 counts as 1. Defaults to \(DelayTime.defaultMinutes)."),
+                ],
+                notes: [
+                    "Use it to wait before trying something again, such as a Script that checks whether a job is done: link its fail to a Delay and the Delay back to the Script. The link's max_passes still limits how many times it goes round.",
+                    "The run is still going while it waits, and the person can send the message on early from the Mac. Stopping the run drops the message.",
+                    "It counts in whole minutes. It doesn't wait for a time of day: for that, put a schedule on the Start card.",
                 ])
         }
     }

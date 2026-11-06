@@ -100,7 +100,7 @@ nonisolated struct CanvasContent: Equatable {
         let live = viewed == nil ? Set(run.liveLinkIDs) : []
         // The Mac sends what each session has used in all. What one run used is known once the run is kept.
         let spent = isRunning ? nil : (viewed ?? snapshot.runs.last)?.usage
-        let warnings = QueenBeeCore.warnings(for: flow)
+        let warnings = QueenBeeCore.warnings(for: flow, among: siblings.map { (id: $0.id, name: $0.name) })
 
         flowID = flow.id
         self.isEditing = isEditing
@@ -132,6 +132,7 @@ nonisolated struct CanvasContent: Equatable {
                 context.isLive = true
                 context.waiting = hold.kind == .approval ? "Waiting for you to approve"
                     : hold.kind == .flow ? "Running \(hold.command)…"
+                    : hold.kind == .delay ? hold.deadline.map { "Waiting until \(RunClock.moment($0))" } ?? "Waiting"
                     : hold.allowOnMac == true && hold.needsAllow ? "Allow its command on your Mac"
                     : hold.needsAllow ? "Waiting for you to let its command run" : "Running its command…"
             }
@@ -179,9 +180,7 @@ nonisolated struct CanvasContent: Equatable {
     /// The flow a Flow card runs: found by id, or by name when the orchestrator set it. The Mac's
     /// `Nesting.resolve`, over the list of flows the device has.
     static func innerFlow(of card: Card, in siblings: [RemoteFlowSummary], excluding own: String) -> RemoteFlowSummary? {
-        let ref = (card.flowRef ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ref.isEmpty else { return nil }
-        let others = siblings.filter { $0.id != own }
-        return others.first { $0.id == ref } ?? others.first { $0.name.caseInsensitiveCompare(ref) == .orderedSame }
+        let id = Nesting.resolve(card.flowRef, among: siblings.map { (id: $0.id, name: $0.name) }, excluding: own)
+        return siblings.first { $0.id == id }
     }
 }

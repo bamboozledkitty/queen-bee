@@ -4,7 +4,7 @@ import Testing
 
 @Suite struct ModelTests {
     @Test func portsFollowTheCardKind() {
-        #expect(ports(of: .make(kind: .agent, name: "A", x: 0, y: 0)) == ["out"])
+        #expect(ports(of: .make(kind: .agent, name: "A", x: 0, y: 0)) == ["out", "error"])
         #expect(ports(of: .make(kind: .ifElse, name: "If", x: 0, y: 0)) == ["yes", "no"])
         #expect(ports(of: .make(kind: .loop, name: "Loop", x: 0, y: 0)) == ["done", "again", "gave-up"])
         #expect(ports(of: .make(kind: .forEach, name: "Each", x: 0, y: 0)) == ["each", "done"])

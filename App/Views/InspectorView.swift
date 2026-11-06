@@ -86,8 +86,17 @@ private struct CardSettings: View {
             case .prompt:
                 EditorField("Rewrite the message as", text: card.template ?? "") { v in patch { $0.template = v } }
                 note("Write {{message}} where the incoming message should go, and {{from}} for the name of the card it came from. If you leave {{message}} out, the message is added at the end.")
+                note("When the message is JSON, {{message.title}} puts in just its title, and {{message.items.0.name}} the name of the first of its items. A field that isn't there stays as you wrote it.")
             case .end:
                 LineField("Save the answer to a file (optional)", placeholder: "output/answer.md", text: card.saveTo ?? "") { v in patch { $0.saveTo = v } }
+                Toggle("End the run as failed", isOn: Binding(get: { card.failsRun == true }, set: { on in patch { $0.failsRun = on } }))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(Theme.select.ui)
+                    .help("For the end of a path where something went wrong, such as an agent's Error output.")
+                note(card.failsRun == true
+                     ? "A message that reaches this card ends the run straight away as failed, and stops any agent still working on it. The message still shows here."
+                     : "Turn this on for the end of a path where something went wrong, such as an agent's Error output.")
                 if let result = controller.results[card.id] {
                     section {
                         field("Latest answer") {
@@ -120,9 +129,12 @@ private struct CardSettings: View {
                 let everyOther = controller.project.controllers.filter { $0 !== controller }
                 // Only flows that fit: not ones that would run this flow in turn, or nest too deep.
                 let others = everyOther.filter { $0 === inner || controller.nestingProblem(placing: $0) == nil }
+                // A flow that has gone keeps its place in the menu, so the card doesn't look as if it ran nothing.
+                let ref = (card.flowRef ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let gone = inner == nil && !ref.isEmpty ? [(value: ref, label: "A flow that isn't in this project")] : []
                 row("Runs") {
-                    MenuField(options: [(value: "", label: "Nothing yet")] + others.map { (value: $0.flow.id, label: $0.flow.name) },
-                              selection: inner?.flow.id ?? "") { v in patch { $0.flowRef = v } }
+                    MenuField(options: [(value: "", label: "Nothing yet")] + gone + others.map { (value: $0.flow.id, label: $0.flow.name) },
+                              selection: inner?.flow.id ?? ref) { v in patch { $0.flowRef = v } }
                 }
                 if let inner, let problem = controller.nestingProblem(placing: inner) {
                     Label(problem, systemImage: "exclamationmark.triangle")
@@ -153,6 +165,14 @@ private struct CardSettings: View {
                 if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
                     ScriptReview(controller: controller, hold: hold)
                         .id(hold.id)
+                }
+            case .delay:
+                DelaySettings(card: card, patch: patch)
+                if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
+                    DelayReview(controller: controller, hold: hold)
+                        .id(hold.id)
+                } else {
+                    note("Holds each message for this long, then passes it on as it was. The run keeps going while it waits.")
                 }
             }
 
@@ -505,6 +525,43 @@ private struct ApprovalReview: View {
         .liveRule()
         .overlay(alignment: .top) { rule }
         .onAppear { draft = hold.text }
+    }
+}
+
+/// How long a Delay card holds its message.
+private struct DelaySettings: View {
+    let card: Card
+    let patch: ((inout CardPatch) -> Void) -> Void
+
+    var body: some View {
+        row("Wait") {
+            MenuField(options: DelayTime.choices(for: card).map { (value: $0, label: HoldTimeLimit.describe(minutes: $0)) },
+                      selection: DelayTime.minutes(for: card)) { v in patch { $0.waitMinutes = v } }
+        }
+    }
+}
+
+/// A message waiting at a Delay card, with a way to send it on now.
+private struct DelayReview: View {
+    let controller: FlowController
+    let hold: PendingHold
+
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            Text(hold.deadline.map { "From \(hold.from). Goes on at \(RunClock.moment($0))." } ?? "From \(hold.from). Waiting.")
+                .textRole(.captionLabel)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Send it on now") { controller.sendOnNow(hold.id) }
+                .buttonStyle(.panel())
+                .help("Pass the message on without waiting for the rest of the time")
+        }
+        .foregroundStyle(Theme.liveInk.ui)
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .liveRule()
+        .overlay(alignment: .top) { rule }
     }
 }
 

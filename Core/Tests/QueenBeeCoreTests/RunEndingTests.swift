@@ -212,6 +212,101 @@ private struct SlowJudge: Judge {
         #expect(reply.deliveries.map(\.toCardID) == [try id("Reviewer", in: flow)])
     }
 
+    // MARK: Turns the person typed
+
+    @Test func aTypedTurnBeforeTheRunsMessageBeginsIsNotItsReply() async throws {
+        let flow = try chainWithIdle()
+        let writer = try id("Writer", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        let run = try #require(await engine.start(flow: flow, startCardID: nil, command: nil).runID)
+
+        // The person's own turn ends while the run's message is still waiting to reach the Writer.
+        let typed = await engine.agentReplied(flow: flow, cardID: writer, text: "an answer to the person", byHandOff: false)
+        #expect(typed.deliveries.isEmpty && !typed.finished)
+        #expect(typed.log == ["Writer finished a turn before this run's message reached it, so its reply was not passed on"])
+        // Nor does it failing send the run's message anywhere.
+        let failed = await engine.agentFailed(flow: flow, cardID: writer, reason: "API error", wholeSession: false, byHandOff: false)
+        #expect(failed.deliveries.isEmpty && !failed.finished && failed.log.isEmpty)
+
+        // The run's message begins, and its own turn's reply goes on.
+        await engine.turnBegan(cardID: writer, forRun: run)
+        let reply = await engine.agentReplied(flow: flow, cardID: writer, text: "draft", forRun: run)
+        #expect(reply.deliveries.map(\.toCardID) == [try id("Reviewer", in: flow)])
+    }
+
+    @Test func aTypedAnswerToTheAgentsQuestionIsItsReply() async throws {
+        let flow = try chainWithIdle()
+        let writer = try id("Writer", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        let run = try #require(await engine.start(flow: flow, startCardID: nil, command: nil).runID)
+        await engine.turnBegan(cardID: writer, forRun: run)
+        // The run's turn ends on a question, and the person types the answer.
+        _ = await engine.agentReplied(flow: flow, cardID: writer, text: "Which tone?", waitingOnAnswer: true, forRun: run)
+        let reply = await engine.agentReplied(flow: flow, cardID: writer, text: "draft", byHandOff: false)
+        #expect(reply.deliveries.map(\.toCardID) == [try id("Reviewer", in: flow)])
+        // A turn begun on a run that has ended counts for nothing.
+        await engine.turnBegan(cardID: writer, forRun: "an-old-run")
+    }
+
+    @Test func anAnswerToAQuestionCountsEvenIfTheTurnsBeginWasMissed() async throws {
+        let flow = try chainWithIdle()
+        let writer = try id("Writer", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        let run = try #require(await engine.start(flow: flow, startCardID: nil, command: nil).runID)
+        // The app never heard the run's turn begin, but the plugin says it ended on a question.
+        _ = await engine.agentReplied(flow: flow, cardID: writer, text: "Which tone?", waitingOnAnswer: true, forRun: run)
+        let reply = await engine.agentReplied(flow: flow, cardID: writer, text: "draft", byHandOff: false)
+        #expect(reply.deliveries.map(\.toCardID) == [try id("Reviewer", in: flow)])
+    }
+
+    /// Start → Writer twice over, from A and from B, so the Writer is owed two replies.
+    private func owedTwice() throws -> (Flow, writer: String) {
+        var flow = Flow(name: "T")
+        try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+        for name in ["A", "B", "Writer", "Reviewer"] { try flow.addCard(kind: .agent, name: name) }
+        for name in ["A", "B"] {
+            try flow.addLink(from: "Start", to: name)
+            try flow.addLink(from: name, to: "Writer")
+        }
+        try flow.addLink(from: "Writer", to: "Reviewer")
+        return (flow, try id("Writer", in: flow))
+    }
+
+    @Test func aTypedTurnBetweenTwoOfTheRunsTurnsIsNotAReply() async throws {
+        let (flow, writer) = try owedTwice()
+        let engine = Engine(judge: ScriptedJudge())
+        let run = try #require(await engine.start(flow: flow, startCardID: nil, command: nil).runID)
+        _ = await engine.agentReplied(flow: flow, cardID: try id("A", in: flow), text: "From A", forRun: run)
+        _ = await engine.agentReplied(flow: flow, cardID: try id("B", in: flow), text: "From B", forRun: run)
+
+        // The first hand-off's turn is answered, then the person types before the second one begins.
+        await engine.turnBegan(cardID: writer, forRun: run)
+        #expect(await engine.agentReplied(flow: flow, cardID: writer, text: "one", forRun: run).deliveries.count == 1)
+        #expect(await engine.agentReplied(flow: flow, cardID: writer, text: "typed", byHandOff: false).deliveries.isEmpty)
+        await engine.turnBegan(cardID: writer, forRun: run)
+        #expect(await engine.agentReplied(flow: flow, cardID: writer, text: "two", forRun: run).deliveries.count == 1)
+    }
+
+    @Test func aFailedTurnOfTheRunsFinishesIt() async throws {
+        var (flow, writer) = try owedTwice()
+        try flow.addLink(from: "Writer", port: "error", to: "Reviewer")
+        let engine = Engine(judge: ScriptedJudge())
+        let run = try #require(await engine.start(flow: flow, startCardID: nil, command: nil).runID)
+        _ = await engine.agentReplied(flow: flow, cardID: try id("A", in: flow), text: "From A", forRun: run)
+        _ = await engine.agentReplied(flow: flow, cardID: try id("B", in: flow), text: "From B", forRun: run)
+
+        // The first hand-off's turn fails and goes out Error. The turn is over, so a typed turn after it isn't a reply.
+        await engine.turnBegan(cardID: writer, forRun: run)
+        let failed = await engine.agentFailed(flow: flow, cardID: writer, reason: "API error", wholeSession: false, forRun: run)
+        #expect(failed.deliveries.map(\.fromName) == ["A"])
+        #expect(await engine.agentReplied(flow: flow, cardID: writer, text: "typed", byHandOff: false).deliveries.isEmpty)
+
+        // The second hand-off's turn begins, and the session ends: that message goes out Error too.
+        await engine.turnBegan(cardID: writer, forRun: run)
+        let ended = await engine.agentFailed(flow: flow, cardID: writer, reason: "its session ended", forRun: run)
+        #expect(ended.deliveries.map(\.fromName) == ["B"])
+    }
+
     // MARK: The judge
 
     /// Start → Writer → If → Yes: Editor, No: End.

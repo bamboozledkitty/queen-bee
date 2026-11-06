@@ -93,6 +93,26 @@ import Testing
         #expect(body(next.deliveries.first) == "second")
     }
 
+    @Test func aPromptOnEachCanPickAFieldOfEachItem() async throws {
+        // Start → Each; Each → Prompt → Worker → Each. Each item is an object, which goes out as JSON text.
+        var flow = Flow(name: "Test")
+        try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = #"[{"name": "a", "size": 1}, {"name": "b", "size": 2}]"# })
+        try flow.addCard(kind: .forEach, name: "Each")
+        try flow.addCard(kind: .prompt, name: "Ask", patch: patch { $0.template = "Fix {{message.name}}, size {{message.size}}" })
+        try flow.addCard(kind: .agent, name: "Worker")
+        try flow.addCard(kind: .end, name: "End")
+        try flow.addLink(from: "Start", to: "Each")
+        try flow.addLink(from: "Each", port: "each", to: "Ask")
+        try flow.addLink(from: "Ask", to: "Worker")
+        try flow.addLink(from: "Worker", to: "Each")
+        try flow.addLink(from: "Each", port: "done", to: "End")
+        let engine = Engine(judge: ScriptedJudge())
+        let started = await engine.start(flow: flow, startCardID: nil, command: nil)
+        #expect(body(started.deliveries.first) == "Fix a, size 1")
+        let next = await engine.agentReplied(flow: flow, cardID: try id("Worker", in: flow), text: "fixed")
+        #expect(body(next.deliveries.first) == "Fix b, size 2")
+    }
+
     @Test func aMessageWithNoItemsGoesStraightToDone() async throws {
         let flow = try eachFlow(command: "[]")
         let engine = Engine(judge: ScriptedJudge())
