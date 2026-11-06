@@ -93,7 +93,7 @@ public struct RunSnapshot: Equatable, Sendable, Codable {
 
     /// Agents handed a message and not heard from since.
     public var waitingOn: [String]
-    /// Cards holding a message: Approval, Script and Flow cards.
+    /// Cards holding a message: Approval, Script, Flow and Delay cards.
     public var holding: [String]
     /// For each Loop card part-way through its tries, the tries it has failed so far. The try under way is one more.
     public var tries: [String: Int]

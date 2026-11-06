@@ -32,6 +32,10 @@ import Testing
                 marks[visit.cardID] = mark
             }
             if let snapshot = output.snapshot { self.snapshot = snapshot }
+            // As the app does: an End set to fail the run is where it failed.
+            if output.finished, output.ending == .failed {
+                for result in output.results where flow.card(result.cardID)?.failsRun == true { marks[result.cardID, default: RunMark()].failed = true }
+            }
             if output.finished { ending = output.ending }
         }
 
@@ -308,6 +312,60 @@ import Testing
         let hold = try #require(reached.holds.first)
         run.take(await engine.holdResolved(flow: flow, holdID: hold.id, port: "out", text: nil))
         #expect(state("Wait", in: run.progress()) == .done)
+    }
+
+    @Test func anEndThatFailsTheRunSaysFailedNotWhereItStopped() async throws {
+        var flow = Flow(name: "Give up")
+        try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+        try flow.addCard(kind: .agent, name: "A")
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addCard(kind: .end, name: "Give up", patch: patch { $0.failsRun = true })
+        try flow.addLink(from: "Start", to: "A")
+        try flow.addLink(from: "A", to: "Done")
+        try flow.addLink(from: "A", port: "error", to: "Give up")
+        let engine = Engine(judge: ScriptedJudge())
+        var run = Tracker(flow)
+        run.take(await engine.start(flow: flow, startCardID: nil, command: nil))
+        let shown = run.progress().fraction
+        run.take(await engine.agentFailed(flow: flow, cardID: try id("A", in: flow), reason: "API error"))
+        let progress = run.progress()
+        #expect(progress.headline.tone == .failed && progress.headline.text == "Failed")
+        #expect(state("Give up", in: progress) == .failed)
+        #expect(state("Done", in: progress) == .skipped)
+        #expect(progress.fraction == shown)
+    }
+
+    @Test func anAgentThatGoesOutErrorAndTriesAgainKeepsGoing() async throws {
+        // A's Error waits at a Delay and goes back to A, as a retry.
+        var flow = Flow(name: "Retry")
+        try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+        try flow.addCard(kind: .agent, name: "A")
+        try flow.addCard(kind: .delay, name: "Wait", patch: patch { $0.waitMinutes = 5 })
+        try flow.addCard(kind: .end, name: "End")
+        try flow.addLink(from: "Start", to: "A")
+        try flow.addLink(from: "A", to: "End")
+        try flow.addLink(from: "A", port: "error", to: "Wait")
+        try flow.addLink(from: "Wait", to: "A")
+        let a = try id("A", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        var run = Tracker(flow)
+        run.take(await engine.start(flow: flow, startCardID: nil, command: nil))
+        let failed = await engine.agentFailed(flow: flow, cardID: a, reason: "API error")
+        run.take(failed)
+        var progress = run.progress()
+        #expect(progress.headline.tone == .working && progress.headline.text == "Wait waiting")
+        #expect(state("A", in: progress) != .failed)
+        let waited = progress.percent
+
+        let hold = try #require(failed.holds.first)
+        run.take(await engine.holdResolved(flow: flow, holdID: hold.id, port: "out", text: nil))
+        progress = run.progress()
+        #expect(state("A", in: progress) == .live)
+        #expect(progress.headline.text == "A working")
+        #expect(progress.percent >= waited)
+
+        run.take(await engine.agentReplied(flow: flow, cardID: a, text: "done"))
+        #expect(run.progress().percent == 100)
     }
 
     @Test func anAgentThatAskedAQuestionNeedsYou() async throws {

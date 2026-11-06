@@ -1869,7 +1869,8 @@ final class FlowController: ToolHost {
         } else if output.runID != nil {
             isRunning = true
         }
-        progressFloor = runProgress?.fraction ?? progressFloor
+        // Kept up even while the progress is closed or an older run is on show, so it is right when it comes back.
+        progressFloor = latestProgress?.fraction ?? progressFloor
         return forPlugin
     }
 
@@ -1887,7 +1888,13 @@ final class FlowController: ToolHost {
     /// How far the latest run has got, while it goes and after it ends until the next one starts. Nil when there
     /// is nothing to show: no run yet, an older run on show, or the person closed it.
     var runProgress: RunProgress? {
-        guard !progressDismissed, viewedRunID == nil, isRunning || lastEnding != nil else { return nil }
+        guard !progressDismissed, viewedRunID == nil else { return nil }
+        return latestProgress
+    }
+
+    /// How far the latest run has got, whether or not it is on show. Nil before the first run.
+    var latestProgress: RunProgress? {
+        guard isRunning || lastEnding != nil else { return nil }
         var needs: [String: RunProgress.Need] = [:]
         for hold in holds {
             if hold.kind == .approval { needs[hold.cardID] = .approval } else if hold.needsAllow { needs[hold.cardID] = .allowCommand }
@@ -1896,16 +1903,25 @@ final class FlowController: ToolHost {
         for id in awaitingAnswer { needs[id] = .question }
         var inner: [String: Double] = [:]
         for hold in holds where hold.kind == .flow {
-            guard let card = flow.card(hold.cardID), let below = innerFlow(of: card), below !== self, below.isRunning,
-                  let progress = below.runProgress else { continue }
+            // Only a run this flow started counts. One its flow is already doing for someone else, which the Flow card
+            // waits its turn behind, is no part of this run, and two flows waiting on each other would go round for ever.
+            guard let card = flow.card(hold.cardID), let below = innerFlow(of: card), below.isRunning(inside: flow.id),
+                  let progress = below.latestProgress else { continue }
             inner[card.id] = progress.fraction
         }
         return RunProgress(flow: flow, marks: marks, snapshot: isRunning ? runSnapshot : nil, inner: inner, needs: needs,
                            ending: isRunning ? nil : lastEnding, shownBefore: progressFloor)
     }
 
-    /// When the run that is going began.
-    var runStarted: Date? { currentRun?.started }
+    /// Whether this flow is running as a sub-flow of the flow `id`, for a Flow card there.
+    func isRunning(inside id: String) -> Bool { isRunning && runInside.contains(id) }
+
+    /// How long the run on show has been going, or took once it ended. Nil before the first run.
+    func runTime(at now: Date) -> TimeInterval? {
+        if let run = currentRun { return now.timeIntervalSince(run.started) }
+        guard lastEnding != nil, let last = runs.last else { return nil }
+        return last.ended.timeIntervalSince(last.started)
+    }
 
     /// What the agents have spent in the run on show.
     var runSpend: Usage {

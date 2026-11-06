@@ -74,7 +74,7 @@ struct RunProgressPill: View {
     /// The headline, with how long the card it is about has been at it.
     private func line(_ headline: RunProgress.Headline, now: Date) -> String {
         guard controller.isRunning, let id = headline.cardID, let since = controller.liveSince[id] else { return headline.text }
-        return headline.text + " · " + RunClock.span(now.timeIntervalSince(since))
+        return headline.text + " · " + RunClock.length(now.timeIntervalSince(since))
     }
 }
 
@@ -90,8 +90,8 @@ struct RunProgressLine: View {
             header
             StopsRow(stops: progress.stops, selectedID: selected?.id, compact: false) { selectedID = $0 }
             if let id = openFlowID, let card = controller.flow.card(id), let inner = controller.innerFlow(of: card) {
-                SubflowLine(controller: inner, name: card.name, isWaitingItsTurn: progress.stops.first { $0.id == id }?.inner == nil
-                            && controller.holds.contains { $0.cardID == id })
+                SubflowLine(controller: inner, name: card.name, isOurs: inner.isRunning(inside: controller.flow.id),
+                            isWaitingItsTurn: controller.holds.contains { $0.cardID == id })
                     .transition(.opacity)
             }
             if let stop = selected {
@@ -116,12 +116,12 @@ struct RunProgressLine: View {
     private var header: some View {
         HStack(spacing: DS.Space.m) {
             Text(controller.flow.name).textRole(.headline)
-            if let started = controller.runStarted {
-                Ticking(isOn: controller.isRunning) { now in
-                    Text(RunClock.span(now.timeIntervalSince(started))).textRole(.caption).monospacedDigit()
+            Ticking(isOn: controller.isRunning) { now in
+                if let time = controller.runTime(at: now) {
+                    Text(RunClock.length(time)).textRole(.caption).monospacedDigit()
                 }
-                .foregroundStyle(Palette.textMuted.color)
             }
+            .foregroundStyle(Palette.textMuted.color)
             Spacer(minLength: DS.Space.l)
             Text("Hand-offs \(controller.handOffs) of \(Engine.maxDeliveries)")
                 .textRole(.caption).monospacedDigit()
@@ -167,7 +167,7 @@ struct RunProgressLine: View {
         switch stop.state {
         case .done: parts.append("passed")
         case .live:
-            if let since = controller.liveSince[stop.id] { parts.append("at it for \(RunClock.span(now.timeIntervalSince(since)))") }
+            if let since = controller.liveSince[stop.id] { parts.append("at it for \(RunClock.length(now.timeIntervalSince(since)))") }
             else { parts.append("at work") }
         case .needsYou: parts.append("waiting for you")
         case .failed: parts.append("the run stopped here")
@@ -186,6 +186,8 @@ struct RunProgressLine: View {
 private struct SubflowLine: View {
     let controller: FlowController
     let name: String
+    /// The flow is running for this Flow card, rather than for someone else.
+    let isOurs: Bool
     let isWaitingItsTurn: Bool
 
     var body: some View {
@@ -194,13 +196,13 @@ private struct SubflowLine: View {
                 Text(name).textRole(.captionLabel)
                 Text(controller.flow.name).textRole(.caption).foregroundStyle(Palette.textMuted.color)
                 Spacer()
-                if let progress = controller.runProgress, controller.isRunning {
+                if isOurs, let progress = controller.latestProgress {
                     Text("\(progress.percent)%").textRole(.captionLabel).monospacedDigit()
                 } else {
                     Text(isWaitingItsTurn ? "Waiting its turn" : "Not running").textRole(.caption).foregroundStyle(Palette.textMuted.color)
                 }
             }
-            if let progress = controller.runProgress, controller.isRunning {
+            if isOurs, let progress = controller.latestProgress {
                 StopsRow(stops: progress.stops, selectedID: nil, compact: true) { _ in }
             }
         }
@@ -298,10 +300,10 @@ private struct StopView: View {
         case .live:
             shape.fill(Palette.overlay.color).frame(width: size, height: size)
                 .overlay(shape.strokeBorder(Palette.live.color, lineWidth: DS.Stroke.track))
-                .background(shape.fill(Palette.live.opacity(0.25).color).padding(-size * 0.25))
+                .background(shape.fill(Palette.liveTint.color).padding(-size * 0.25))
         case .needsYou:
             shape.fill(Palette.live.color).frame(width: size, height: size)
-                .background(shape.fill(Palette.live.opacity(0.25).color).padding(-size * 0.25))
+                .background(shape.fill(Palette.liveTint.color).padding(-size * 0.25))
         case .failed:
             shape.fill(Palette.fail.color).frame(width: size, height: size)
                 .overlay(Image(systemName: "xmark").dsIcon(DS.IconSize.xxs, .bold).foregroundStyle(Palette.onAccent.color))

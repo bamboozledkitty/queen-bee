@@ -142,9 +142,9 @@ public struct RunProgress: Equatable, Sendable {
         switch ending {
         case nil: fraction = min(max(raw, shownBefore), 0.99)
         case .some(let ending) where answered && (ending == .finishedWithAnswer || ending == .gaveUp): fraction = 1
-        // A run that ended any other way stays where it got to. Nothing is ahead of it any more, so working it out
-        // again would say it was all but done.
-        case .some: fraction = min(shownBefore > 0 ? shownBefore : raw, 0.99)
+        // A run that ended any other way stays where it got to, even at 0. Nothing is ahead of it any more, so
+        // working it out again would say it was all but done.
+        case .some: fraction = min(shownBefore, 0.99)
         }
 
         // The stops, in the order the run reaches them, then top to bottom as they sit on the canvas.
@@ -207,7 +207,8 @@ public struct RunProgress: Equatable, Sendable {
     private static func headline(flow: Flow, stops: [Stop], needs: [String: Need], ending: RunEnding?,
                                  failed: Set<String>, answered: Bool) -> Headline {
         if let card = flow.cards.first(where: { failed.contains($0.id) }) {
-            return Headline(tone: .failed, text: "Stopped at \(card.name)", cardID: card.id)
+            // An End set to fail the run is where the flow meant it to end, so the run simply failed.
+            return Headline(tone: .failed, text: card.kind == .end ? "Failed" : "Stopped at \(card.name)", cardID: card.id)
         }
         if let ending {
             switch ending {

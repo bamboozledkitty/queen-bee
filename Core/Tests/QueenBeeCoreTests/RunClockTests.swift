@@ -42,11 +42,11 @@ import Testing
         #expect(other.contains("4") && other.contains("Mar") && other.contains("13:10"))
     }
 
-    @Test func aSpanIsShortAndGrowsItsUnits() {
-        #expect(RunClock.span(0) == "0s")
-        #expect(RunClock.span(40.9) == "40s")
-        #expect(RunClock.span(130) == "2m 10s")
-        #expect(RunClock.span(3600 + 5 * 60 + 9) == "1h 05m")
-        #expect(RunClock.span(-5) == "0s")
+    @Test func aLengthOfTimeGrowsItsUnits() {
+        #expect(RunClock.length(0) == "0 sec")
+        #expect(RunClock.length(40.4) == "40 sec")
+        #expect(RunClock.length(130) == "2 min 10 sec")
+        #expect(RunClock.length(3600 + 5 * 60 + 9) == "1 hr 5 min")
+        #expect(RunClock.length(-5) == "0 sec")
     }
 }
