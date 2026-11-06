@@ -118,6 +118,8 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var endWaiters: [String: [CheckedContinuation<RunRecord?, Never>]] = [:]
     /// The run each agent's turn under way is working for, read off the hand-off that began the turn.
     @ObservationIgnored private var turnRun: [String: String] = [:]
+    /// Agents whose turn under way began with something other than a hand-off, such as what the person typed.
+    @ObservationIgnored private var turnNotHandedOff: Set<String> = []
     /// Set when the flow has been deleted, so nothing writes its history back.
     @ObservationIgnored private var isDeleted = false
     /// Every flow's history is written through this, so an older save never lands on top of a newer one.
@@ -1445,10 +1447,13 @@ final class FlowController: ToolHost {
         guard isRunning, let engine else { return }
         // The run the failed turn was working for, which may have ended since.
         let forRun = wholeSession ? nil : turnRun[id]
+        // A turn the person typed, ahead of the run's message, failing says nothing about that message.
+        let byHandOff = wholeSession || !turnNotHandedOff.contains(id)
         turnRun[id] = nil
+        turnNotHandedOff.remove(id)
         Task {
             let output = await engine.agentFailed(flow: self.flow, cardID: id, name: name, reason: reason,
-                                                  wholeSession: wholeSession, forRun: forRun)
+                                                  wholeSession: wholeSession, forRun: forRun, byHandOff: byHandOff)
             // Gone out Error, the failure is part of the run's path, not where it stopped.
             let wentOutError = output.visits.contains { $0.cardID == id && $0.port == "error" }
             if output.finished, !wentOutError { self.markFailed(id) }
@@ -1531,7 +1536,14 @@ final class FlowController: ToolHost {
         case "UserPromptSubmit":
             // A turn begun by a hand-off works for the run the hand-off came from, which may have ended by the
             // time the turn does.
-            turnRun[who] = Engine.runID(inHandOff: payload["prompt"]?.stringValue ?? "")
+            let run = Engine.runID(inHandOff: payload["prompt"]?.stringValue ?? "")
+            turnRun[who] = run
+            if let run, let engine {
+                turnNotHandedOff.remove(who)
+                Task { await engine.turnBegan(cardID: who, forRun: run) }
+            } else {
+                turnNotHandedOff.insert(who)
+            }
         case "Stop":
             let reply = payload["last_assistant_message"]?.stringValue ?? ""
             session.lastReply = reply
@@ -1552,7 +1564,8 @@ final class FlowController: ToolHost {
             guard self.isRunning, !self.pluginSpoke.contains(who) else { return }
             self.append("\(self.flow.card(who)?.name ?? who)'s reply didn't come through the usual way, so Queen Bee passed it on itself")
             let forRun = self.turnRun.removeValue(forKey: who)
-            self.absorb(await engine.agentReplied(flow: self.flow, cardID: who, text: reply, forRun: forRun), sender: nil)
+            let byHandOff = self.turnNotHandedOff.remove(who) == nil
+            self.absorb(await engine.agentReplied(flow: self.flow, cardID: who, text: reply, forRun: forRun, byHandOff: byHandOff), sender: nil)
         }
     }
 
@@ -1567,7 +1580,9 @@ final class FlowController: ToolHost {
         guard let engine = readyEngine() else { return [] }
         // Each turn is routed once, so what is known of the run it worked for goes with it.
         let forRun = turnRun.removeValue(forKey: who)
-        return absorb(await engine.agentReplied(flow: flow, cardID: who, text: answer, waitingOnAnswer: asked, forRun: forRun), sender: who)
+        let byHandOff = turnNotHandedOff.remove(who) == nil
+        return absorb(await engine.agentReplied(flow: flow, cardID: who, text: answer, waitingOnAnswer: asked, forRun: forRun,
+                                                byHandOff: byHandOff), sender: who)
     }
 
     /// The plugin reports how its sends went. A hand-off that didn't arrive is typed in.
@@ -1796,6 +1811,7 @@ final class FlowController: ToolHost {
         for id in output.leftWaiting {
             sessions[id]?.interrupt()
             turnRun[id] = nil
+            turnNotHandedOff.remove(id)
         }
         output.holds.forEach(take)
         if let asking = output.asking {

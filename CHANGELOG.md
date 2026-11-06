@@ -17,6 +17,7 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Fixed
 
+- When you type to an agent that a run is about to hand a message to, the reply to what you typed is no longer passed on as the run's, and an API error in that turn no longer counts as the agent failing the run. The run's own message is answered in its own turn. An answer you type to an agent's question still carries the run on.
 - A message handed to an agent whose last turn ended with an API error is now typed in. Before, it waited until the agent next finished a turn, which might never happen.
 - A Flow card whose flow is no longer in the project, for example because it went to the Trash, now warns "Its flow isn't in this project" on the canvas, in its settings and on a paired iPhone or iPad, and the orchestrator sees the warning too. Before, nothing said so until a run reached the card and went out Fail. Moving a flow to the Trash on the Mac now says which flows run it.
 

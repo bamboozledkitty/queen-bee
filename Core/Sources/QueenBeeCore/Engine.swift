@@ -205,6 +205,10 @@ public actor Engine {
         /// For each agent, the messages it has been handed and hasn't answered, oldest first. The oldest is what
         /// goes out its Error output if it fails.
         var handed: [String: [Message]] = [:]
+        /// For each agent, the turns it has begun on this run's messages and not finished. A turn that no hand-off
+        /// began, such as one the person typed, answers for the run only while one of these is under way: then it
+        /// is the answer to the agent's question, not a turn that came before the run's message reached it.
+        var begun: [String: Int] = [:]
         /// Agents whose last turn ended on a question of their own, not on their reply.
         var asking: Set<String> = []
         /// Whether the app has been told the run hangs on those agents.
@@ -331,8 +335,10 @@ public actor Engine {
     /// is passed on and the card stays owed, until the turn after the answer.
     /// `forRun` is the run the hand-off that began the turn belonged to, when the app knows it. A turn
     /// working on a run that has ended is not this run's reply, even from an agent this run is owed one by.
+    /// `byHandOff` false is for a turn the app saw begin with something other than a hand-off, such as what the
+    /// person typed: see `Run.begun`.
     public func agentReplied(flow: Flow, cardID: String, text: String, waitingOnAnswer: Bool = false,
-                             forRun: String? = nil) async -> RunOutput {
+                             forRun: String? = nil, byHandOff: Bool = true) async -> RunOutput {
         await takeTurn()
         defer { endTurn() }
 
@@ -340,6 +346,15 @@ public actor Engine {
         var output = RunOutput(runID: state.id)
         if let forRun, forRun != state.id {
             output.log.append("\(flow.card(cardID)?.name ?? "An agent") finished work for a run that has ended, so its reply was not passed on")
+            settle(state, in: flow, &output)
+            return output
+        }
+        if !byHandOff, state.owed[cardID, default: 0] > 0, state.begun[cardID, default: 0] == 0, !state.asking.contains(cardID) {
+            // The run's message hasn't begun in this session yet. It is still on its way, and its own turn answers it.
+            // An agent the run knows is waiting for an answer is past that, even if the app missed its turn begin.
+            if !Self.isBlank(text), let card = flow.card(cardID) {
+                output.log.append("\(card.name) finished a turn before this run's message reached it, so its reply was not passed on")
+            }
             settle(state, in: flow, &output)
             return output
         }
@@ -363,6 +378,7 @@ public actor Engine {
         }
         state.owed[cardID] = owed - 1
         _ = Self.takeOldest(of: cardID, from: &state)
+        Self.finishTurn(of: cardID, in: &state)
         state.asking.remove(cardID)
         state.pending.remove(cardID)
         if let card = flow.card(cardID) {
@@ -414,16 +430,19 @@ public actor Engine {
     /// hadn't answered goes out Error, oldest first. Without it, one turn failed: only the oldest goes out Error,
     /// and the session goes on with whatever else it was handed.
     /// `forRun` is the run the failed turn worked for, if the app knows it. A turn left over from a run that has
-    /// ended says nothing about this one.
+    /// ended says nothing about this one. `byHandOff` false is for a failed turn that something other than a
+    /// hand-off began: while none of the run's messages has begun in the session, it says nothing about them.
     /// `name` is the card's name for one that has just been taken out of `flow`.
     public func agentFailed(flow: Flow, cardID: String, name: String? = nil, reason: String, wholeSession: Bool = true,
-                            forRun: String? = nil) async -> RunOutput {
+                            forRun: String? = nil, byHandOff: Bool = true) async -> RunOutput {
         await takeTurn()
         defer { endTurn() }
 
         guard var state = run else { return RunOutput() }
         if let forRun, forRun != state.id { return RunOutput(runID: state.id) }
         guard state.pending.contains(cardID) || state.owed[cardID, default: 0] > 0 else { return RunOutput(runID: state.id) }
+        if !wholeSession, !byHandOff, state.begun[cardID, default: 0] == 0, !state.asking.contains(cardID) { return RunOutput(runID: state.id) }
+        if wholeSession { state.begun[cardID] = nil } else { Self.finishTurn(of: cardID, in: &state) }
         let name = flow.card(cardID)?.name ?? name ?? "An agent"
         let why = Self.isBlank(reason) ? "" : ": \(reason.trimmingCharacters(in: .whitespacesAndNewlines))"
         guard let card = flow.card(cardID), !flow.links(from: cardID, port: "error").isEmpty,
@@ -455,6 +474,22 @@ public actor Engine {
         }
         settle(state, in: flow, &output)
         return output
+    }
+
+    /// An agent began a turn on one of the run's messages. `forRun` is the run the message came from: a turn
+    /// on a message from a run that has ended counts for nothing.
+    public func turnBegan(cardID: String, forRun: String) async {
+        await takeTurn()
+        defer { endTurn() }
+        guard var state = run, state.id == forRun, live == state.id else { return }
+        state.begun[cardID, default: 0] += 1
+        run = state
+    }
+
+    /// One of the turns an agent began on the run's messages is over, answered or failed.
+    private static func finishTurn(of cardID: String, in state: inout Run) {
+        let left = state.begun[cardID, default: 0] - 1
+        state.begun[cardID] = left > 0 ? left : nil
     }
 
     /// The oldest message `cardID` was handed and hasn't answered, taken off its list.
