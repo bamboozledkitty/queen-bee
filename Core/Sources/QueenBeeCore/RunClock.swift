@@ -15,6 +15,14 @@ public enum RunClock {
             : format(date, template: "dMMMjmm", calendar: calendar, locale: locale)
     }
 
+    /// How long a run took: "42 sec", "3 min 5 sec", "1 hr 4 min".
+    public static func length(from start: Date, to end: Date) -> String {
+        let seconds = max(0, Int(end.timeIntervalSince(start).rounded()))
+        if seconds < 60 { return "\(seconds) sec" }
+        if seconds < 3600 { return "\(seconds / 60) min \(seconds % 60) sec" }
+        return "\(seconds / 3600) hr \(seconds % 3600 / 60) min"
+    }
+
     /// One formatter per way of writing, made the first time it is asked for: a log can ask hundreds of times a redraw.
     private static let formatters = Mutex<[String: DateFormatter]>([:])
 

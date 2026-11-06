@@ -8,7 +8,7 @@ Claude Code sessions on Haiku, and checks what the app did.
     ./scripts/build.sh && ./scripts/e2e.py            # every scenario
     ./scripts/e2e.py guard loop                        # some of them
 
-Scenarios: guard, settings, remote, scroll, pan, fanout, switch, loop, exit, apifail, ask, gates, unasked, subflow, timed, features, deep, browser,
+Scenarios: guard, settings, remote, scroll, pan, fanout, switch, loop, exit, apifail, errors, ask, gates, unasked, subflow, timed, features, deep, browser,
 nobrowser, noclaude, filekeys.
 `mirror` is run only when named: it checks the copy of a terminal that a paired device is sent.
 `mobile` is run only when named: it runs the iPad app in the iOS Simulator against the test copy. Build it
@@ -3268,6 +3268,17 @@ def scenario_panels():
               p.get("cost", {}).get("runTotal") == "$0.37" and p["cost"]["runLines"] == [["Writer", "$0.37", "57k tokens"]]
               and p["cost"]["runTitle"] == "Latest run" and p["cost"]["total"] == "$1.08", str(p.get("cost")))
         both("panels-04-runs")
+        # Compare two runs, with the two latest: the earlier stopped at the Style guide's Fail, the later went through.
+        s = play(3, "-qbShow", "runs", "-qbCompare", "1", also=lambda s: panel(s).get("compare"))
+        c = panel(s)["compare"]
+        rows = {r["name"]: r for r in c.get("rows", [])}
+        check("Compare two runs sets the two latest side by side, older first",
+              (c.get("before"), c.get("after")) == ("the earlier run", "the later run")
+              and "Ended: failed in the earlier run, finished in the later run" in c.get("changes", []), str(c)[:400])
+        check("and says where they went different ways",
+              rows.get("Style guide", {}).get("changes", [None])[0] == "Stopped the run in the earlier run" and rows["Style guide"]["after"] == "Pass"
+              and rows.get("Sent", {}).get("changes") == ["Reached only in the later run"], str(rows)[:600])
+        both("panels-04-runs-compare")
         for page in ("log", "output", "cost"):
             s = play(3, "-qbShow", page, also=lambda s: panel(s).get("page") == page)
             both(f"panels-0{5 + ('log', 'output', 'cost').index(page)}-{page}")
@@ -3520,7 +3531,7 @@ def scenario_editing():
     on = ("-qbControl", "1")
     away, gone = "Not connected to your Mac right now.", "That card is no longer in the flow."
     # The kinds of card in the Mac's order, with the made-up Mac's two saved roles under Agent, as its palette has them.
-    kinds = ["Agent", "Note writer", "Proof reader", "Start", "If / Else", "Switch", "And", "Or", "Prompt", "Loop until", "For each", "Approval", "Script", "Flow", "End", "Note"]
+    kinds = ["Agent", "Note writer", "Proof reader", "Start", "If / Else", "Switch", "And", "Or", "Prompt", "Loop until", "For each", "Approval", "Script", "Delay", "Flow", "End", "Note"]
     bar = ["undo", "redo", "add", "select", "tidy", "done"]
 
     def edit(state):
@@ -5026,7 +5037,87 @@ UNASKED = flow("Unasked", [
     card("end", "Sent", 1180, 0),
 ], [("Start", "out", "Gate", 3), ("Gate", "approved", "Sender", 3), ("Sender", "out", "Sent", 3)])
 
-FLOWS.update({"gates": GATES, "unasked": UNASKED, "inner": INNER, "subflow": OUTER, "timed": TIMED})
+# Two Delay cards in a row: a short one that passes the message on by itself, and a long one sent on early.
+DELAYS = flow("Delays", [
+    card("start", "Start", 0, 0, command="wait for it"),
+    card("delay", "Short", 312, 0, waitMinutes=2),
+    card("delay", "Long", 624, 0, waitMinutes=600),
+    card("end", "Out", 936, 0),
+], [("Start", "out", "Short", 9), ("Short", "out", "Long", 9), ("Long", "out", "Out", 9)])
+
+FLOWS.update({"gates": GATES, "unasked": UNASKED, "inner": INNER, "subflow": OUTER, "timed": TIMED, "delays": DELAYS})
+
+# Agents on a model that doesn't exist, so each turn fails at once and costs nothing. One fails into an End that
+# ends the run as failed; the other tries again through a Delay until its Error link's limit of 2 is used up.
+ERRORS = flow("Errors", [
+    card("start", "Start", 0, 0, command="Say hi"),
+    card("agent", "Broken", 312, 0, model="claude-no-such-model-0"),
+    card("end", "Out", 900, 0),
+    card("end", "Failed", 900, 400, failsRun=True),
+], [("Start", "out", "Broken", 3), ("Broken", "out", "Out", 3), ("Broken", "error", "Failed", 3)])
+
+RETRIES = flow("Retries", [
+    card("start", "Start", 0, 0, command="Say hi"),
+    card("agent", "Flaky", 312, 0, model="claude-no-such-model-0"),
+    card("delay", "Wait", 900, 400, waitMinutes=1),
+    card("end", "Out", 1200, 0),
+], [("Start", "out", "Flaky", 3), ("Flaky", "out", "Out", 3), ("Flaky", "error", "Wait", 2), ("Wait", "out", "Flaky", 9)])
+
+FLOWS.update({"errors": ERRORS, "retries": RETRIES})
+
+
+def failures_why(log, agent):
+    """Why each failure of `agent` in a log happened, as the log says."""
+    return [line[len(agent) + len(" failed: "):-len(" → Error")] for line in log
+            if line.startswith(f"{agent} failed: ") and line.endswith(" → Error")]
+
+
+def scenario_errors(app):
+    print("errors: a failed agent's message goes out Error, to an End that fails the run or round a Delay to try again", flush=True)
+    def settled(f, agent):
+        # A session on a model that doesn't exist may start idle, or already failed or exited.
+        app.wait(f["id"], lambda s: "sessions" in s, 30, f"{f['name']} to load")
+        app.op(f["id"], "select")
+        app.wait(f["id"], lambda s: s["sessions"][agent]["state"] in ("idle", "exited", "failed"), 90, f"{agent}'s session to settle")
+
+    fid = ERRORS["id"]
+    settled(ERRORS, "Broken")
+    app.op(fid, "run")
+    try:
+        s = app.wait(fid, lambda s: not s["isRunning"] and s["runs"], 120, "the run to end at the failing End")
+    except TimeoutError as e:
+        check("a failed turn goes out Error", False, str(e)[:400])
+        return
+    check("a failed turn goes out Error", any(line.startswith("Broken failed") and line.endswith("→ Error") for line in s["log"]), str(s["log"][-6:]))
+    check("with the message it was given", s["results"].get("Failed") == "Say hi" and "Out" not in s["results"], str(s["results"]))
+    check("an End set to fail ends the run as failed", 'End "Failed" ends the run as failed' in s["log"]
+          and s["runs"][0]["outcome"] == "failed" and s["activity"] == "failed", f"{s['log'][-4:]} {s['runs'][0]} {s['activity']}")
+    check("the End is marked where it failed, and the agent isn't", s["marks"].get("Failed", {}).get("failed") is True
+          and s["marks"].get("Broken", {}).get("failed") is not True and s["marks"].get("Broken", {}).get("lastPort") == "error",
+          f"{s['marks'].get('Failed')} {s['marks'].get('Broken')}")
+
+    # A minute counted as two seconds.
+    rid = RETRIES["id"]
+    settled(RETRIES, "Flaky")
+    app.op(rid, "holdMinute", seconds=2)
+    try:
+        app.op(rid, "run")
+        try:
+            s = app.wait(rid, lambda s: not s["isRunning"] and s["runs"], 180, "the tries to run out")
+        except TimeoutError as e:
+            check("a Delay on Error gives the agent the message again", False, str(e)[:400])
+            app.op(rid, "stop")
+            return
+        # "failed" means each try was typed into the session its last turn failed in; "exited", that each one restarted it.
+        print(f"        Flaky's session afterwards: {s['sessions']['Flaky']['state']}; how it failed: {sorted(set(failures_why(s['log'], 'Flaky')))}", flush=True)
+        failures = [line for line in s["log"] if line.startswith("Flaky failed") and line.endswith("→ Error")]
+        check("a Delay on Error gives the agent the message again", len(failures) == 3, str(s["log"][-12:]))
+        check("until the Error link's limit is used up", any("reached its limit of 2" in line for line in s["log"])
+              and s["runs"][0]["ending"] == "endedWithoutAnswer", f"{s['log'][-4:]} {s['runs'][0]}")
+        check("and the agent isn't marked as where the run stopped", s["marks"].get("Flaky", {}).get("failed") is not True, str(s["marks"].get("Flaky")))
+    finally:
+        app.op(rid, "holdMinute")
+        app.op(rid, "close")
 
 
 def held(app, fid, card=None, timeout=20):
@@ -5064,6 +5155,18 @@ def scenario_gates(app):
     check("a rejected message goes out Rejected with the reason ahead of it",
           list(s["results"]) == ["Binned"] and binned.startswith("Too loud\n") and binned.endswith("\nHELLO FROM THE START CARD"), str(s["results"]))
     check("both runs are kept", [r["outcome"] for r in s["runs"]] == ["finished", "finished"], str(s["runs"]))
+
+    # Compare with…: one run went out Approved to Done, the other out Rejected to Binned.
+    c = app.op(fid, "compare", runs=[s["runs"][1]["id"], s["runs"][0]["id"]])
+    rows = {r["name"]: r for r in c.get("rows", [])}
+    check("two runs compared come older first", (c.get("before"), c.get("after")) == ("#1", "#2"), str(c)[:300])
+    check("the comparison says where they went different ways",
+          rows.get("Check it", {}).get("changes") == ["Went a different way"]
+          and (rows["Check it"]["before"], rows["Check it"]["after"]) == ("Approved", "Rejected")
+          and rows.get("Done", {}).get("changes") == ["Reached only in #1"] and rows.get("Binned", {}).get("changes") == ["Reached only in #2"],
+          str(rows)[:600])
+    check("and what stayed the same", rows.get("Shout", {}).get("changes") == [] and rows["Shout"]["before"] == "Pass"
+          and c.get("comparesReplies") is True, str(rows.get("Shout")))
 
     first = s["runs"][0]["id"]
     app.op(fid, "viewRun", run=first)
@@ -5209,7 +5312,7 @@ def scenario_subflow(app):
 
 
 def scenario_timed(app):
-    print("timed: schedules and file triggers start runs, and one that came in a file stays off", flush=True)
+    print("timed: schedules and file triggers start runs, one that came in a file stays off, and Delay cards wait", flush=True)
     fid = TIMED["id"]
     app.op(fid, "select")
     time.sleep(2)
@@ -5231,6 +5334,33 @@ def scenario_timed(app):
     check("the schedule starts a run at its time", s["results"].get("Rang") == "tick", str(s["results"]))
     check("the schedule that came in the file never ran", "Never" not in s["results"])
     app.op(fid, "trigger", card="Clock")
+
+    # Delay cards, with a minute counted as two seconds.
+    did = DELAYS["id"]
+    app.op(did, "holdMinute", seconds=2)
+    try:
+        app.op(did, "select")
+        time.sleep(1)
+        app.op(did, "run")
+        started = time.time()
+        h = held(app, did, "Short")
+        check("a Delay holds the message", h[0]["kind"] == "delay" and h[0]["text"] == "wait for it" and not h[0]["needsAllow"], str(h))
+        s = app.state(did)
+        check("the log says how long it waits", 'Delay "Short" is waiting 2 minutes' in s["log"], str(s["log"][-4:]))
+        check("a Delay doesn't count as needing you", s["isRunning"] and s.get("activity") != "needsYou", str(s.get("activity")))
+        h = held(app, did, "Long", timeout=30)
+        waited = time.time() - started
+        check("it passes the message on by itself once its time is up", waited >= 3, f"after {waited:.1f}s")
+        check("and the next Delay holds it", h[0]["text"] == "wait for it", str(h))
+        app.op(did, "hold", card="Long", answer="sendOn")
+        s = app.wait(did, lambda s: not s["isRunning"] and s["runs"], 20, "the Delay sent on early to finish the run")
+        check("Send it on now passes the message on at once", s["results"].get("Out") == "wait for it", str(s["results"]))
+        check("the log says it went early", "Long was sent on early" in s["log"], str(s["log"][-6:]))
+        check("and the message is still from the Start card", 'End "Out" got the final answer from Start' in s["log"], str(s["log"][-6:]))
+        check("nothing is left held", s["holds"] == [], str(s["holds"]))
+    finally:
+        app.op(did, "holdMinute")
+    app.op(did, "close")
 
 
 # For each: three lines go one at a time through an agent and come back, then out Done together.
@@ -6321,7 +6451,7 @@ def scenario_filekeys(project):
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "remote", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "unasked", "subflow", "timed", "features", "deep", "browser", "nobrowser", "noclaude", "filekeys"]
+    wanted = sys.argv[1:] or ["guard", "settings", "remote", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "errors", "ask", "gates", "unasked", "subflow", "timed", "features", "deep", "browser", "nobrowser", "noclaude", "filekeys"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     sweep()
@@ -6330,7 +6460,7 @@ def main():
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
     for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "inner", "subflow", "timed"]
                              + [f"level{n}" for n in range(5)] + ["doors", "slow", "edits", "unasked", "browser"]
-                             + ["features", "gaveup", "holds", "spend", "cli", "cliwait"]):
+                             + ["features", "gaveup", "holds", "spend", "cli", "cliwait", "delays", "errors", "retries"]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)
 

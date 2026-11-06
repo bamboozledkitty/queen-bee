@@ -197,8 +197,9 @@ nonisolated struct Abilities: Equatable {
                 let isLive = state != .notStarted && state != .exited
                 let start = button(state == .notStarted ? "Start agent" : "Restart agent", .startAgent(cardID: card.id),
                                    hint: isLive ? "Restarts the agent on your Mac. It keeps its conversation so far." : "Starts the agent on your Mac.")
-                // The Mac's card has the button only while no session is running. A running one is restarted from its details.
-                if !isLive { cards[card.id] = [start] }
+                // The Mac's card has the button while no session is running, or after a turn that ended with an error.
+                // Otherwise a running one is restarted from its details.
+                if !isLive || state == .failed { cards[card.id] = [start] }
                 // Settings changed since the session started, which it doesn't have yet: the Mac's "Undo" and "Restart to apply".
                 if isLive, !(run.awaitingRestart[card.id] ?? []).isEmpty {
                     details[card.id] = [button("Undo", .revert(cardID: card.id), hint: "Puts these settings back to what the agent is using now."),

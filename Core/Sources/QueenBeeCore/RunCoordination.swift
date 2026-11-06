@@ -180,3 +180,31 @@ public enum HoldTimeLimit {
         return said.isEmpty ? count(0, "minute") : said
     }
 }
+
+/// How long a Delay card holds its message before passing it on.
+public enum DelayTime {
+    /// What a new Delay card waits, and one from a file that doesn't say.
+    public static let defaultMinutes = 5
+
+    /// The minutes a Delay card waits: at least one, at most a week. A card that doesn't say waits the default.
+    public static func minutes(for card: Card) -> Int {
+        clamped(card.waitMinutes ?? defaultMinutes)
+    }
+
+    /// Minutes as a Delay card keeps them. It always waits a while, so 0 or less is one minute.
+    public static func clamped(_ minutes: Int) -> Int {
+        min(max(minutes, 1), HoldTimeLimit.longestMinutes)
+    }
+
+    /// The waits offered in a Delay card's settings, shortest first, with the card's own when it is another.
+    public static func choices(for card: Card) -> [Int] {
+        let offered = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 24 * 60, 2 * 24 * 60, 7 * 24 * 60]
+        let own = minutes(for: card)
+        return (offered + (offered.contains(own) ? [] : [own])).sorted()
+    }
+
+    /// How long the card waits.
+    public static func wait(for card: Card) -> Duration {
+        .seconds(minutes(for: card) * 60)
+    }
+}

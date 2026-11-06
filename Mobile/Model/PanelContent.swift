@@ -14,12 +14,7 @@ nonisolated enum Clock {
     static func run(_ date: Date) -> String { RunClock.moment(date) }
 
     /// How long a run took: "42 sec", "3 min 5 sec", "1 hr 4 min".
-    static func length(from start: Date, to end: Date) -> String {
-        let seconds = max(0, Int(end.timeIntervalSince(start).rounded()))
-        if seconds < 60 { return "\(seconds) sec" }
-        if seconds < 3600 { return "\(seconds / 60) min \(seconds % 60) sec" }
-        return "\(seconds / 3600) hr \(seconds % 3600 / 60) min"
-    }
+    static func length(from start: Date, to end: Date) -> String { RunClock.length(from: start, to: end) }
 }
 
 /// The run the panels and the canvas are showing: the latest, or an earlier one picked on this device.
@@ -209,9 +204,10 @@ nonisolated struct Details: Equatable {
             add(.note, "Claude reads each message and sends it down the branch it fits best. A message that fits none of them goes out Other.")
         case .prompt:
             add(.text, "Rewrite the message as", said(card.template))
-            add(.note, "{{message}} is where the incoming message goes, and {{from}} is the name of the card it came from. With no {{message}}, the message is added at the end.")
+            add(.note, "{{message}} is where the incoming message goes, and {{from}} is the name of the card it came from. With no {{message}}, the message is added at the end. When the message is JSON, {{message.title}} is just its title.")
         case .end:
             add(.row, "Save the answer to a file", (card.saveTo ?? "").isEmpty ? "Not saved" : card.saveTo ?? "")
+            if card.failsRun == true { add(.row, "Ends the run", "As failed") }
             if let result = run.results[card.id] { add(.text, run.earlier == nil ? "Latest answer" : "Answer in this run", result) }
         case .and:
             add(.note, "Waits until every card linked into it has answered, then passes all their answers on together.")
@@ -231,9 +227,19 @@ nonisolated struct Details: Equatable {
                 add(.note, "A run stops here and waits for you. On your Mac you can edit the message, then approve or reject it.")
             }
         case .flow:
-            add(.row, "Runs", CanvasContent.innerFlow(of: card, in: siblings, excluding: flow.id)?.name ?? "Nothing yet")
+            let chosen = !(card.flowRef ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            add(.row, "Runs", CanvasContent.innerFlow(of: card, in: siblings, excluding: flow.id)?.name ?? (chosen ? "A flow that isn't in this project" : "Nothing yet"))
             add(.note, "This card runs a whole flow as one step. The message that arrives here goes to that flow's Input, and what reaches its Output comes back out Done. If it stops early or fails, the message goes out Fail.")
             if let hold { add(.waiting, "Running \(hold.command)…") }
+        case .delay:
+            add(.row, "Wait", HoldTimeLimit.describe(minutes: DelayTime.minutes(for: card)))
+            if let hold {
+                let stop = hold.from.last.map { "?!.".contains($0) } == true ? "" : "."
+                let at = hold.deadline.map { " Goes on at \(RunClock.moment($0))." } ?? " Waiting."
+                add(.waiting, "From \(hold.from)\(stop)" + at, hold.text)
+            } else {
+                add(.note, EditForm.delayText)
+            }
         case .script:
             add(.code, "Command", said(card.command))
             if let line = EditForm.waitLine(card) { add(.row, "If nobody allows it", line) }
@@ -251,7 +257,7 @@ nonisolated struct Details: Equatable {
             }
         }
 
-        if let warning = QueenBeeCore.warnings(for: flow)[card.id] { add(.warning, warning) }
+        if let warning = QueenBeeCore.warnings(for: flow, among: siblings.map { (id: $0.id, name: $0.name) })[card.id] { add(.warning, warning) }
         if run.marks[card.id]?.failed == true, !run.isRunning { add(.stopped, "The run stopped here.") }
     }
 

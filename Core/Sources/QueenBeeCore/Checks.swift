@@ -35,23 +35,57 @@ public enum Checks {
 
     /// A Prompt card's template with `{{message}}` and `{{from}}` filled in. An empty template passes the
     /// message through, and one that never mentions the message gets it added at the end so it isn't lost.
+    /// When the message is JSON, `{{message.title}}` fills in one field of it and `{{message.items.0.name}}`
+    /// goes further in, a number picking from a list by place, counting from 0. A field that isn't there, or
+    /// a message that isn't JSON, leaves the placeholder as written, so the next card can see what went wrong.
     public static func fillTemplate(_ template: String, message: String, from: String) -> String {
         guard !template.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return message }
+        // Read once, and only when a field is asked for.
+        var parsed: JSONValue?, didParse = false
+        func json() -> JSONValue? {
+            if !didParse { parsed = Self.json(in: message); didParse = true }
+            return parsed
+        }
         // One pass over the template, so braces inside the message itself are never filled in.
         var filled = ""
         var usedMessage = false
         var rest = template[...]
         while let open = rest.range(of: "{{"), let close = rest[open.upperBound...].range(of: "}}") {
             filled += rest[..<open.lowerBound]
-            switch rest[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespaces).lowercased() {
+            let name = rest[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespaces)
+            // Field names keep their case, as JSON does; only the word "message" ignores it.
+            let isField = name.count > 8 && name.prefix(8).lowercased() == "message."
+            switch name.lowercased() {
             case "message": filled += message; usedMessage = true
             case "from": filled += from
-            default: filled += rest[open.lowerBound..<close.upperBound]
+            default:
+                if isField, let root = json(), let value = field(name.dropFirst(8), in: root) {
+                    filled += value.stringValue ?? (value.isNull ? "" : value.text())
+                    usedMessage = true
+                } else {
+                    filled += rest[open.lowerBound..<close.upperBound]
+                }
             }
             rest = rest[close.upperBound...]
         }
         filled += rest
         return usedMessage ? filled : filled + "\n\n" + message
+    }
+
+    /// The value at a dotted path such as `items.0.name`: a name picks from an object, a number from a list.
+    static func field(_ path: Substring, in root: JSONValue) -> JSONValue? {
+        var value = root
+        for part in path.split(separator: ".", omittingEmptySubsequences: false) {
+            let key = part.trimmingCharacters(in: .whitespaces)
+            if let list = value.arrayValue, let index = Int(key), list.indices.contains(index) {
+                value = list[index]
+            } else if let next = value[key] {
+                value = next
+            } else {
+                return nil
+            }
+        }
+        return value
     }
 
     /// What an And card passes on: each message under a heading naming who it came from.
@@ -73,16 +107,20 @@ public enum Checks {
             .filter { !$0.isEmpty }
     }
 
-    private static func jsonArray(in message: String) -> [JSONValue]? {
+    private static func jsonArray(in message: String) -> [JSONValue]? { json(in: message)?.arrayValue }
+
+    /// A message that is a JSON object or list, alone or in a code fence. Nil for anything else.
+    static func json(in message: String) -> JSONValue? {
         var text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        func opensJSON(_ text: String) -> Bool { text.hasPrefix("[") || text.hasPrefix("{") }
         // Agents often put JSON in a fence, with or without a language after the opening backticks.
         if text.hasPrefix("```"), text.hasSuffix("```"), text.count >= 6 {
             text = String(text.dropFirst(3).dropLast(3))
-            if !text.hasPrefix("["), let newline = text.firstIndex(of: "\n") { text = String(text[text.index(after: newline)...]) }
+            if !opensJSON(text), let newline = text.firstIndex(of: "\n") { text = String(text[text.index(after: newline)...]) }
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard text.hasPrefix("[") else { return nil }
-        return (try? JSONValue.parse(Data(text.utf8)))?.arrayValue
+        guard opensJSON(text) else { return nil }
+        return try? JSONValue.parse(Data(text.utf8))
     }
 
     public static func judgePrompt(statement: String, message: String) -> String {

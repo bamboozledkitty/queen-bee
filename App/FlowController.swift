@@ -106,7 +106,7 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
     /// How many runs are kept, and for how many of them what links carried. How much of each message is kept is
     /// `CarriedMessages`'s to say.
-    private static let keptRuns = 20, runsWithMessages = 3
+    private static let keptRuns = 20, runsWithMessages = RunComparison.runsWithMessages
     /// The whole text of the messages in `messages` that are kept there cut short, by message id: what Retry and
     /// "run from here" give a card again.
     @ObservationIgnored private var wholeMessages: [UUID: String] = [:]
@@ -198,7 +198,8 @@ final class FlowController: ToolHost {
     @ObservationIgnored private var workplaceRefusal: String?
 
     private var services: AppServices { AppServices.shared }
-    var warnings: [String: String] { QueenBeeCore.warnings(for: flow) }
+    /// The wiring warnings, and a Flow card's when the flow it runs is no longer in the project.
+    var warnings: [String: String] { QueenBeeCore.warnings(for: flow, among: project.flowNames) }
     var liveLinkIDs: Set<String> { liveLinks.values.reduce(into: Set<String>()) { $0.formUnion($1) } }
 
     /// Agent cards whose session is waiting on the person, in canvas order.
@@ -918,7 +919,7 @@ final class FlowController: ToolHost {
         for hold in holds where flow.card(hold.cardID) == nil {
             holdTasks[hold.id]?.cancel()
             holdTasks[hold.id] = nil
-            resolve(hold.id, port: hold.kind == .approval ? "rejected" : "fail", text: nil)
+            resolve(hold.id, port: hold.kind == .approval ? "rejected" : hold.kind == .delay ? "out" : "fail", text: nil)
         }
         if isOpen, services.environment != nil { startMissingSessions() }
     }
@@ -1436,14 +1437,21 @@ final class FlowController: ToolHost {
         agentStopped(id, reason: "its session ended")
     }
 
-    /// An agent's session ended, was ended, or its turn failed. That stops the run only if the run is waiting on the
-    /// agent: the engine decides. `name` is for a card that has just been deleted.
-    private func agentStopped(_ id: String, name: String? = nil, reason: String) {
+    /// An agent's session ended, was ended, or its turn failed. That matters only if the run is waiting on the
+    /// agent, and then the message it was working on goes out its Error output or the run stops: the engine decides.
+    /// `wholeSession` is false for one failed turn in a session that goes on. `name` is for a card that has just
+    /// been deleted.
+    private func agentStopped(_ id: String, name: String? = nil, reason: String, wholeSession: Bool = true) {
         guard isRunning, let engine else { return }
+        // The run the failed turn was working for, which may have ended since.
+        let forRun = wholeSession ? nil : turnRun[id]
         turnRun[id] = nil
         Task {
-            let output = await engine.agentFailed(flow: self.flow, cardID: id, name: name, reason: reason)
-            if output.finished { self.markFailed(id) }
+            let output = await engine.agentFailed(flow: self.flow, cardID: id, name: name, reason: reason,
+                                                  wholeSession: wholeSession, forRun: forRun)
+            // Gone out Error, the failure is part of the run's path, not where it stopped.
+            let wentOutError = output.visits.contains { $0.cardID == id && $0.port == "error" }
+            if output.finished, !wentOutError { self.markFailed(id) }
             self.absorb(output, sender: nil)
         }
     }
@@ -1529,7 +1537,7 @@ final class FlowController: ToolHost {
             session.lastReply = reply
             routeIfPluginIsSilent(who, reply: reply)
         case "StopFailure":
-            agentStopped(who, reason: "its turn ended with an API error")
+            agentStopped(who, reason: "its turn ended with an API error", wholeSession: false)
         default:
             break
         }
@@ -1734,7 +1742,8 @@ final class FlowController: ToolHost {
 
     /// Whether Retry is offered on a card: the last run stopped there, and a message reached it.
     func canRetry(_ cardID: String) -> Bool {
-        marks[cardID]?.failed == true && !isRunning && lastMessage(into: cardID) != nil
+        // An End card that failed the run is where it ended, not something to try again.
+        marks[cardID]?.failed == true && !isRunning && flow.card(cardID)?.kind != .end && lastMessage(into: cardID) != nil
     }
 
     /// Tries the card a run stopped at again, with the message it was given.
@@ -1796,6 +1805,10 @@ final class FlowController: ToolHost {
         if !output.stalledOn.isEmpty { noteStalled(on: output.stalledOn) }
         scheduleHistorySave()
         if output.finished {
+            // An End card set to fail the run is where it failed, and the run's record keeps it.
+            if output.ending == .failed {
+                for result in output.results where flow.card(result.cardID)?.failsRun == true { markFailed(result.cardID) }
+            }
             awaitingAnswer.removeAll()
             stallNotice?.cancel()
             isRunning = false
@@ -1809,8 +1822,8 @@ final class FlowController: ToolHost {
             finishRecord(output)
             subflowTurns.somethingEnded()
             notifyOrchestrator(of: output)
-            let stopped = marks.values.contains(where: \.failed)
-            Notifier.post(title: "\(flow.name) \(stopped ? "stopped" : (output.ending ?? .finishedWithAnswer).label)",
+            let failed = output.ending == .failed || marks.values.contains(where: \.failed)
+            Notifier.post(title: "\(flow.name) \(failed ? RunEnding.failed.label : (output.ending ?? .finishedWithAnswer).label)",
                           body: log.last?.text ?? "", flowID: flow.id, cardID: nil)
         } else if output.runID != nil {
             isRunning = true
@@ -1838,6 +1851,14 @@ final class FlowController: ToolHost {
             pending.command = inner?.flow.name ?? ""
             holds.append(pending)
             return runInnerFlow(pending, inner)
+        }
+        if hold.kind == .delay {
+            let wait = DelayTime.wait(for: card)
+            let lasts = TestHarness.holdWait(wait)
+            pending.deadline = Date().addingTimeInterval(Self.seconds(lasts))
+            holdClocks[pending.id] = (Date(), wait)
+            holds.append(pending)
+            return passOn(pending.id, after: lasts)
         }
         if let wait = HoldTimeLimit.wait(for: card), pending.kind == .approval || pending.needsAllow {
             let lasts = TestHarness.holdWait(wait)
@@ -1880,6 +1901,23 @@ final class FlowController: ToolHost {
         }
     }
 
+    /// A Delay card's message goes on once its time is up, unless the person sent it on first or the run ended.
+    /// Like a time limit, the clock keeps counting while the Mac sleeps.
+    private func passOn(_ id: String, after lasts: Duration) {
+        holdTasks[id] = Task {
+            try? await Task.sleep(for: lasts, clock: .continuous)
+            guard !Task.isCancelled, self.holds.first(where: { $0.id == id })?.kind == .delay else { return }
+            self.resolve(id, port: "out", text: nil)
+        }
+    }
+
+    /// The person sent a Delay card's message on without waiting for the rest of its time.
+    func sendOnNow(_ id: String) {
+        guard let hold = holds.first(where: { $0.id == id }), hold.kind == .delay else { return }
+        append("\(flow.card(hold.cardID)?.name ?? "A Delay card") was sent on early")
+        resolve(id, port: "out", text: nil, byPerson: true)
+    }
+
     private static func seconds(_ duration: Duration) -> TimeInterval {
         Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
@@ -1887,6 +1925,18 @@ final class FlowController: ToolHost {
     /// A waiting card's time limit was changed: its clock now runs to the new limit, counted from when it began
     /// waiting, and one past it already answers. A limit taken off stops the clock, and one put on starts it now.
     private func retimeHolds() {
+        // A Delay whose time was changed waits the new time, counted from when it began. One already past it goes on.
+        for hold in holds where hold.kind == .delay {
+            guard let card = flow.card(hold.cardID), let clock = holdClocks[hold.id],
+                  let index = holds.firstIndex(where: { $0.id == hold.id }) else { continue }
+            let wait = DelayTime.wait(for: card)
+            guard wait != clock.wait else { continue }
+            holdTasks.removeValue(forKey: hold.id)?.cancel()
+            let deadline = clock.began.addingTimeInterval(Self.seconds(TestHarness.holdWait(wait)))
+            holdClocks[hold.id] = (clock.began, wait)
+            holds[index].deadline = deadline
+            passOn(hold.id, after: .milliseconds(Int(max(deadline.timeIntervalSinceNow, 0) * 1000)))
+        }
         for hold in holds where hold.kind == .approval || hold.needsAllow {
             guard let card = flow.card(hold.cardID) else { continue }
             let wait = HoldTimeLimit.wait(for: card)
@@ -2167,6 +2217,14 @@ final class FlowController: ToolHost {
     /// Why a Flow card in this flow can't run `inner`, or nil if it can.
     func nestingProblem(placing inner: FlowController) -> String? {
         nesting.problem(placing: inner.flow.id, in: flow.id)
+    }
+
+    /// For the Move to Trash dialog: what becomes of the flows whose Flow cards run this one. Nil when none do.
+    var runByOthersLine: String? {
+        let names = nesting.outerFlows(of: flow.id).compactMap(project.controller).map { "\"\($0.flow.name)\"" }
+        guard !names.isEmpty else { return nil }
+        let one = names.count == 1
+        return "\(Self.namesList(names)) \(one ? "runs" : "run") it, so \(one ? "its Flow card" : "their Flow cards") will fail until you put it back or choose another flow."
     }
 
     /// Why this flow can't be given another sub-flow of its own, or nil if it can.
@@ -2502,7 +2560,8 @@ final class FlowController: ToolHost {
                             subflows: subflows().map { (name: $0.controller.flow.name, depth: $0.depth) },
                             innerFlowNames: innerNames,
                             armedStartIDs: Set(flow.cards.filter { $0.kind == .start && isArmed($0) }.map(\.id)),
-                            extraWarnings: nestingWarnings)
+                            extraWarnings: nestingWarnings,
+                            projectFlows: project.flowNames)
     }
 
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T {

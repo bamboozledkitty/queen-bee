@@ -14,6 +14,8 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
     case flow
     /// Splits its message into items and sends them on one at a time, then passes on what came back for each.
     case forEach = "for-each"
+    /// Holds a message for a set time, then passes it on as it was.
+    case delay
 
     public var label: String {
         switch self {
@@ -31,6 +33,7 @@ public enum CardKind: String, Codable, CaseIterable, Sendable {
         case .script: "Script"
         case .flow: "Flow"
         case .forEach: "For each"
+        case .delay: "Delay"
         }
     }
 }
@@ -102,6 +105,7 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     // Approval
     /// How long the person has to answer, in minutes, before the card answers for them. Nil waits for good.
     /// A Script card waiting for its command to be allowed has this too, and goes out fail.
+    /// A Delay card holds its message this long before passing it on; see `DelayTime`.
     public var waitMinutes: Int?
     /// The output an Approval card takes when nobody answered in time: approved or rejected. Nil for rejected.
     public var whenNoAnswer: String?
@@ -116,12 +120,14 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     public var branches: [String]?
 
     // Prompt
-    /// The rewritten message; `{{message}}` and `{{from}}` are filled in.
+    /// The rewritten message; `{{message}}`, `{{from}}` and fields of a JSON message such as `{{message.title}}` are filled in.
     public var template: String?
 
     // End
     /// A file to save the final answer to, relative to the project folder.
     public var saveTo: String?
+    /// True ends the run as failed when a message reaches the card, stopping whatever else the run is doing.
+    public var failsRun: Bool?
 
     // Note
     public var text: String?
@@ -151,6 +157,7 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
         case .approval: c.text = ""
         case .script: c.command = ""
         case .forEach: c.split = .auto; c.maxItems = 20
+        case .delay: c.waitMinutes = DelayTime.defaultMinutes
         case .and, .or, .flow: break
         }
         c.height = max(c.height, Card.minimumHeight(for: c))
@@ -259,9 +266,20 @@ public func ports(of card: Card) -> [String] {
     case .script: ["pass", "fail"]
     case .flow: ["done", "fail"]
     case .forEach: ["each", "done"]
+    case .agent: ["out", "error"]
     case .end, .note: []
-    case .agent, .start, .and, .or, .prompt: ["out"]
+    case .start, .and, .or, .prompt, .delay: ["out"]
     }
+}
+
+/// Where an output's dot sits on the card's right edge: nil beside the title, or how many rows up from the card's
+/// foot. A card with one output has it beside the title, and one with several gives each a row at its foot. An
+/// agent's Out stays beside its title, since its reply is what usually goes on, and its Error takes the foot row.
+public func outputRow(of card: Card, port: String) -> Int? {
+    if card.kind == .agent { return port == "error" ? 1 : nil }
+    let all = ports(of: card)
+    guard all.count > 1, let i = all.firstIndex(of: port) else { return nil }
+    return all.count - i
 }
 
 /// Whether messages can be linked into a card.
@@ -283,6 +301,7 @@ public func portLabel(_ port: String) -> String {
     case "rejected": "Rejected"
     case "pass": "Pass"
     case "fail": "Fail"
+    case "error": "Error"
     default: port
     }
 }
@@ -311,6 +330,7 @@ public struct CardPatch: Equatable, Sendable {
     public var branches: [String]?
     public var template: String?
     public var saveTo: String?
+    public var failsRun: Bool?
     public var text: String?
     public var flowRef: String?
 

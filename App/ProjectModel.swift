@@ -9,6 +9,8 @@ final class ProjectModel {
     @ObservationIgnored let store: FlowStore
     @ObservationIgnored private var watcher: FileWatcher?
     private(set) var controllers: [FlowController] = []
+    /// Every flow in the project by id and name, which is all a Flow card's reference is matched against.
+    var flowNames: [(id: String, name: String)] { controllers.map { (id: $0.flow.id, name: $0.flow.name) } }
     /// Flow files that couldn't be read. Listed, never written.
     private(set) var unreadable: [URL] = []
     /// The browser the project's agent cards share. It only starts when a card with a browser needs it.

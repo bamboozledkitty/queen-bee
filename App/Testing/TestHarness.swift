@@ -347,6 +347,7 @@ enum TestHarness {
             case "reject": controller.reject(hold.id, note: payload["text"]?.stringValue ?? "")
             case "allow": controller.allowScript(hold.id)
             case "refuse": controller.refuseScript(hold.id)
+            case "sendOn": controller.sendOnNow(hold.id)
             default: return ["error": "hold needs answer"]
             }
             return [:]
@@ -364,6 +365,18 @@ enum TestHarness {
         case "viewRun":
             controller.view(run: payload["run"]?.stringValue)
             return [:]
+        case "compare":
+            // Two kept runs side by side, as Compare with… sets them in its sheet.
+            let ids = payload["runs"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            guard ids.count == 2, let one = controller.runs.first(where: { $0.id == ids[0] }),
+                  let two = controller.runs.first(where: { $0.id == ids[1] }),
+                  let compared = RunComparison(one, two, in: controller.flow) else { return ["error": "compare needs two kept runs"] }
+            return ["before": .string(compared.before.name), "after": .string(compared.after.name),
+                    "changes": .array(compared.changes.map(JSONValue.string)), "comparesReplies": .bool(compared.comparesReplies),
+                    "rows": .array(compared.rows.map { row in
+                        ["name": .string(row.name), "changes": .array(row.changes.map(JSONValue.string)),
+                         "before": .string(compared.line(for: row.before, in: row)), "after": .string(compared.line(for: row.after, in: row))]
+                    })]
         case "trigger":
             // Sets what starts runs from a Start card, the way the settings panel does.
             guard let cardID else { return ["error": "trigger needs card"] }
@@ -505,7 +518,7 @@ enum TestHarness {
                                                   "ending": $0.ending.map { .string($0.rawValue) } ?? .null, "summary": .string($0.summary)] }),
             "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
             "messages": .number(Double(controller.messages.values.reduce(0) { $0 + $1.count })),
-            "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "text": .string($0.text), "needsAllow": .bool($0.needsAllow), "allowOnMac": .bool($0.allowOnMac == true)] }),
+            "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "kind": .string($0.kind.rawValue), "text": .string($0.text), "needsAllow": .bool($0.needsAllow), "allowOnMac": .bool($0.allowOnMac == true)] }),
             "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
             "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),
             "isRunning": .bool(controller.isRunning),

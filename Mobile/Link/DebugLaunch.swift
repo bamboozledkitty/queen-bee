@@ -30,6 +30,7 @@ import UIKit
 ///                                       bring up the panel's sheet too
 ///   -qbPlace needsYou|runs|schedules    show that place: in the list's column on an iPad, as the bar's tab or menu item on an iPhone
 ///   -qbDetent large                     on an iPhone, bring each sheet up at full height
+///   -qbCompare 1                        with -qbShow runs: open Compare two runs, with the two latest runs
 ///   -qbShow details                     with -qbSelect: the details of what that selects, which come up as it
 ///                                       is selected. Without it the state says so, as `panel.showProblem`
 ///   -qbViewRun <n>                      once that flow has runs and none is going, put the nth on show, where
@@ -135,6 +136,14 @@ enum DebugLaunch {
     }
     /// How far up a sheet comes on an iPhone, when a test wants it at full height: "large".
     static var detent: String? { defaults.string(forKey: "qbDetent") }
+
+    static var opensCompare: Bool { defaults.bool(forKey: "qbCompare") }
+    /// What Compare two runs shows while it is open, for the test: the two runs, what changed, and each card's lines.
+    /// Kept where the state's writer watches it, so opening the sheet writes the state again.
+    static var compared: [String: Any]? {
+        get { DebugCompared.shared.shown }
+        set { DebugCompared.shared.shown = newValue }
+    }
     /// The setting whose box takes the keyboard once the details show it, by its name in `FieldKey.Name`.
     static var focus: String? { defaults.string(forKey: "qbFocus") }
     /// Whether the box for a rejection's note takes the keyboard as soon as it is on screen.
@@ -301,6 +310,7 @@ enum DebugLaunch {
              "cost": $0.cost ?? NSNull(), "onShow": $0.isOnShow] as [String: Any]
         }
         state["viewedRun"] = viewed?.id ?? NSNull()
+        state["compare"] = compared ?? NSNull()
         state["workplace"] = snapshot.run.workplace ?? NSNull()
         state["lastViewedRun"] = client.canvas.debugLastViewed ?? NSNull()
         let cost = CostSheet(snapshot, run: run, flows: client.openFlow?.project.flows ?? [])
@@ -790,6 +800,16 @@ enum DebugLaunch {
             try? data.write(to: stateFile, options: .atomic)
         }
         #endif
+    }
+}
+/// Where `DebugLaunch.compared` is kept, watched like the rest of the app's state.
+@MainActor @Observable final class DebugCompared {
+    static let shared = DebugCompared()
+    @ObservationIgnored private var kept: [String: Any]?
+    private var revision = 0
+    var shown: [String: Any]? {
+        get { _ = revision; return kept }
+        set { kept = newValue; revision += 1 }
     }
 }
 #endif

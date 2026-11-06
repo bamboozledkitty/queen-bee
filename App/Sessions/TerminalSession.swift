@@ -158,7 +158,9 @@ final class TerminalSession: NSObject {
         case "Stop":
             state = .idle
             flushSoon()
-        case "StopFailure": state = .failed
+        case "StopFailure":
+            state = .failed
+            flushSoon()
         case "Notification":
             guard notificationType == "permission_prompt" || notificationType == "agent_needs_input" else { return false }
             state = .needsYou
@@ -186,12 +188,16 @@ final class TerminalSession: NSObject {
         onExit?(exitCode)
     }
 
+    /// A turn that failed leaves Claude Code at its prompt, as one that ended does, so it takes input too: a run
+    /// that tries again after an API error types the message in here.
+    private var takesInput: Bool { state == .idle || state == .failed }
+
     private func flushSoon() {
-        guard state == .idle, !waiting.isEmpty else { return }
+        guard takesInput, !waiting.isEmpty else { return }
         let delay = max(0, readyAt.timeIntervalSinceNow)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(delay))
-            guard self.state == .idle, !self.waiting.isEmpty else { return }
+            guard self.takesInput, !self.waiting.isEmpty else { return }
             let text = self.waiting.removeFirst()
             // A bracketed paste keeps a multi-line message as one prompt; Enter follows once the paste has landed.
             // The message is cleaned first, so nothing inside it can end the paste and type keys of its own.

@@ -190,4 +190,54 @@ import Testing
         flow.cards[index].saveTo = ".claude/settings.json"
         #expect(warnings(for: flow)[end.id] == "Can't save there")
     }
+
+    /// A Flow card linked on both sides, running `ref`, in a flow called Outer.
+    private func outer(running ref: String?) throws -> (Flow, Card) {
+        var flow = Flow(name: "Outer")
+        try flow.addCard(kind: .agent, name: "Writer")
+        var patch = CardPatch()
+        patch.flowRef = ref
+        let card = try flow.addCard(kind: .flow, name: "Review", patch: patch)
+        try flow.addCard(kind: .end, name: "Done")
+        try flow.addLink(from: "Writer", to: "Review")
+        try flow.addLink(from: "Review", port: "done", to: "Done")
+        return (flow, card)
+    }
+
+    @Test func aFlowCardWhoseFlowIsGoneSaysSo() throws {
+        let inner = Flow(name: "Inner")
+        let (flow, card) = try outer(running: inner.id)
+        let both = [(id: flow.id, name: flow.name), (id: inner.id, name: inner.name)]
+        #expect(warnings(for: flow, among: both)[card.id] == nil)
+        // The inner flow went to the Trash.
+        #expect(warnings(for: flow, among: [(id: flow.id, name: flow.name)])[card.id] == "Its flow isn't in this project")
+    }
+
+    @Test func aFlowCardFindsItsFlowByNameIgnoringCase() throws {
+        let inner = Flow(name: "Inner Review")
+        let (flow, card) = try outer(running: "inner review")
+        #expect(warnings(for: flow, among: [(id: flow.id, name: flow.name), (id: inner.id, name: inner.name)])[card.id] == nil)
+    }
+
+    @Test func aMissingFlowComesAheadOfTheWiring() throws {
+        var (flow, card) = try outer(running: "Gone")
+        flow.links.removeAll { $0.from == card.id }
+        #expect(warnings(for: flow)[card.id] == "Nothing on Done")
+        #expect(warnings(for: flow, among: [(id: flow.id, name: flow.name)])[card.id] == "Its flow isn't in this project")
+    }
+
+    @Test func aFlowCardWithNoFlowYetIsOnlyAskedToChooseOne() throws {
+        let (flow, card) = try outer(running: nil)
+        #expect(warnings(for: flow, among: [(id: flow.id, name: flow.name)])[card.id] == "Choose a flow")
+    }
+
+    @Test func aProjectNotKnownYetWarnsAboutNoFlowCard() throws {
+        let (flow, card) = try outer(running: "Gone")
+        #expect(warnings(for: flow, among: [])[card.id] == nil)
+    }
+
+    @Test func aFlowCardNamingItsOwnFlowSaysThat() throws {
+        let (flow, card) = try outer(running: "outer")
+        #expect(warnings(for: flow, among: [(id: flow.id, name: flow.name)])[card.id] == "It runs its own flow")
+    }
 }

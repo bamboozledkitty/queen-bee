@@ -57,7 +57,8 @@ public struct Travel: Equatable, Sendable {
 }
 
 /// A message stopped at a card that can't answer straight away: an Approval waiting for the
-/// person, or a Script waiting for its command to finish. The app answers with `holdResolved`.
+/// person, a Script waiting for its command to finish, a Flow card waiting for its flow, or a Delay
+/// waiting out its time. The app answers with `holdResolved`.
 public struct Hold: Equatable, Sendable {
     public let id: String
     public let cardID: String
@@ -201,6 +202,9 @@ public actor Engine {
         /// How many hand-offs each agent has had and not answered. `pending` ends the run and holds
         /// one entry however many there are; this is what says a reply was asked for.
         var owed: [String: Int] = [:]
+        /// For each agent, the messages it has been handed and hasn't answered, oldest first. The oldest is what
+        /// goes out its Error output if it fails.
+        var handed: [String: [Message]] = [:]
         /// Agents whose last turn ended on a question of their own, not on their reply.
         var asking: Set<String> = []
         /// Whether the app has been told the run hangs on those agents.
@@ -219,6 +223,8 @@ public actor Engine {
         var hitLimit = false
         /// A message reached an End card.
         var answered = false
+        /// A message reached an End card set to fail the run, by that card's name. The run ends at once.
+        var failedAt: String?
         /// A Loop card ran out of tries.
         var gaveUp = false
         /// For each card id to the items it is going through.
@@ -312,7 +318,7 @@ public actor Engine {
             ? ("out", Message(text: text, fromName: card.name, fromStart: false))
             : await arrive(message, at: card, by: entry, in: flow, state: &state, output: &output)
         output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: next?.port))
-        if let next, !state.hitLimit {
+        if let next, !state.hitLimit, state.failedAt == nil {
             await send(next.message, from: card, port: next.port, in: flow, state: &state, output: &output)
         }
         settle(state, in: flow, &output)
@@ -356,6 +362,7 @@ public actor Engine {
             return output
         }
         state.owed[cardID] = owed - 1
+        _ = Self.takeOldest(of: cardID, from: &state)
         state.asking.remove(cardID)
         state.pending.remove(cardID)
         if let card = flow.card(cardID) {
@@ -385,7 +392,8 @@ public actor Engine {
         if let card = flow.card(held.cardID) {
             var message = held.message
             if let text, !Self.isBlank(text) { message.text = text }
-            if card.kind == .approval { message.approvedBy = card.name } else { message.fromName = card.name; message.fromStart = false; message.approvedBy = nil }
+            // A Delay only held the message, so it goes on from whoever sent it.
+            if card.kind == .approval { message.approvedBy = card.name } else if card.kind != .delay { message.fromName = card.name; message.fromStart = false; message.approvedBy = nil }
             output.log.append("\(Self.title(card)) → \(portLabel(port))")
             output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: port))
             await send(message, from: card, port: port, in: flow, state: &state, output: &output)
@@ -398,21 +406,63 @@ public actor Engine {
 
     private static func holdKey(_ id: String) -> String { "hold:" + id }
 
-    /// An agent's session ended or its turn failed. That stops the run only when the run is waiting on the
-    /// agent: any other agent, one the run hasn't reached or has already heard from, can come and go.
+    /// An agent's session ended or its turn failed. That matters only when the run is waiting on the agent: any
+    /// other agent, one the run hasn't reached or has already heard from, can come and go.
+    /// With something linked to the card's Error output, the message it was working on goes out there, as it was
+    /// handed over, and the run goes on. With nothing linked there, the run stops.
+    /// `wholeSession` is for a session that has gone: nothing it was handed will be answered, so every message it
+    /// hadn't answered goes out Error, oldest first. Without it, one turn failed: only the oldest goes out Error,
+    /// and the session goes on with whatever else it was handed.
+    /// `forRun` is the run the failed turn worked for, if the app knows it. A turn left over from a run that has
+    /// ended says nothing about this one.
     /// `name` is the card's name for one that has just been taken out of `flow`.
-    public func agentFailed(flow: Flow, cardID: String, name: String? = nil, reason: String) async -> RunOutput {
+    public func agentFailed(flow: Flow, cardID: String, name: String? = nil, reason: String, wholeSession: Bool = true,
+                            forRun: String? = nil) async -> RunOutput {
         await takeTurn()
         defer { endTurn() }
 
-        guard let state = run else { return RunOutput() }
+        guard var state = run else { return RunOutput() }
+        if let forRun, forRun != state.id { return RunOutput(runID: state.id) }
         guard state.pending.contains(cardID) || state.owed[cardID, default: 0] > 0 else { return RunOutput(runID: state.id) }
         let name = flow.card(cardID)?.name ?? name ?? "An agent"
         let why = Self.isBlank(reason) ? "" : ": \(reason.trimmingCharacters(in: .whitespacesAndNewlines))"
-        var output = RunOutput(log: ["Run stopped because \(name) failed\(why)"], finished: true, runID: state.id, ending: .failed)
-        output.leftWaiting = Self.agents(in: state.pending).filter { $0 != cardID }
-        end()
+        guard let card = flow.card(cardID), !flow.links(from: cardID, port: "error").isEmpty,
+              let message = Self.takeOldest(of: cardID, from: &state) else {
+            var output = RunOutput(log: ["Run stopped because \(name) failed\(why)"], finished: true, runID: state.id, ending: .failed)
+            output.leftWaiting = Self.agents(in: state.pending).filter { $0 != cardID }
+            end()
+            return output
+        }
+        var output = RunOutput(runID: state.id)
+        var failed = [message]
+        let owed = state.owed[cardID, default: 0] - 1
+        if wholeSession || owed <= 0 {
+            // A session that has gone answers none of what it was handed, so each of those goes out Error too,
+            // oldest first, rather than leaving whoever waits on it waiting for good.
+            if wholeSession { failed += state.handed[cardID] ?? [] }
+            state.owed[cardID] = nil
+            state.handed[cardID] = nil
+            state.pending.remove(cardID)
+        } else {
+            state.owed[cardID] = owed
+        }
+        state.asking.remove(cardID)
+        output.log.append("\(name) failed\(why) → Error" + (failed.count > 1 ? ", with all \(failed.count) messages it was given" : ""))
+        for message in failed {
+            output.visits.append(CardVisit(cardID: card.id, viaLinkID: nil, port: "error"))
+            await send(message, from: card, port: "error", in: flow, state: &state, output: &output)
+            if state.hitLimit || state.failedAt != nil { break }
+        }
+        settle(state, in: flow, &output)
         return output
+    }
+
+    /// The oldest message `cardID` was handed and hasn't answered, taken off its list.
+    private static func takeOldest(of cardID: String, from state: inout Run) -> Message? {
+        guard var queue = state.handed[cardID], !queue.isEmpty else { return nil }
+        let oldest = queue.removeFirst()
+        state.handed[cardID] = queue.isEmpty ? nil : queue
+        return oldest
     }
 
     /// Ends the run straight away, without waiting for an event that is being worked out. Such an event is
@@ -463,12 +513,12 @@ public actor Engine {
             output = RunOutput()
             return
         }
-        if state.hitLimit || state.pending.isEmpty {
+        if state.hitLimit || state.failedAt != nil || state.pending.isEmpty {
             end()
             output.finished = true
             output.asking = []
             output.leftWaiting = Self.agents(in: state.pending)
-            output.ending = state.hitLimit ? .hitLimit : state.gaveUp ? .gaveUp : state.answered ? .finishedWithAnswer : .endedWithoutAnswer
+            output.ending = state.failedAt != nil ? .failed : state.hitLimit ? .hitLimit : state.gaveUp ? .gaveUp : state.answered ? .finishedWithAnswer : .endedWithoutAnswer
             // An And that never heard from every card linked into it is why a run ends with nothing to show.
             for (andID, have) in state.waiting.sorted(by: { $0.key < $1.key }) where !have.isEmpty {
                 guard let card = flow.card(andID) else { continue }
@@ -522,7 +572,7 @@ public actor Engine {
 
             let next = await arrive(message, at: target, by: link, in: flow, state: &state, output: &output)
             output.visits.append(CardVisit(cardID: target.id, viaLinkID: link.id, port: next?.port))
-            if state.hitLimit { return }
+            if state.hitLimit || state.failedAt != nil { return }
             if let next {
                 travelling += leaving(target, port: next.port, next.message, in: flow, output: &output)
             }
@@ -557,6 +607,8 @@ public actor Engine {
                 for handed in state.handedThisEvent.reversed() {
                     let owed = state.owed[handed.cardID, default: 0] - 1
                     state.owed[handed.cardID] = owed > 0 ? owed : nil
+                    state.handed[handed.cardID]?.removeLast()
+                    if state.handed[handed.cardID]?.isEmpty == true { state.handed[handed.cardID] = nil }
                     if !handed.wasPending { state.pending.remove(handed.cardID) }
                 }
                 state.handedThisEvent.removeAll()
@@ -574,6 +626,7 @@ public actor Engine {
             output.log.append("\(message.fromName) → \(card.name)")
             state.pending.insert(card.id)
             state.owed[card.id, default: 0] += 1
+            state.handed[card.id, default: []].append(message)
             return nil
 
         case .ifElse:
@@ -665,9 +718,13 @@ public actor Engine {
             output.results.append(EndResult(cardID: card.id, cardName: card.name, text: message.text, saveTo: saveTo))
             output.log.append("\(title) got the final answer from \(message.approvedBy ?? message.fromName)")
             state.answered = true
+            if card.failsRun == true {
+                output.log.append("\(title) ends the run as failed")
+                state.failedAt = card.name
+            }
             return nil
 
-        case .approval, .script, .flow:
+        case .approval, .script, .flow, .delay:
             if card.kind == .flow, Self.isBlank(card.flowRef ?? "") {
                 output.log.append("\(title) has no flow chosen, so it counts as Fail")
                 return ("fail", message)
@@ -681,7 +738,9 @@ public actor Engine {
             state.pending.insert(Self.holdKey(hold.id))
             output.holds.append(hold)
             output.log.append(card.kind == .approval ? "\(title) is waiting for you"
-                              : card.kind == .script ? "\(title) is running its command" : "\(title) is running its flow")
+                              : card.kind == .script ? "\(title) is running its command"
+                              : card.kind == .delay ? "\(title) is waiting \(HoldTimeLimit.describe(minutes: DelayTime.minutes(for: card)))"
+                              : "\(title) is running its flow")
             return nil
 
         case .forEach:
