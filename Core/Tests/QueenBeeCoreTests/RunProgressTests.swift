@@ -20,6 +20,7 @@ import Testing
         var marks: [String: RunMark] = [:]
         var snapshot: RunSnapshot?
         var ending: RunEnding?
+        var endedAt: Set<String> = []
         var shown = 0.0
 
         init(_ flow: Flow) { self.flow = flow }
@@ -36,12 +37,18 @@ import Testing
             if output.finished, output.ending == .failed {
                 for result in output.results where flow.card(result.cardID)?.failsRun == true { marks[result.cardID, default: RunMark()].failed = true }
             }
-            if output.finished { ending = output.ending }
+            if output.finished {
+                ending = output.ending
+                // As the app does: where the run still was, less the cards this last step moved on from.
+                let movedOn = Set(output.visits.filter { $0.port != nil }.map(\.cardID))
+                endedAt = Set((snapshot?.waitingOn ?? []) + (snapshot?.holding ?? [])).subtracting(movedOn)
+                snapshot = nil
+            }
         }
 
         mutating func progress(inner: [String: Double] = [:], needs: [String: RunProgress.Need] = [:]) -> RunProgress {
             let progress = RunProgress(flow: flow, marks: marks, snapshot: snapshot, inner: inner, needs: needs,
-                                       ending: ending, shownBefore: shown)
+                                       ending: ending, shownBefore: shown, endedAt: endedAt)
             shown = progress.fraction
             return progress
         }
@@ -366,6 +373,48 @@ import Testing
 
         run.take(await engine.agentReplied(flow: flow, cardID: a, text: "done"))
         #expect(run.progress().percent == 100)
+    }
+
+    @Test func aStoppedRunShowsWhereItWasNotThatItPassed() async throws {
+        var flow = Flow(name: "Stop")
+        try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+        for name in ["A", "B", "C"] { try flow.addCard(kind: .agent, name: name) }
+        try flow.addCard(kind: .end, name: "End")
+        try flow.addLink(from: "Start", to: "A")
+        try flow.addLink(from: "A", to: "B")
+        try flow.addLink(from: "B", to: "C")
+        try flow.addLink(from: "C", to: "End")
+        let b = try id("B", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        var run = Tracker(flow)
+        run.take(await engine.start(flow: flow, startCardID: nil, command: nil))
+        run.take(await engine.agentReplied(flow: flow, cardID: try id("A", in: flow), text: "one"))
+        let shown = run.progress().percent
+        run.take(await engine.stop())
+        let progress = run.progress()
+        #expect(state("A", in: progress) == .done)
+        #expect(state("B", in: progress) == .endedHere)
+        #expect(state("C", in: progress) == .notYet)
+        #expect(state("End", in: progress) == .notYet)
+        #expect(progress.headline.tone == .stopped)
+        #expect(progress.percent == shown)
+        #expect(progress.stops.first { $0.id == b }?.state == .endedHere)
+    }
+
+    @Test func aRunThatFinishesEndsAtNoStop() async throws {
+        var flow = Flow(name: "Line")
+        try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+        try flow.addCard(kind: .agent, name: "A")
+        try flow.addCard(kind: .end, name: "End")
+        try flow.addLink(from: "Start", to: "A")
+        try flow.addLink(from: "A", to: "End")
+        let engine = Engine(judge: ScriptedJudge())
+        var run = Tracker(flow)
+        run.take(await engine.start(flow: flow, startCardID: nil, command: nil))
+        run.take(await engine.agentReplied(flow: flow, cardID: try id("A", in: flow), text: "done"))
+        let progress = run.progress()
+        #expect(!progress.stops.contains { $0.state == .endedHere })
+        #expect(state("A", in: progress) == .done && progress.percent == 100)
     }
 
     @Test func anAgentThatAskedAQuestionNeedsYou() async throws {

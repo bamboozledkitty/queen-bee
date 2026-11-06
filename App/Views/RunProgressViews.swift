@@ -90,7 +90,7 @@ struct RunProgressLine: View {
             header
             StopsRow(stops: progress.stops, selectedID: selected?.id, compact: false) { selectedID = $0 }
             if let id = openFlowID, let card = controller.flow.card(id), let inner = controller.innerFlow(of: card) {
-                SubflowLine(controller: inner, name: card.name, isOurs: inner.isRunning(inside: controller.flow.id),
+                SubflowLine(controller: inner, name: card.name, isOurs: controller.holds.contains { $0.cardID == id && inner.isRunning(forHold: $0.id) },
                             isWaitingItsTurn: controller.holds.contains { $0.cardID == id })
                     .transition(.opacity)
             }
@@ -109,7 +109,7 @@ struct RunProgressLine: View {
     /// The stop picked, else the one the run is at, else the last.
     private var selected: RunProgress.Stop? {
         progress.stops.first { $0.id == selectedID }
-            ?? progress.stops.first { $0.state == .needsYou || $0.state == .failed || $0.state == .live }
+            ?? progress.stops.first { [.needsYou, .failed, .live, .endedHere].contains($0.state) }
             ?? progress.stops.last
     }
 
@@ -171,6 +171,7 @@ struct RunProgressLine: View {
             else { parts.append("at work") }
         case .needsYou: parts.append("waiting for you")
         case .failed: parts.append("the run stopped here")
+        case .endedHere: parts.append("the run ended while it was here")
         case .notYet: parts.append("still to come")
         case .skipped: parts.append("the run didn't go this way")
         }
@@ -220,7 +221,7 @@ private struct StopsRow: View {
     let compact: Bool
     let pick: (String) -> Void
 
-    private var liveID: String? { stops.first { [.live, .needsYou, .failed].contains($0.state) }?.id }
+    private var liveID: String? { stops.first { [.live, .needsYou, .failed, .endedHere].contains($0.state) }?.id }
 
     var body: some View {
         ScrollViewReader { reader in
@@ -307,6 +308,8 @@ private struct StopView: View {
         case .failed:
             shape.fill(Palette.fail.color).frame(width: size, height: size)
                 .overlay(Image(systemName: "xmark").dsIcon(DS.IconSize.xxs, .bold).foregroundStyle(Palette.onAccent.color))
+        case .endedHere:
+            shape.fill(Palette.textFaint.color).frame(width: size, height: size)
         case .notYet:
             shape.fill(Palette.overlay.color).frame(width: size, height: size)
                 .overlay(shape.strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.focus))
@@ -346,6 +349,7 @@ private struct StopView: View {
         switch stop.state {
         case .needsYou: return "Needs you"
         case .failed: return "Stopped here"
+        case .endedHere: return "Ended here"
         case .skipped: return "Skipped"
         default: break
         }

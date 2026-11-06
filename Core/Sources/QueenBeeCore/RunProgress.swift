@@ -19,6 +19,9 @@ public struct RunProgress: Equatable, Sendable {
         case needsYou
         /// The run stopped here.
         case failed
+        /// The run ended while it was still here, without anything going wrong here: it was stopped, or it ended
+        /// somewhere else first.
+        case endedHere
         /// Still to come.
         case notYet
         /// The run didn't go this way, and can't from where it is.
@@ -86,8 +89,9 @@ public struct RunProgress: Equatable, Sendable {
     ///   - needs: the cards waiting for the person, and why.
     ///   - ending: how the run ended, nil while it is going.
     ///   - shownBefore: the fraction last shown for this run, so the number never goes back while it is going.
+    ///   - endedAt: once the run has ended, the cards it was still at when it did.
     public init(flow: Flow, marks: [String: RunMark], snapshot: RunSnapshot?, inner: [String: Double] = [:],
-                needs: [String: Need] = [:], ending: RunEnding? = nil, shownBefore: Double = 0) {
+                needs: [String: Need] = [:], ending: RunEnding? = nil, shownBefore: Double = 0, endedAt: Set<String> = []) {
         let graph = Graph(flow)
         let running = ending == nil
         let failedIDs = Set(marks.filter { $0.value.failed }.map(\.key))
@@ -106,6 +110,9 @@ public struct RunProgress: Equatable, Sendable {
             if !frontier.contains(at) { frontier.append(at) }
         }
         let ahead = graph.reachable(from: frontier)
+        // Once it has ended, what lay ahead of where it was is still to come, not a way it didn't go.
+        let endedAt = running ? [] : endedAt.subtracting(failedIDs)
+        let leftAhead = graph.reachable(from: endedAt.sorted())
 
         func completion(_ id: String) -> Double {
             guard let card = flow.card(id), Self.takesTime(card.kind) else { return 0 }
@@ -157,6 +164,8 @@ public struct RunProgress: Equatable, Sendable {
             let id = card.id
             let state: StopState
             if failedIDs.contains(id) { state = .failed }
+            else if endedAt.contains(id) { state = .endedHere }
+            else if leftAhead.contains(id), !visited(id) { state = .notYet }
             else if live.contains(id) { state = needs[id] != nil ? .needsYou : .live }
             else if needs[id] == .question { state = .needsYou }
             else if let each = enclosing(id), let items = active[each] { state = items.current > 0 && visited(id) ? .done : .notYet }
