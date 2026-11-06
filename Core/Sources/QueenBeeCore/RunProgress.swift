@@ -2,7 +2,7 @@ import Foundation
 
 /// How far a run has got, for the progress pill and its line of stops.
 ///
-/// Only cards that take time count: agents, Approval, Script and Flow cards. Logic cards are over in a moment, so
+/// Only cards that take time count: agents, Approval, Script, Flow and Delay cards. Logic cards are over in a moment, so
 /// counting them would make the number jump. The number is what is done over what is done plus what is left, and
 /// what is left is the longest chain of time-taking cards from where the run is now to the end of the flow, with
 /// the links that loop back left out. That way a branch an If doesn't take never holds the number down, and a
@@ -174,7 +174,7 @@ public struct RunProgress: Equatable, Sendable {
     /// Whether a kind of card takes time, and so counts towards how far a run has got.
     public static func takesTime(_ kind: CardKind) -> Bool {
         switch kind {
-        case .agent, .approval, .script, .flow: true
+        case .agent, .approval, .script, .flow, .delay: true
         default: false
         }
     }
@@ -230,6 +230,7 @@ public struct RunProgress: Equatable, Sendable {
         var text = switch first.kind {
         case .script: "\(first.name) running its command"
         case .flow: "\(first.name) running its flow"
+        case .delay: "\(first.name) waiting"
         default: "\(first.name) working"
         }
         if at.count > 1 { text = "\(first.name) and \(at.count - 1) more working" }

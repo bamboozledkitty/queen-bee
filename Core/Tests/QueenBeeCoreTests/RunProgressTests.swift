@@ -282,6 +282,34 @@ import Testing
         #expect(progress.percent == 50)
     }
 
+    @Test func aDelayIsAStopThatWaitsWithoutNeedingYou() async throws {
+        var flow = Flow(name: "Wait")
+        try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+        try flow.addCard(kind: .agent, name: "A")
+        try flow.addCard(kind: .delay, name: "Wait", patch: patch { $0.waitMinutes = 60 })
+        try flow.addCard(kind: .agent, name: "B")
+        try flow.addCard(kind: .end, name: "End")
+        try flow.addLink(from: "Start", to: "A")
+        try flow.addLink(from: "A", to: "Wait")
+        try flow.addLink(from: "Wait", to: "B")
+        try flow.addLink(from: "B", to: "End")
+        let wait = try id("Wait", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        var run = Tracker(flow)
+        run.take(await engine.start(flow: flow, startCardID: nil, command: nil))
+        let reached = await engine.agentReplied(flow: flow, cardID: try id("A", in: flow), text: "done")
+        run.take(reached)
+        let progress = run.progress()
+        #expect(progress.stops.map(\.name) == ["A", "Wait", "B", "End"])
+        #expect(state("Wait", in: progress) == .live)
+        #expect(progress.headline == .init(tone: .working, text: "Wait waiting", cardID: wait))
+        #expect(progress.percent == 33)
+
+        let hold = try #require(reached.holds.first)
+        run.take(await engine.holdResolved(flow: flow, holdID: hold.id, port: "out", text: nil))
+        #expect(state("Wait", in: run.progress()) == .done)
+    }
+
     @Test func anAgentThatAskedAQuestionNeedsYou() async throws {
         var flow = Flow(name: "Ask")
         try flow.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
