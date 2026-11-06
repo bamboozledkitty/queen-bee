@@ -349,8 +349,9 @@ public actor Engine {
             settle(state, in: flow, &output)
             return output
         }
-        if !byHandOff, state.owed[cardID, default: 0] > 0, state.begun[cardID, default: 0] == 0 {
+        if !byHandOff, state.owed[cardID, default: 0] > 0, state.begun[cardID, default: 0] == 0, !state.asking.contains(cardID) {
             // The run's message hasn't begun in this session yet. It is still on its way, and its own turn answers it.
+            // An agent the run knows is waiting for an answer is past that, even if the app missed its turn begin.
             if !Self.isBlank(text), let card = flow.card(cardID) {
                 output.log.append("\(card.name) finished a turn before this run's message reached it, so its reply was not passed on")
             }
@@ -440,7 +441,7 @@ public actor Engine {
         guard var state = run else { return RunOutput() }
         if let forRun, forRun != state.id { return RunOutput(runID: state.id) }
         guard state.pending.contains(cardID) || state.owed[cardID, default: 0] > 0 else { return RunOutput(runID: state.id) }
-        if !wholeSession, !byHandOff, state.begun[cardID, default: 0] == 0 { return RunOutput(runID: state.id) }
+        if !wholeSession, !byHandOff, state.begun[cardID, default: 0] == 0, !state.asking.contains(cardID) { return RunOutput(runID: state.id) }
         if wholeSession { state.begun[cardID] = nil } else { Self.finishTurn(of: cardID, in: &state) }
         let name = flow.card(cardID)?.name ?? name ?? "An agent"
         let why = Self.isBlank(reason) ? "" : ": \(reason.trimmingCharacters(in: .whitespacesAndNewlines))"

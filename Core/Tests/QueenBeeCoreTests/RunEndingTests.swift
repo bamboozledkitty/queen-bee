@@ -248,6 +248,17 @@ private struct SlowJudge: Judge {
         await engine.turnBegan(cardID: writer, forRun: "an-old-run")
     }
 
+    @Test func anAnswerToAQuestionCountsEvenIfTheTurnsBeginWasMissed() async throws {
+        let flow = try chainWithIdle()
+        let writer = try id("Writer", in: flow)
+        let engine = Engine(judge: ScriptedJudge())
+        let run = try #require(await engine.start(flow: flow, startCardID: nil, command: nil).runID)
+        // The app never heard the run's turn begin, but the plugin says it ended on a question.
+        _ = await engine.agentReplied(flow: flow, cardID: writer, text: "Which tone?", waitingOnAnswer: true, forRun: run)
+        let reply = await engine.agentReplied(flow: flow, cardID: writer, text: "draft", byHandOff: false)
+        #expect(reply.deliveries.map(\.toCardID) == [try id("Reviewer", in: flow)])
+    }
+
     /// Start → Writer twice over, from A and from B, so the Writer is owed two replies.
     private func owedTwice() throws -> (Flow, writer: String) {
         var flow = Flow(name: "T")
