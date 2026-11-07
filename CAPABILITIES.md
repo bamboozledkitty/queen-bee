@@ -79,6 +79,7 @@ Checks the message. It goes out done when the check holds, again when it doesn't
 - Setting `max_tries` (whole number, 1 to 50): Tries before it gives up. Defaults to 3.
 - A judge check that takes longer than 60 seconds counts as a failed try.
 - Link something to done, or a run that passes its check stops there with no answer.
+- Each time it goes out again, the links that lead from again back into it count their max passes afresh, so max_tries alone says how many tries it gets. A link that leaves the round and doesn't come back keeps counting.
 - gave-up is for what to do when the tries run out, such as asking the person or ending with a note. With something linked to it, the run goes on from there as usual. With nothing linked to it, a Loop that runs out of tries goes out done instead, and the run is recorded as having given up, even if an answer reaches an End card after it.
 
 ### End (`end`)
@@ -156,7 +157,7 @@ Holds the message for wait_minutes, then passes it on out unchanged, still from 
 ## Links
 
 - A link joins one card's output to another card's input. A card can't link to itself.
-- Each link has max passes, from 1 to 50 and 3 unless set: how many times it may fire in one run. That is what makes a loop between cards end.
+- Each link has max passes, from 1 to 50 and 3 unless set: how many times it may fire in one run, or in one try of a Loop card when it leads back into that Loop. That is what makes a loop between cards end.
 
 ## Runs
 

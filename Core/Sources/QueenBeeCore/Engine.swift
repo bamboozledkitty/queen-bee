@@ -771,8 +771,11 @@ public actor Engine {
                 state.gaveUp = true
             } else {
                 state.tries[card.id] = tries
-                // A new round: each Or it leads back to passes on the first reply of this round, as it did the last.
+                // A new round: each Or it leads back to passes on the first reply of this round, as it did the last,
+                // and the links that lead back count afresh, so max tries says how many rounds there are rather
+                // than the links' own limits.
                 state.fired.subtract(orCards(after: card, port: "again", in: flow))
+                for id in round(of: card, in: flow) { state.passes[id] = nil }
                 output.log.append("\(title) → Again (try \(tries) of \(limit))")
                 return ("again", message)
             }
@@ -869,6 +872,26 @@ public actor Engine {
             if cards.insert(link.to).inserted { next += flow.links(from: link.to) }
         }
         return (links, cards)
+    }
+
+    /// The links a Loop card's tries go round: from its Again output and on through every card that leads back
+    /// into it. A link that heads off elsewhere and never comes back isn't part of a try.
+    private func round(of card: Card, in flow: Flow) -> Set<String> {
+        var ahead: Set<String> = [], next = flow.links(from: card.id, port: "again").map(\.to)
+        while let id = next.popLast() {
+            guard id != card.id, ahead.insert(id).inserted else { continue }
+            next += flow.links(from: id).map(\.to)
+        }
+        var back: Set<String> = [card.id], changed = true
+        while changed {
+            changed = false
+            for link in flow.links where !back.contains(link.from) && back.contains(link.to) && ahead.contains(link.from) {
+                back.insert(link.from); changed = true
+            }
+        }
+        return Set(flow.links.filter { link in
+            back.contains(link.to) && (link.from == card.id ? link.port == "again" : back.contains(link.from))
+        }.map(\.id))
     }
 
     /// An If or Loop card's check. An answer of nil when a judge check has no statement or the judge could not answer.
