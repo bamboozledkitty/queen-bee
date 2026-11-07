@@ -6,6 +6,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A Loop card set to more than 3 tries gets all of them. Before, the links that led back into it stopped the run at their own limit of 3 first. Each time a Loop goes out again, those links count afresh; a link that leaves the loop and doesn't come back still counts across the whole run.
+
 ## [0.10.0] - 2026-11-06
 
 ### Added
