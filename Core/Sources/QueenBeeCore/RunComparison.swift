@@ -2,7 +2,7 @@ import Foundation
 
 /// Two kept runs of one flow side by side: how each ended, how long it took, what it cost, and what each card did.
 /// Built from what the run history already keeps, so it changes nothing. A run keeps its path, its decisions and
-/// its cost; what agents said is kept for the newest few runs only, so replies are compared only when both runs
+/// its cost; what agents said is kept for the newest few runs and the runs kept for good only, so replies are compared only when both runs
 /// have them. Something one run didn't keep is unknown, never a difference.
 public struct RunComparison: Equatable, Sendable {
     /// One of the two runs.
@@ -70,11 +70,8 @@ public struct RunComparison: Equatable, Sendable {
 
     /// Why replies aren't compared, when they aren't.
     public var repliesNote: String? {
-        comparesReplies ? nil : "Replies are kept only for the \(Self.runsWithMessages) latest runs, so only the paths, decisions and costs are compared."
+        comparesReplies ? nil : "Replies are kept only for the \(RunKeeping.withMessages) latest runs and runs you keep, so only the paths, decisions and costs are compared."
     }
-
-    /// How many runs keep the messages their links carried: the Mac's own number.
-    public static let runsWithMessages = 3
 
     /// The two runs, older first whichever way round they come. Nil for a run set against itself.
     public init?(_ one: RunRecord, _ two: RunRecord, in flow: Flow) {

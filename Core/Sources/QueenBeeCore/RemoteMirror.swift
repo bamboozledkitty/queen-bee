@@ -51,6 +51,8 @@ public struct RemoteMirror: Equatable, Sendable {
     public var macHasOverview: Bool { welcome?.has(RemoteFeature.overview) == true }
     /// Whether the Mac checks a schedule turned on from here against what was shown: see `RemoteFeature.scheduleCheck`.
     public var macChecksSchedules: Bool { welcome?.has(RemoteFeature.scheduleCheck) == true }
+    /// Whether the Mac lets this device keep a run for good: see `RemoteFeature.keepRuns`.
+    public var macKeepsRuns: Bool { welcome?.has(RemoteFeature.keepRuns) == true }
     /// Whether the Mac lets this device do more than watch. False until the Mac says otherwise.
     public private(set) var canControl = false
     /// The commands sent and not yet answered, by id.

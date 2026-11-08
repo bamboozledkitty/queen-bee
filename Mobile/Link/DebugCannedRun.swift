@@ -192,7 +192,7 @@ enum DebugCannedRun {
         client.debugTake(.welcome(RemoteWelcome(version: Remote.version, macName: "Example Mac", canControl: UserDefaults.standard.bool(forKey: "qbControl"),
                                                     // `-qbOldMac 1` is a Mac from before the lists across flows, the Restart menu, the branch chip
                                                     // and checking a schedule turned on against what was shown.
-                                                    features: UserDefaults.standard.bool(forKey: "qbOldMac") ? nil : [RemoteFeature.overview, RemoteFeature.scheduleCheck])))
+                                                    features: UserDefaults.standard.bool(forKey: "qbOldMac") ? nil : [RemoteFeature.overview, RemoteFeature.scheduleCheck, RemoteFeature.keepRuns])))
         var summary = RemoteFlowSummary(id: flowID, name: flow.name, isSubflow: false, activity: .needsYou)
         // Others beside it, so the list of flows has every kind of row. Only the first can be opened, unless `-qbParity 1`.
         func other(_ n: Int, _ name: String, _ activity: FlowActivity = .quiet, isSubflow: Bool = false) -> RemoteFlowSummary {
@@ -377,6 +377,7 @@ enum DebugCannedRun {
             var refusal: String?
             var logLines: [([LogLine], Bool)] = []
             var clearsHistory = false
+            var keptRuns: [RunRecord]?
             let gone = "That is no longer waiting for an answer."
             let running = "A run is already going. Stop it before starting another."
             func held(_ id: String, _ kind: CardKind) -> Bool { run.holds.contains { $0.id == id && $0.kind == kind && (kind == .approval || $0.needsAllow) } }
@@ -439,6 +440,9 @@ enum DebugCannedRun {
                         logLines.append(([LogLine(date: Date(), text: "\(DeviceIdentity.deviceName) cleared the log")], true))
                         clearsHistory = true
                     }
+                case .keepRun(_, let runID, let on):
+                    var runs = client.mirror.snapshot?.runs ?? []
+                    if let problem = RunKeeping.setKept(on, run: runID, in: &runs) { refusal = problem } else { keptRuns = runs }
                 case .dismissBanner:
                     if run.banner == nil { refusal = "There is no message to close." }
                     run.banner = nil
@@ -493,7 +497,9 @@ enum DebugCannedRun {
                 current = run
                 client.debugTake(.run(id: openID, state: run))
                 for (lines, reset) in logLines { client.debugTake(.log(id: openID, lines: lines, reset: reset)) }
-                if clearsHistory { client.debugTake(.history(id: openID, runs: [])) }
+                // As on the Mac, the runs kept for good stay.
+                if clearsHistory { client.debugTake(.history(id: openID, runs: RunKeeping.afterClear(client.mirror.snapshot?.runs ?? []))) }
+                if let keptRuns { client.debugTake(.history(id: openID, runs: keptRuns)) }
                 tellFlow(client)
             }
             client.debugTake(.answer(id: id, refusal: refusal))

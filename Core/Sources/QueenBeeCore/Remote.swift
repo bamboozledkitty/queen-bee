@@ -122,6 +122,9 @@ public enum RemoteFeature {
     /// Start card in `RemoteEditState.scheduleFingerprints`, and the device sends back the one it showed as `shown` in
     /// `RemoteCommand.armSchedule`. A Mac that hasn't said this sends none, so the device sends none.
     public static let scheduleCheck = "scheduleCheck"
+    /// The Mac takes `RemoteCommand.keepRun`, so a device can keep a run for good. A device never sends it to a Mac
+    /// that hasn't said this.
+    public static let keepRuns = "keepRuns"
 }
 
 /// The first thing a device sends on a new connection.
@@ -725,6 +728,9 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     /// The log's Clear: the log and the list of earlier runs are emptied, but for the lines that say what a device
     /// did or that a schedule went on or off, which a device can't clear.
     case clearLog(flowID: String)
+    /// A run's Keep: the run stays whole for good, not let go as newer runs come, or goes back to the usual rules.
+    /// A flow can keep only so many, which the Mac checks. Only to a Mac that has said `RemoteFeature.keepRuns`.
+    case keepRun(flowID: String, runID: String, on: Bool)
     /// Closes the message at the top of the flow, the run state's `banner`.
     case dismissBanner(flowID: String)
     /// The sidebar's "Stop Its Agents": every session of the flow ends, the orchestrator's included, and so does a run.
@@ -799,7 +805,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
              .duplicate(let id, _), .tidy(let id), .group(let id, _, _), .ungroup(let id, _), .renameGroup(let id, _, _),
              .foldGroup(let id, _, _), .patchCard(let id, _, _), .setFlowOption(let id, _), .renameFlow(let id, _),
              .deleteFlow(let id), .undo(let id), .redo(let id), .runFromStart(let id, _), .retry(let id, _), .clearLog(let id),
-             .dismissBanner(let id), .stopAgents(let id), .revertSettings(let id, _), .armSchedule(let id, _, _, _), .restartAgents(let id, _), .paste(let id, _, _),
+             .keepRun(let id, _, _), .dismissBanner(let id), .stopAgents(let id), .revertSettings(let id, _), .armSchedule(let id, _, _, _), .restartAgents(let id, _), .paste(let id, _, _),
              .addRoleCard(let id, _, _, _), .newSubflow(let id, _, _), .pin(let id, _), .saveRole(let id, _, _), .updateRole(_, let id, _),
              .browser(let id, _, _): id
         case .newFlow, .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: nil
@@ -815,7 +821,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     public var isEdit: Bool {
         switch self {
         case .openOnMac, .run, .runFrom, .stop, .approve, .reject, .allowScript, .refuseScript, .startSession, .prompt, .keys,
-             .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .armSchedule, .restartAgents, .pin, .updateRole, .deleteRole,
+             .runFromStart, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .armSchedule, .restartAgents, .pin, .updateRole, .deleteRole,
              .clearBrowserData, .installBrowser, .restartBrowser, .browser: false
         case .addCard, .moveCards, .resizeCard, .deleteItems, .addLink, .setLinkLimit, .duplicate, .tidy, .group, .ungroup,
              .renameGroup, .foldGroup, .patchCard, .setFlowOption, .newFlow, .renameFlow, .deleteFlow, .undo, .redo,
@@ -882,7 +888,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
         case .browser(let id, let cardID, let action): .browser(flowID: id, cardID: cardID, action: action.cleaned)
         case .openOnMac, .stop, .allowScript, .refuseScript, .startSession, .keys, .addCard, .moveCards, .resizeCard,
              .deleteItems, .setLinkLimit, .duplicate, .tidy, .ungroup, .foldGroup, .setFlowOption, .deleteFlow, .undo, .redo,
-             .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .restartAgents, .addRoleCard, .pin,
+             .runFromStart, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .restartAgents, .addRoleCard, .pin,
              .updateRole, .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: self
         }
     }
@@ -958,7 +964,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
         case .restartAgents(_, let which):
             if case .cards(let ids) = which, ids.count > Remote.cardLimit { return Self.tooMany }
             return nil
-        case .runFromStart, .retry, .clearLog, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .pin, .updateRole,
+        case .runFromStart, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .pin, .updateRole,
              .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: return nil
         case .browser(_, _, let action): return action.problem
         }

@@ -33,7 +33,7 @@ struct LogPage: View {
         .confirmationDialog("Clear the log?", isPresented: $asksToClear, titleVisibility: .visible) {
             Button("Clear", role: .destructive) { Task { await client.clearLog() } }
         } message: {
-            Text("The log and the list of earlier runs are emptied on your Mac. This can't be undone.")
+            Text("The log and the list of earlier runs are emptied on your Mac, but for the runs you keep. This can't be undone.")
         }
     }
 
@@ -148,6 +148,14 @@ struct RunsPage: View {
     @Environment(RemoteClient.self) private var client
     let snapshot: RemoteFlowSnapshot
     @State private var compares = false
+    @State private var keepProblem: String?
+
+    /// Keep, or Stop Keeping. At the limit Keep stays on offer, and the Mac's answer says why it can't be done.
+    private func keepButton(_ row: RunRow, in rows: [RunRow]) -> some View {
+        Button(row.isKept ? "Stop Keeping" : "Keep for Good", systemImage: row.isKept ? "bookmark.slash" : "bookmark") {
+            Task { keepProblem = await client.keepRun(row.id, on: !row.isKept) }
+        }
+    }
 
     var body: some View {
         let rows = RunRow.all(in: snapshot, viewed: client.canvas.viewedRun)
@@ -161,7 +169,8 @@ struct RunsPage: View {
                         .foregroundStyle(Theme.inkSecondary.ui)
                 } else {
                     Text(isRunning ? "Earlier runs can be looked at once this one ends."
-                         : "Tap a run to see where it went, on the canvas and in the log. Only this device changes.")
+                         : "Tap a run to see where it went, on the canvas and in the log. Only this device changes."
+                         + (client.canKeepRuns ? " Touch and hold a run to keep it for good." : ""))
                         .textRole(.caption)
                         .foregroundStyle(Theme.inkSecondary.ui)
                         .fixedSize(horizontal: false, vertical: true)
@@ -176,15 +185,20 @@ struct RunsPage: View {
                         .buttonStyle(.plain)
                         .disabled(isRunning)
                         .opacity(isRunning ? 0.6 : 1)
+                        .contextMenu { if client.canKeepRuns { keepButton(row, in: rows) } }
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(row.spoken)
                         .accessibilityAddTraits(row.isOnShow ? [.isButton, .isSelected] : [.isButton])
+                        .accessibilityActions { if client.canKeepRuns { keepButton(row, in: rows) } }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Theme.Space.l)
         }
         .sheet(isPresented: $compares) { RunCompareSheet() }
+        .alert("Can't keep this run", isPresented: Binding(get: { keepProblem != nil }, set: { if !$0 { keepProblem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(keepProblem ?? "") }
         #if DEBUG
         .onAppear { if DebugLaunch.opensCompare, snapshot.runs.count >= 2 { compares = true } }
         #endif
@@ -209,6 +223,7 @@ private struct RunRowView: View {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                 Text("\(row.number.map { "Run \($0) · " } ?? "")\(row.started)").textRole(.label).foregroundStyle(Theme.ink.ui)
                 Badge(text: row.outcome.rawValue, tone: tone)
+                if row.isKept { Badge(text: "Kept", symbol: "bookmark.fill") }
                 Spacer(minLength: Theme.Space.s)
                 Text(row.cost ?? "–").textRole(.monoLabel).foregroundStyle((row.cost == nil ? Theme.inkSecondary : Theme.ink).ui)
             }

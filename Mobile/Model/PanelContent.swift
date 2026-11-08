@@ -351,6 +351,8 @@ nonisolated struct RunRow: Equatable, Identifiable {
     var cost: String?
     /// It is the run the canvas and the panels are showing.
     var isOnShow: Bool
+    /// The person kept it for good on the Mac.
+    var isKept = false
 
     /// Every kept run, newest first.
     static func all(in snapshot: RemoteFlowSnapshot, viewed: RunRecord?) -> [RunRow] {
@@ -359,13 +361,13 @@ nonisolated struct RunRow: Equatable, Identifiable {
         return snapshot.runs.reversed().map { run in
             RunRow(id: run.id, number: run.number, started: Clock.run(run.started), outcome: run.outcome, length: Clock.length(from: run.started, to: run.ended),
                    command: run.command, handOffs: "\(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")",
-                   cost: run.usage == nil ? nil : run.cost.price, isOnShow: run.id == shown)
+                   cost: run.usage == nil ? nil : run.cost.price, isOnShow: run.id == shown, isKept: run.isKept)
         }
     }
 
     /// Read out as one sentence.
     var spoken: String {
-        "Run \(number.map { "\($0) " } ?? "")from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? ""). \(command)\(isOnShow ? ". On show." : "")"
+        "Run \(number.map { "\($0) " } ?? "")from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? "")\(isKept ? ", kept" : ""). \(command)\(isOnShow ? ". On show." : "")"
     }
 }
 

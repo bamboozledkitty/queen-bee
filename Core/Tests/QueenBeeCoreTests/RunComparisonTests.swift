@@ -142,7 +142,7 @@ import Testing
         var (first, second) = try runs(flow)
         first.messages = [:]
         let compared = try #require(RunComparison(first, second, in: flow))
-        #expect(!compared.comparesReplies && compared.repliesNote?.contains("3 latest runs") == true)
+        #expect(!compared.comparesReplies && compared.repliesNote?.contains("3 latest runs and runs you keep") == true)
         let writer = try #require(compared.rows.first { $0.name == "Writer" })
         #expect(writer.before.reply == nil && writer.after.reply == nil)
         // How often it replied is in the marks; what it said is not compared.

@@ -392,6 +392,15 @@ enum RemoteCommands {
             controller.clearLog(fromDevice: name)
             return nil
 
+        case .keepRun(_, let runID, let on):
+            guard let run = controller.runs.first(where: { $0.id == runID }) else { return "That run is no longer kept." }
+            guard run.isKept != on else { return nil }
+            if let problem = controller.setKept(on, run: runID) { return problem }
+            // The person at the Mac didn't see it kept, or let go.
+            let which = run.number.map { "run #\($0)" } ?? "a run"
+            controller.noteFromDevice(on ? "\(name) kept \(which) for good" : "\(name) stopped keeping \(which)")
+            return nil
+
         case .dismissBanner:
             guard let banner = controller.banner else { return "There is no message to close." }
             controller.banner = nil

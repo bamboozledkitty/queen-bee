@@ -137,6 +137,18 @@ extension RemoteClient {
         return await perform(command: command)
     }
 
+    /// A run's Keep: the run stays whole for good on the Mac, or goes back to the usual rules. Offered only when
+    /// this device may act and the Mac takes it: see `RemoteFeature.keepRuns`.
+    var canKeepRuns: Bool { abilities.canAct && mirror.macKeepsRuns }
+
+    func keepRunCommand(_ runID: String, on: Bool) -> RemoteCommand? { forOpenFlow { .keepRun(flowID: $0, runID: runID, on: on) } }
+
+    @discardableResult
+    func keepRun(_ runID: String, on: Bool) async -> String? {
+        guard canKeepRuns, let command = keepRunCommand(runID, on: on) else { return Self.notConnected }
+        return await perform(command: command)
+    }
+
     func dismissBannerCommand() -> RemoteCommand? { forOpenFlow { .dismissBanner(flowID: $0) } }
 
     /// Closes the message at the top of the flow, on the Mac as well as here.

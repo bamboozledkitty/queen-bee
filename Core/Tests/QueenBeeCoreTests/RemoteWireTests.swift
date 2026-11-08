@@ -116,7 +116,7 @@ enum WireSamples {
             .foldGroup(flowID: "f", groupID: "g", folded: true), .patchCard(flowID: "f", cardID: "c", patch: patch),
             .setFlowOption(flowID: "f", option: .subflowLimit(levels: 2)), .setFlowOption(flowID: "f", option: .notifyOrchestrator(on: true)),
             .newFlow(projectID: "p", name: "n"), .renameFlow(flowID: "f", name: "n"), .deleteFlow(flowID: "f"), .undo(flowID: "f"), .redo(flowID: "f"),
-            .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "c"), .clearLog(flowID: "f"), .dismissBanner(flowID: "f"),
+            .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "c"), .clearLog(flowID: "f"), .keepRun(flowID: "f", runID: "r", on: true), .dismissBanner(flowID: "f"),
             .stopAgents(flowID: "f"), .revertSettings(flowID: "f", cardID: "c"), .armSchedule(flowID: "f", cardID: "c", on: true),
             .armSchedule(flowID: "f", cardID: "c", on: true, shown: "s"),
             .restartAgents(flowID: "f", which: .all(withOrchestrator: false)), .restartAgents(flowID: "f", which: .cards(["c"])),
@@ -173,7 +173,7 @@ enum WireSamples {
     // `RemoteRunState.workplace`, which is optional: an app from before reads all of it as it did. Then `shown` in
     // `RemoteCommand.armSchedule` and `RemoteEditState.scheduleFingerprints`, both optional, for
     // `RemoteFeature.scheduleCheck`.
-    static let fingerprints: [Int: String] = [5: "f935e9da0aff0c65df120477"]
+    static let fingerprints: [Int: String] = [5: "84b18748c0b17acda28442d8"]
 
     @Test func theWireFormatMatchesItsVersion() throws {
         let now = try WireSamples.fingerprint()
