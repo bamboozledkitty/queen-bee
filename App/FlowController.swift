@@ -655,6 +655,8 @@ final class FlowController: ToolHost {
         log.removeAll()
         runs = RunKeeping.afterClear(runs)
         viewedRunID = nil
+        // A kept run left is now the latest, so the canvas shows it, as the run picker and a device say.
+        if !runs.isEmpty { view(run: runs.last?.id) }
         runLogStart = 0
         saveHistory()
     }
