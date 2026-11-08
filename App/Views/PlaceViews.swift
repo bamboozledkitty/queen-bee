@@ -404,6 +404,7 @@ private struct RunPeek: View {
             .disabled(full)
             .help(full ? RunKeeping.limitReached
                   : record.isKept ? "Let this run go like any other once \(RunKeeping.latest) newer runs have gone by"
+                  : record.messages.isEmpty ? "Keep this run, so it isn't let go as newer runs come. What its links carried is no longer kept, so its path, decisions and cost are what stay"
                   : "Keep this run whole, so it isn't let go as newer runs come and new runs can always be compared with it")
     }
 

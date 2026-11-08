@@ -365,6 +365,13 @@ enum TestHarness {
         case "viewRun":
             controller.view(run: payload["run"]?.stringValue)
             return [:]
+        case "keep":
+            // A run's Keep this run, or Stop keeping this run, on the Runs page.
+            guard let run = payload["run"]?.stringValue else { return ["error": "keep needs run"] }
+            return ["problem": controller.setKept(payload["on"]?.boolValue ?? true, run: run).map(JSONValue.string) ?? .null]
+        case "clearLog":
+            controller.clearLog()
+            return [:]
         case "compare":
             // Two kept runs side by side, as Compare with… sets them in its sheet.
             let ids = payload["runs"]?.arrayValue?.compactMap(\.stringValue) ?? []
@@ -521,7 +528,9 @@ enum TestHarness {
             "viewport": .number(Double(controller.viewport.width)),
             "cost": .number(controller.totalUsage.cost),
             "runs": .array(controller.runs.map { ["id": .string($0.id), "outcome": .string($0.outcome.rawValue), "command": .string($0.command),
-                                                  "ending": $0.ending.map { .string($0.rawValue) } ?? .null, "summary": .string($0.summary)] }),
+                                                  "ending": $0.ending.map { .string($0.rawValue) } ?? .null, "summary": .string($0.summary),
+                                                  "number": $0.number.map { .number(Double($0)) } ?? .null, "kept": .bool($0.isKept),
+                                                  "hasMessages": .bool(!$0.messages.isEmpty)] }),
             "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
             "messages": .number(Double(controller.messages.values.reduce(0) { $0 + $1.count })),
             "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "kind": .string($0.kind.rawValue), "text": .string($0.text), "needsAllow": .bool($0.needsAllow), "allowOnMac": .bool($0.allowOnMac == true)] }),

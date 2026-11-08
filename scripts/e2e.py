@@ -1265,6 +1265,12 @@ def remote_parity(app, device, send, ask, done, refused, since):
     app.wait(doors, lambda s: not s["isRunning"], 20, "the run to stop")
     check("Retry is refused on a card the run didn't stop at, where the Mac offers none", refused(ask("retry", card=shout), "didn't stop at"),
           str(device.seen[-1:]))
+    run_id = app.state(doors)["runs"][-1]["id"]
+    check("it can keep a run for good", done(ask("keepRun", run=run_id, on=True)) and app.state(doors)["runs"][-1]["kept"] is True
+          and app.state(doors)["log"][-1].startswith("Test device kept run #"), f"{device.seen[-1:]} {app.state(doors)['log'][-1:]}")
+    check("and stop keeping it", done(ask("keepRun", run=run_id, on=False)) and app.state(doors)["runs"][-1]["kept"] is False
+          and app.state(doors)["log"][-1].startswith("Test device stopped keeping run #"), str(app.state(doors)["log"][-1:]))
+    check("a run the Mac no longer has can't be kept", refused(ask("keepRun", run="no-such-run", on=True), "no longer kept"), str(device.seen[-1:]))
     mark = len(device.seen)
     check("it can clear the log", done(ask("clearLog")), str(device.seen[-1:]))
     s = app.state(doors)
@@ -5223,6 +5229,36 @@ def scenario_gates(app):
     check("a group left with one card is no longer a group", app.state(fid)["groups"] == [], str(app.state(fid)["groups"]))
     app.op(fid, "undo")
     check("undo restores the group", len(app.state(fid)["groups"]) == 1)
+
+    # Keep a run for good: it stays whole past the 20 latest runs, a flow keeps 10, and clearing the log leaves them.
+    # The newest run, which still has what its links carried: keeping an older one keeps only what it has left.
+    s = app.state(fid)
+    first = s["runs"][-1]
+    r = app.op(fid, "keep", run=first["id"], on=True)
+    check("a run can be kept for good", r.get("problem") is None and app.state(fid)["runs"][-1]["kept"] is True, f"{r} {app.state(fid)['runs'][-1]}")
+    app.op(fid, "pick", card="Start 2")
+    for _ in range(21):
+        last = app.state(fid)["runs"][-1]["id"]
+        app.op(fid, "run")
+        app.wait(fid, lambda s: not s["isRunning"] and s["runs"][-1]["id"] != last, 20, "a quick run from Start 2")
+    app.op(fid, "pick")
+    s = app.state(fid)
+    kept = [r for r in s["runs"] if r["kept"]]
+    check("a kept run stays whole past the 20 latest runs, beside them",
+          [r["id"] for r in kept] == [first["id"]] and kept[0]["hasMessages"] and len(s["runs"]) == 21 and s["runs"][0]["id"] == first["id"]
+          and [r["hasMessages"] for r in s["runs"][1:]] == [False] * 17 + [True] * 3, str([(r["number"], r["kept"], r["hasMessages"]) for r in s["runs"]]))
+    others = [r["id"] for r in s["runs"] if not r["kept"]]
+    for rid in others[:9]:
+        app.op(fid, "keep", run=rid, on=True)
+    r = app.op(fid, "keep", run=others[9], on=True)
+    check("a flow keeps at most 10 runs for good", "10 runs" in (r.get("problem") or "") and not app.state(fid)["runs"][10]["kept"], str(r))
+    app.op(fid, "clearLog")
+    s = app.state(fid)
+    check("clearing the log leaves the kept runs", len(s["runs"]) == 10 and all(r["kept"] for r in s["runs"]) and s["log"] == [],
+          str([(r["number"], r["kept"]) for r in s["runs"]]))
+    for r in s["runs"]:
+        app.op(fid, "keep", run=r["id"], on=False)
+    check("and they can be let go again", not any(r["kept"] for r in app.state(fid)["runs"]))
 
 
 def scenario_unasked(app):
