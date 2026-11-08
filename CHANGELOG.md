@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-08
+
 ### Fixed
 
 - A Loop card set to more than 3 tries gets all of them. Before, the links that led back into it stopped the run at their own limit of 3 first. Each time a Loop goes out again, those links count afresh; a link that leaves the loop and doesn't come back still counts across the whole run.
@@ -347,7 +349,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.7.1...v0.8.0

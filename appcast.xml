@@ -3,6 +3,21 @@
     <channel>
         <title>QueenBee</title>
         <item>
+            <title>0.10.1</title>
+            <pubDate>Sun, 08 Nov 2026 18:25:52 +0400</pubDate>
+            <link>https://github.com/bamboozledkitty/queen-bee</link>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>0.10.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[
+### Fixed
+
+- A Loop card set to more than 3 tries gets all of them. Before, the links that led back into it stopped the run at their own limit of 3 first. Each time a Loop goes out again, those links count afresh; a link that leaves the loop and doesn't come back still counts across the whole run.
+
+]]></description>
+            <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.10.1/QueenBee-0.10.1.dmg" length="18778323" type="application/octet-stream" sparkle:edSignature="GGjNtaU5T11utQDRlkMV1xu+ouKlBFNXApJQxSp9MZpPsVGoQRF2mexI2KdxObyj8fQX5FXjPPu55BRK47wPCQ=="/>
+        </item>
+        <item>
             <title>0.10.0</title>
             <pubDate>Fri, 06 Nov 2026 19:42:03 +0400</pubDate>
             <link>https://github.com/bamboozledkitty/queen-bee</link>
@@ -81,25 +96,6 @@
 
 ]]></description>
             <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.9.0/QueenBee-0.9.0.dmg" length="18026085" type="application/octet-stream" sparkle:edSignature="4THwUwiMlK01jyvj8uFwpd6Z0FL8tluBgzOPtKRMPe6tJ2u4BS3IvseIjGXUvjdu52VAPP9EUfj7+3PI5KssBw=="/>
-        </item>
-        <item>
-            <title>0.8.0</title>
-            <pubDate>Fri, 30 Oct 2026 14:27:26 +0400</pubDate>
-            <link>https://github.com/bamboozledkitty/queen-bee</link>
-            <sparkle:version>14</sparkle:version>
-            <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[
-### Added
-
-- A Restart menu beside Run restarts the flow's agents together: every agent with or without the orchestrator, or only the agents selected on the canvas, leaving out any other cards picked with them. When agents are waiting to use settings changed while they ran, it can restart just those. Each agent keeps its conversation so far, and Queen Bee asks first if one is in the middle of a task. The same commands are in the Flow menu, and a canvas selection's right-click menu offers to restart the agents in it.
-
-### Fixed
-
-- Agents and the orchestrator keep their conversations when the project folder is moved or renamed. Before, Queen Bee found each conversation in the old folder, gave up on it and started a new, empty one. Now it copies the conversation into the new folder and carries on with it; the original stays where it was.
-
-]]></description>
-            <enclosure url="https://github.com/bamboozledkitty/queen-bee/releases/download/v0.8.0/QueenBee-0.8.0.dmg" length="15781361" type="application/octet-stream" sparkle:edSignature="l9JHDzPWNiaLGyieWWJtjuXBOfDZo4+ddnCoC2QfBm4B0uCP4m40XMgVkSLcxV3ldxZ9Ri5v/5uAJ5yYPrgmDA=="/>
         </item>
     </channel>
 </rss>
