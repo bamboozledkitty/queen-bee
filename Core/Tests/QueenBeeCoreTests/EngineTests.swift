@@ -566,6 +566,41 @@ actor ScriptedJudge: Judge {
         #expect(ports == [true, true, false])
     }
 
+    @Test func aLoopGetsAllItsTriesThoughItsLinksKeepTheirDefaultLimit() async throws {
+        // Start → Writer → Polish, Polish again → Writer, both with the default limit of 3. Writer also copies
+        // each reply to Notes, which doesn't lead back to Polish.
+        let flow = try flow {
+            try $0.addCard(kind: .start, name: "Start", patch: patch { $0.command = "Go" })
+            try $0.addCard(kind: .agent, name: "Writer")
+            try $0.addCard(kind: .agent, name: "Notes")
+            try $0.addCard(kind: .loop, name: "Polish", patch: patch { $0.check = .contains; $0.value = "FINAL"; $0.maxTries = 6 })
+            try $0.addCard(kind: .end, name: "Done")
+            try $0.addLink(from: "Start", to: "Writer")
+            try $0.addLink(from: "Writer", to: "Polish")
+            try $0.addLink(from: "Writer", to: "Notes")
+            try $0.addLink(from: "Polish", port: "again", to: "Writer")
+            try $0.addLink(from: "Polish", port: "done", to: "Done")
+        }
+        let engine = Engine(judge: ScriptedJudge())
+        _ = await engine.start(flow: flow, startCardID: nil, command: nil)
+        let writer = try id("Writer", in: flow), notes = try id("Notes", in: flow)
+        var notesGot = 0
+        for attempt in 1...5 {
+            let out = await engine.agentReplied(flow: flow, cardID: writer, text: "draft \(attempt)")
+            #expect(out.log.contains("Loop \"Polish\" → Again (try \(attempt) of 6)"))
+            #expect(out.deliveries.contains { $0.toCardID == writer })
+            notesGot += out.deliveries.filter { $0.toCardID == notes }.count
+            if out.deliveries.contains(where: { $0.toCardID == notes }) {
+                _ = await engine.agentReplied(flow: flow, cardID: notes, text: "noted")
+            }
+        }
+        let last = await engine.agentReplied(flow: flow, cardID: writer, text: "draft 6")
+        #expect(last.log.contains("Loop \"Polish\" → Done after 6 tries"))
+        #expect(last.results.map(\.cardName) == ["Done"])
+        // A link that isn't part of the loop's round keeps counting across rounds.
+        #expect(notesGot == 3)
+    }
+
     // MARK: Limits
 
     /// Start → Writer ⇄ Reviewer.

@@ -147,8 +147,6 @@ profile and update key it needs.
 
 Bugs:
 
-- **A Loop set above 3 tries stops early.** Links default to 3 passes, so the run ends at the link's limit before
-  the Loop card gives up (`Core/Sources/QueenBeeCore/Engine.swift`, `send`).
 - **A reply from a stopped run can still leak into the next run** when the app never saw the hand-off that
   began the turn. Stop interrupts the run's agents, and a turn begun by a hand-off of another run is dropped,
   but the run is read off the prompt the `UserPromptSubmit` hook reports, and a turn without one is passed on

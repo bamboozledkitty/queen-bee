@@ -110,6 +110,7 @@ public enum Capabilities {
                 notes: [
                     judgeNote("a failed try"),
                     "Link something to done, or a run that passes its check stops there with no answer.",
+                    "Each time it goes out again, the links that lead from again back into it count their max passes afresh, so max_tries alone says how many tries it gets. A link that leaves the round and doesn't come back keeps counting.",
                     "gave-up is for what to do when the tries run out, such as asking the person or ending with a note. With something linked to it, the run goes on from there as usual. With nothing linked to it, a Loop that runs out of tries goes out done instead, and the run is recorded as having given up, even if an answer reaches an End card after it.",
                 ])
         case .end:
@@ -294,7 +295,7 @@ public enum Capabilities {
         }
         lines += ["## Links", ""]
         lines.append("- A link joins one card's output to another card's input. A card can't link to itself.")
-        lines.append("- Each link has max passes, from \(Link.maxPassesRange.lowerBound) to \(Link.maxPassesRange.upperBound) and \(Link.defaultMaxPasses) unless set: how many times it may fire in one run. That is what makes a loop between cards end.")
+        lines.append("- Each link has max passes, from \(Link.maxPassesRange.lowerBound) to \(Link.maxPassesRange.upperBound) and \(Link.defaultMaxPasses) unless set: how many times it may fire in one run, or in one try of a Loop card when it leads back into that Loop. That is what makes a loop between cards end.")
         lines += ["", "## Runs", ""]
         lines.append("- \(runLimit)")
         lines.append("- A run ends when nothing is left to do. The person sees how it ended: finished with an answer, ended without an answer, gave up (a Loop ran out of tries with nothing on gave-up), stopped at the hand-off limit, stopped at the spending limit, failed, or stopped.")
