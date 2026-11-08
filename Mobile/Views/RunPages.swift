@@ -223,7 +223,6 @@ private struct RunRowView: View {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                 Text("\(row.number.map { "Run \($0) · " } ?? "")\(row.started)").textRole(.label).foregroundStyle(Theme.ink.ui)
                 Badge(text: row.outcome.rawValue, tone: tone)
-                if row.isKept { Badge(text: "Kept", symbol: "bookmark.fill") }
                 Spacer(minLength: Theme.Space.s)
                 Text(row.cost ?? "–").textRole(.monoLabel).foregroundStyle((row.cost == nil ? Theme.inkSecondary : Theme.ink).ui)
             }
@@ -235,6 +234,15 @@ private struct RunRowView: View {
             HStack(spacing: Theme.Space.s) {
                 Text("\(row.length) · \(row.handOffs)").textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
                 Spacer(minLength: Theme.Space.s)
+                // On the bottom line, where there is room, so the date above never wraps for it.
+                if row.isKept {
+                    HStack(spacing: DS.Space.xxs) {
+                        Image(systemName: "bookmark.fill").dsIcon(DS.IconSize.s, .bold).accessibilityHidden(true)
+                        Text("Kept")
+                    }
+                    .textRole(.footnoteLabel)
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                }
                 if row.isOnShow { Text("On show").textRole(.footnoteLabel).foregroundStyle(Theme.select.ui) }
             }
         }

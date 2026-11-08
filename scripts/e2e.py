@@ -4427,15 +4427,16 @@ def scenario_parity():
         check("watching only, the note has no buttons that change the Mac", (p(s).get("callout") or {}).get("start") is None and (p(s).get("callout") or {}).get("build") == "Close", str(p(s).get("callout")))
 
         # Keep a run for good, from its menu on the Runs page, and stop keeping it.
-        s = play("keepRun:run00001:on", *on, "-qbShow", "runs", also=lambda s: any(r.get("kept") for r in p(s).get("runs", [])))
-        kept = [r for r in p(s).get("runs", []) if r.get("kept")]
-        check("a run can be kept for good from a device, and says so", said(s) == [None] and [r["id"] for r in kept] == ["run00001"]
-              and kept[0]["spoken"].split(". ")[0].endswith(", kept"), str(p(s).get("runs")))
+        # The newest run, which is on screen on an iPhone too, for the screenshot.
+        s = play("keepRun:run00003:on", *on, "-qbShow", "runs", also=lambda s: any(r.get("kept") for r in (s.get("panel") or {}).get("runs", [])))
+        kept = [r for r in (s.get("panel") or {}).get("runs", []) if r.get("kept")]
+        check("a run can be kept for good from a device, and says so", said(s) == [None] and [r["id"] for r in kept] == ["run00003"]
+              and kept[0]["spoken"].split(". ")[0].endswith(", kept"), str((s.get("panel") or {}).get("runs")))
         both("parity-17-kept")
         s = play("keepRun:run00001:on;keepRun:run00001:off", *on, "-qbShow", "runs", also=lambda s: len(did(s)) >= 2)
-        check("and stop keeping it", said(s) == [None, None] and not any(r.get("kept") for r in p(s).get("runs", [])), str(did(s)))
+        check("and stop keeping it", said(s) == [None, None] and not any(r.get("kept") for r in (s.get("panel") or {}).get("runs", [])), str(did(s)))
         s = play("keepRun:run00001:on;clearLog", *on, also=lambda s: len(did(s)) >= 2)
-        check("clearing the log leaves a kept run", said(s) == [None, None] and [r["id"] for r in p(s).get("runs", [])] == ["run00001"], str(p(s).get("runs")))
+        check("clearing the log leaves a kept run", said(s) == [None, None] and [r["id"] for r in (s.get("panel") or {}).get("runs", [])] == ["run00001"], str((s.get("panel") or {}).get("runs")))
 
         # The log, costs, pins, agents and Find.
         s = play("clearLog", *on, also=lambda s: len((s.get("panel") or {}).get("log", [])) == 1)
