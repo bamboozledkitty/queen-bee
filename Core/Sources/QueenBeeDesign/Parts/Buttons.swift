@@ -150,3 +150,44 @@ private struct DSIconButton: View {
 extension ButtonStyle where Self == DSIconButtonStyle {
     public static var dsIcon: DSIconButtonStyle { DSIconButtonStyle() }
 }
+
+/// A round button with only an icon, standing over what it moves: the arrows that page a run's line along. Small
+/// fits a compact row. Give it an accessibility label.
+public struct DSRoundButtonStyle: ButtonStyle {
+    let small: Bool
+
+    public init(small: Bool = false) { self.small = small }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        DSRoundButton(configuration: configuration, small: small)
+    }
+
+    /// How wide and high the button is.
+    public static func side(small: Bool, density: Density = .desk) -> CGFloat {
+        density == .desk ? (small ? DS.Size.badge : DS.Size.control) : DS.Size.touchTarget
+    }
+}
+
+private struct DSRoundButton: View {
+    let configuration: ButtonStyleConfiguration
+    let small: Bool
+    @Environment(\.density) private var density
+    @State private var isHovered = false
+
+    var body: some View {
+        let side = DSRoundButtonStyle.side(small: small, density: density)
+        configuration.label
+            .foregroundStyle(Palette.text.color)
+            .frame(width: side, height: side)
+            .background((isHovered || configuration.isPressed ? Palette.hover : Palette.overlay).color, in: Circle())
+            .overlay(Circle().strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.hairline))
+            .contentShape(Circle())
+            .onHover { isHovered = $0 }
+            .dsAnimation(DS.Motion.quick, value: isHovered)
+    }
+}
+
+extension ButtonStyle where Self == DSRoundButtonStyle {
+    public static var dsRound: DSRoundButtonStyle { DSRoundButtonStyle() }
+    public static func dsRound(small: Bool) -> DSRoundButtonStyle { DSRoundButtonStyle(small: small) }
+}

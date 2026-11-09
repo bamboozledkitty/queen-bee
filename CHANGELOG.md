@@ -6,6 +6,14 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- When a run's line of stops is longer than its panel, the cut edges fade, round arrows page along, and a count says how many stops are out of view, such as "5 more". Stop names wrap to two lines, so two names that start or end alike still read differently, and pointing at a stop shows its whole name.
+
+### Fixed
+
+- The green on a run's line is now all one colour between two stops: green where the run reached both, grey otherwise. Before, the line between two stops the run was at together was half grey and half green, and a stop the run hadn't reached could sit on green.
+
 ## [0.10.1] - 2026-11-08
 
 ### Fixed
