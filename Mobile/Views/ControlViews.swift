@@ -87,15 +87,23 @@ struct RunBar: View {
 
     var body: some View {
         if let hint = abilities.hint {
-            HStack(spacing: Theme.Space.xs) {
-                Text("Watching only")
-                    .textRole(.caption)
-                    .foregroundStyle(Theme.inkSecondary.ui)
-                    .lineLimit(1)
-                    .padding(.leading, Theme.Space.s)
-                Button("Settings", action: showSettings)
-                    .buttonStyle(.panel(.quiet))
-                    .accessibilityHint(hint)
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                // A device that only watches is told of a rehearsal too, on a line of its own as for one that controls.
+                if abilities.isRehearsing {
+                    rehearsalBadge
+                        .padding(.horizontal, Theme.Space.xs)
+                        .padding(.top, Theme.Space.xs)
+                }
+                HStack(spacing: Theme.Space.xs) {
+                    Text("Watching only")
+                        .textRole(.caption)
+                        .foregroundStyle(Theme.inkSecondary.ui)
+                        .lineLimit(1)
+                        .padding(.leading, Theme.Space.s)
+                    Button("Settings", action: showSettings)
+                        .buttonStyle(.panel(.quiet))
+                        .accessibilityHint(hint)
+                }
             }
             .padding(Theme.Space.xs)
             .floatingPanel()
@@ -116,12 +124,9 @@ struct RunBar: View {
             // While a rehearsal goes, the bar says so on a line of its own, as the Mac's run pill does. Beside the buttons
             // it would squeeze them on a phone.
             if abilities.isRehearsing {
-                Badge(text: "Rehearsal", symbol: "theatermasks", tone: .live)
-                    .fixedSize()
+                rehearsalBadge
                     .padding(.horizontal, Theme.Space.xs)
                     .padding(.top, Theme.Space.xs)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("A rehearsal is going")
             }
             // Stop and Run side by side in a rehearsal leave no room for Restart's name on a narrow canvas, so it is
             // its arrow alone then, and no button's name is cut short.
@@ -130,6 +135,13 @@ struct RunBar: View {
             .padding(Theme.Space.xs)
             .floatingPanel()
         }
+    }
+
+    private var rehearsalBadge: some View {
+        Badge(text: "Rehearsal", symbol: "theatermasks", tone: .live)
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("A rehearsal is going")
     }
 
     /// On a phone, Run and Stop are their symbols alone when the bar has more than one of them, or Run's arrow for
@@ -142,8 +154,8 @@ struct RunBar: View {
             if let edit = client.editBar.first, edit.kind == .edit {
                 Button(edit.title) { client.press(.edit) }
                     .buttonStyle(.panel(.tool))
-                    // Its name is never cut short: the buttons beside it give way first.
-                    .fixedSize()
+                    // Beside Stop and Run in a rehearsal its name would be cut short to nothing: they are symbols then, and it is whole.
+                    .fixedSize(horizontal: compact, vertical: false)
                     .accessibilityHint(edit.hint)
                 Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: Theme.Touch.target - Theme.Space.s).accessibilityHidden(true)
             }

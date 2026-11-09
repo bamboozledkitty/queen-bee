@@ -149,6 +149,9 @@ nonisolated struct Abilities: Equatable {
         for key in keys {
             typing[key] = Typing(state: run.sessions[key] ?? .notStarted, canControl: canControl, isConnected: isConnected, isEarlier: viewed != nil)
         }
+        // Said to every device, whether it may control the Mac or only watch.
+        let rehearsing = run.isRunning && run.rehearsal == true
+        isRehearsing = rehearsing
         guard isConnected, canControl, viewed == nil else {
             // The Mac's words for it are kept for the device that can't answer at all.
             answerLine = isConnected && canControl ? "Go back to the latest run to answer." : WaitingCard.answer
@@ -166,7 +169,6 @@ nonisolated struct Abilities: Equatable {
         func canStart(_ card: Card) -> Bool {
             card.kind == .start && !(card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !flow.links(from: card.id).isEmpty
         }
-        let rehearsing = run.isRunning && run.rehearsal == true
         if run.isRunning, !rehearsing {
             bar = [button("Stop", .stop, hint: "Stops the run on your Mac.")]
         } else {
@@ -191,7 +193,6 @@ nonisolated struct Abilities: Equatable {
             }
             if rehearsing {
                 // As the Mac has it: Stop, and Run beside it, which asks before it stops the rehearsal.
-                isRehearsing = true
                 bar = [button("Stop", .stop, hint: "Stops the rehearsal on your Mac."), runButton]
             } else {
                 bar = [runButton]
