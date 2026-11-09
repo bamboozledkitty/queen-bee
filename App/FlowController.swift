@@ -132,6 +132,13 @@ final class FlowController: ToolHost {
     /// Set from the moment a rehearsal is ready to begin until it has ended and been tidied away.
     private(set) var rehearsal: RehearsalState?
     var isRehearsing: Bool { rehearsal != nil }
+    /// A real run the person asked for during a rehearsal, waiting on their "Run for Real".
+    struct RealRunAsked: Identifiable {
+        let id = UUID()
+        /// The Start card they chose, or nil for the one Run uses.
+        var startCardID: String?
+    }
+    var realRunAsked: RealRunAsked?
     /// Where this run's scripts run and its End cards save: the rehearsal's copy, or where the flow works.
     private var runRoot: URL { rehearsal?.copy ?? workRoot }
     /// True while a rehearsal is being started, until it has begun or been turned down. A real run asked for then
@@ -543,6 +550,13 @@ final class FlowController: ToolHost {
         }
         let record = viewedRunID.flatMap { id in runs.first { $0.id == id } } ?? runs.last
         return record?.usage?[id]
+    }
+
+    /// Whether the run on show is a rehearsal: the run going, or the record on show once it has ended.
+    var runOnShowIsRehearsal: Bool {
+        if isRunning || currentRun != nil { return rehearsal != nil }
+        let record = viewedRunID.flatMap { id in runs.first { $0.id == id } } ?? runs.last
+        return record?.isRehearsal == true
     }
 
     /// Reads usage again from the sessions' transcripts: one session's, or all of them.
@@ -1329,6 +1343,9 @@ final class FlowController: ToolHost {
     /// What a card shows: its stand-in while it has one, else its own session.
     func shownSession(forCard id: String) -> TerminalSession { standIns[id] ?? session(forCard: id) }
 
+    /// The same, without making a session for a card that has none yet: for views and reports, which only look.
+    func shownSessionIfAny(forCard id: String) -> TerminalSession? { standIns[id] ?? sessions[id] }
+
     /// The session a run's hand-offs for a card go to: its stand-in in a rehearsal, else its own.
     private func runSession(forCard id: String) -> TerminalSession {
         rehearsal != nil ? standIn(forCard: id) : session(forCard: id)
@@ -1933,6 +1950,16 @@ final class FlowController: ToolHost {
         absorb(output, sender: nil)
         return RunStart(began: began, status: output.log.last ?? (output.runID.map { "Run \($0) started" } ?? "Nothing to run"),
                         runID: began ? output.runID : nil)
+    }
+
+    /// Run, as the person asks for it at this Mac: the Run button, its menu and ⌘R. During a rehearsal it asks
+    /// first, since running for real stops the rehearsal. A rehearsal still making its copy counts too.
+    func askToRun(startCardID: String? = nil) {
+        if isRehearsing || rehearsalStarting {
+            realRunAsked = RealRunAsked(startCardID: startCardID)
+            return
+        }
+        Task { await run(startCardID: startCardID) }
     }
 
     /// Starts a run part-way through: `message` arrives at the card as if a link had brought it.
@@ -3007,7 +3034,8 @@ final class FlowController: ToolHost {
     func snapshot() async -> FlowSnapshot {
         var agents: [String: AgentStatus] = [:]
         for card in flow.cards where card.kind == .agent {
-            let session = sessions[card.id]
+            // In a rehearsal, an agent's work is its stand-in's.
+            let session = shownSessionIfAny(forCard: card.id)
             agents[card.id] = AgentStatus(state: (session?.state ?? .notStarted).rawValue, lastReply: session?.lastReply)
         }
         var innerNames: [String: String] = [:]

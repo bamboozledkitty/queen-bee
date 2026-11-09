@@ -36,9 +36,10 @@ struct QueenBeeApp: App {
                     .keyboardShortcut("o")
             }
             CommandMenu("Flow") {
-                Button("Run") { if let c = services.current { Task { await c.run() } } }
+                // During a rehearsal Run asks first, so it stays on offer.
+                Button("Run") { services.current?.askToRun() }
                     .keyboardShortcut("r")
-                    .disabled(services.current == nil || services.current?.isRunning == true)
+                    .disabled(services.current.map { $0.isRunning && !$0.isRehearsing } ?? true)
                 Button("Stop") { if let c = services.current { Task { await c.stop() } } }
                     .keyboardShortcut(".")
                     .disabled(services.current?.isRunning != true)

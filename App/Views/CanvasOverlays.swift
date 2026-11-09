@@ -258,7 +258,7 @@ struct Minimap: View {
         let selected = controller.selection.cardIDs
         func isLive(_ card: Card) -> Bool {
             waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
-                || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
+                || (card.kind == .agent && [.working, .needsYou].contains(controller.shownSessionIfAny(forCard: card.id)?.state ?? .notStarted))
         }
         // What the map draws: a card each, except that a folded group is the one card it is on the canvas.
         let foldedIDs = Set((flow.groups ?? []).filter(\.isFolded).flatMap(\.cardIDs))

@@ -311,7 +311,16 @@ private struct CardSettings: View {
                       selection: card.effort ?? "") { v in patch { $0.effort = v } }
                 .help("Claude Code's effort level: how hard the agent thinks before it answers. Higher is slower and uses more.")
         }
-        if let all = controller.usage[card.id], !all.isZero {
+        if controller.runOnShowIsRehearsal {
+            // A rehearsal's figure is its stand-in's alone, which says nothing of what the real agent has used.
+            if let run = controller.runUsage(forCard: card.id), !run.isZero {
+                row("Cost") {
+                    Text("\(run.price) this rehearsal")
+                        .textRole(.captionLabel)
+                        .help("An estimate of what this agent's stand-in used in the rehearsal, if you paid Anthropic by usage (\(run.tokenCount)). On a Claude subscription you don't pay this.")
+                }
+            }
+        } else if let all = controller.usage[card.id], !all.isZero {
             row("Cost") {
                 let run = controller.runUsage(forCard: card.id)
                 Text(run.map { $0.isZero ? "\(all.price) in all" : "\($0.price) this run · \(all.price) in all" } ?? "\(all.price) in all")

@@ -52,7 +52,7 @@ struct RunProgressPill: View {
             }
             .buttonStyle(.plain)
             .help(controller.showsProgressLine ? "Hide the run's stops" : "Show the run's stops")
-            .accessibilityLabel("Run \(progress.percent) percent: \(progress.headline.text)")
+            .accessibilityLabel("\(controller.runOnShowIsRehearsal ? "Rehearsal" : "Run") \(progress.percent) percent: \(progress.headline.text)")
             if !controller.isRunning {
                 Button { controller.progressDismissed = true; controller.showsProgressLine = false } label: {
                     Image(systemName: "xmark").dsIcon(DS.IconSize.xs, .semibold)
@@ -71,10 +71,11 @@ struct RunProgressPill: View {
         .dsAnimation(DS.Motion.standard, value: progress.percent)
     }
 
-    /// The headline, with how long the card it is about has been at it.
+    /// The headline, with how long the card it is about has been at it. A rehearsal says so first.
     private func line(_ headline: RunProgress.Headline, now: Date) -> String {
-        guard controller.isRunning, let id = headline.cardID, let since = controller.liveSince[id] else { return headline.text }
-        return headline.text + " · " + RunClock.length(now.timeIntervalSince(since))
+        let prefix = controller.runOnShowIsRehearsal ? "Rehearsal · " : ""
+        guard controller.isRunning, let id = headline.cardID, let since = controller.liveSince[id] else { return prefix + headline.text }
+        return prefix + headline.text + " · " + RunClock.length(now.timeIntervalSince(since))
     }
 }
 

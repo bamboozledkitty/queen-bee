@@ -450,7 +450,7 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             let failed = members.contains { controller.marks[$0.id]?.failed == true }
             let live = members.contains { card in
                 waiting.contains(card.id) || controller.holds.contains { $0.cardID == card.id }
-                    || (card.kind == .agent && [.working, .needsYou].contains(controller.sessions[card.id]?.state ?? .notStarted))
+                    || (card.kind == .agent && [.working, .needsYou].contains(controller.shownSessionIfAny(forCard: card.id)?.state ?? .notStarted))
             }
             let needs = members.filter { waiting.contains($0.id) }.count
             let detail = needs > 0 ? "\(needs) need\(needs == 1 ? "s" : "") you" : live ? "working" : "\(members.count) cards"
