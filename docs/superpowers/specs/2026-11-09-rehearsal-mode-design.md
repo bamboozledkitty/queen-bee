@@ -1,7 +1,7 @@
 # Rehearsal mode
 
 Date: 2026-11-09
-Status: design approved by Keith, not built yet.
+Status: built on the `claude/rehearsal-mode` branch, not merged yet.
 
 ## Goal
 
@@ -58,6 +58,9 @@ The copy keeps your files safe, but it isn't a full sandbox. Stand-ins keep thei
 - none of your other connected tools (MCP servers), such as email or Slack
 - no `git push`
 
+They can still reach the app's socket, as the cards' own sessions can. So a stand-in told to run `qb run` starts a real
+run of a flow. If that is the flow being rehearsed, the rehearsal stops, since a real run always wins.
+
 They can still reach the internet in other ways. For example, a shell command like `curl` or a deploy tool would still really run. A rehearsal is safe for your files, but not for an agent whose instructions tell it to publish something. `SECURITY.md` says this.
 
 Claude Code has the switches for these limits: `--strict-mcp-config`, `--mcp-config` and `--disallowedTools`. The build must check that `--strict-mcp-config` still loads the qb-link plugin, which a run needs in order to hand messages on. If it doesn't, the stand-ins get the plugin's server by name through `--mcp-config`.
@@ -91,7 +94,7 @@ A flow has one run at a time.
   - It goes in `Capabilities.swift` and `CardPatch`, and `CAPABILITIES.md` is rebuilt.
   - The orchestrator and devices may turn it off but never on. The check is the same one that holds a Script card's command.
   - `SECURITY.md` gets a line, because it lets a command run in a rehearsal without asking again.
-- The engine is told a run is a rehearsal when it starts, and records it. Cards ask the app what to do, as they do now: the rehearsal rules live in the app's hand-offs and in `Rehearsal`, not in new engine branches.
+- The engine doesn't know: a rehearsal is the app's, marked on its record. Cards ask the app what to do, as they do now: the rehearsal rules live in the app's hand-offs and in `Rehearsal`, not in new engine branches.
 - The last real output of each Script card is stored with the flow's history, capped like a message (`CarriedMessages`, 8,000 characters). A real run updates it.
 
 ### The Mac app
