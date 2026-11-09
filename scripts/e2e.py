@@ -1349,6 +1349,41 @@ def remote_parity(app, device, send, ask, done, refused, since):
     ask("patchCard", card=start, patch={"removesTrigger": True})
     check("with no schedule there is nothing to turn on", refused(ask("armSchedule", card=start, on=True), "no schedule to turn on"), str(device.seen[-1:]))
 
+    # Rehearsals. Doors has no agents and isn't in git, so a rehearsal of it passes Shout over and waits at Check it,
+    # at the cost of nothing. After the device's Clear above, as the lines a rehearsal adds are kept through one.
+    mark = len(device.seen)
+    check("it can rehearse a flow", done(ask("rehearse")), str(device.seen[-1:]))
+    told = told_run(mark, doors, lambda m: m["isRunning"] and m.get("rehearsal") is True)
+    s = app.state(doors)
+    check("and the Mac rehearses it, and says which device started it, and the device is told the run going is a rehearsal",
+          told is not None and s["rehearsing"] and "Test device started a rehearsal" in s["log"], f"{told} {s['rehearsing']} {s['log'][-3:]}")
+    h = held(app, doors, "Check it")
+    check("a rehearsal from a device passes a Script card over and stops at an approval, as one on the Mac does",
+          h[0]["kind"] == "approval" and any(line.startswith("Shout didn't run its command in the rehearsal") for line in app.state(doors)["log"]),
+          f"{h} {app.state(doors)['log'][-4:]}")
+    check("a second rehearsal is refused while one goes", refused(ask("rehearse"), "A run is going"), str(device.seen[-1:]))
+    mark = len(device.seen)
+    check("it can stop a rehearsal", done(ask("stop")), str(device.seen[-1:]))
+    s = app.wait(doors, lambda s: not s["isRunning"], 20, "the rehearsal to stop")
+    check("and the rehearsal is kept as one, and the device is told it has ended",
+          (s["runs"][-1]["rehearsal"], s["runs"][-1]["outcome"]) == (True, "stopped") and not s["rehearsing"]
+          and told_run(mark, doors, lambda m: not m["isRunning"] and not m.get("rehearsal")) is not None, f"{s['runs'][-1:]} {device.seen[-2:]}")
+    ask("rehearse")
+    held(app, doors, "Check it")
+    mark = len(device.seen)
+    check("a real run asked for from a device stops a rehearsal", done(ask("run")), str(device.seen[-1:]))
+    s = app.state(doors)
+    check("and the log says so, and the device is told the run going is a real one",
+          "Stopped the rehearsal for a real run" in s["log"] and s["isRunning"] and not s["rehearsing"]
+          and (s["runs"][-1]["rehearsal"], s["runs"][-1]["outcome"]) == (True, "stopped")
+          and told_run(mark, doors, lambda m: m["isRunning"] and not m.get("rehearsal")) is not None, f"{s['log'][-3:]} {s['runs'][-1:]}")
+    ask("stop")
+    app.wait(doors, lambda s: not s["isRunning"], 20, "the real run to stop")
+    check("turning on “Runs in rehearsals” from a device is refused, in the Mac's words, and the card is left as it was",
+          refused(ask("patchCard", card=shout, patch={"runsInRehearsals": True}),
+                  "Only the person can turn on “Runs in rehearsals”, in the card's settings on their Mac.")
+          and "runsInRehearsals" not in by_id(saved_flow(app, doors), shout), str(device.seen[-1:]))
+
     # The orchestrator: restart, and "Restart to apply" after the flow is renamed.
     check("it can restart the orchestrator", done(ask("startSession", card="orchestrator"))
           and "Test device restarted the orchestrator" in app.state(doors)["log"], str(app.state(doors)["log"][-2:]))
@@ -4438,6 +4473,38 @@ def scenario_parity():
         s = play("keepRun:run00001:on;clearLog", *on, also=lambda s: len(did(s)) >= 2)
         check("clearing the log leaves a kept run", said(s) == [None, None] and [r["id"] for r in (s.get("panel") or {}).get("runs", [])] == ["run00001"], str((s.get("panel") or {}).get("runs")))
 
+        # Rehearse, from the Run button's menu. The made-up Mac's rehearsal lasts 6 seconds, then is filed as one.
+        s = play("", *on)
+        check("with control, Rehearse is offered beside Run", p(s).get("rehearse") == {"title": "Rehearse", "enabled": True}
+              and controls(s).get("rehearse") == "Rehearse", f"{p(s).get('rehearse')} {controls(s).get('rehearse')}")
+        s = play("rehearse", *on, "-qbShow", "runs", also=lambda s: controls(s).get("rehearsing"))
+        check("a device can rehearse the flow, and the run bar says a rehearsal is going, with Stop and Run",
+              said(s) == [None] and controls(s).get("rehearsing") is True and (s.get("panel") or {}).get("rehearsing") is True
+              and controls(s).get("bar", [])[-2:] == ["Stop", "Run"], f"{did(s)} {controls(s).get('bar')} {controls(s).get('rehearsing')}")
+        s = mobile.wait(lambda s: any(r.get("rehearsal") for r in (s.get("panel") or {}).get("runs", [])), 20, "the rehearsal to be filed")
+        runs = (s.get("panel") or {}).get("runs", [])
+        rehearsed = [r for r in runs if r.get("rehearsal")]
+        check("once it ends it is in Runs, marked as a rehearsal, with no Keep",
+              [r["id"] for r in rehearsed] == ["rehe0001"] and rehearsed[0]["spoken"].split(". ")[0].endswith(", rehearsal")
+              and rehearsed[0]["canKeep"] is False and all(r["canKeep"] for r in runs if not r.get("rehearsal"))
+              and not controls(s).get("rehearsing"), str(runs))
+        both("parity-18-rehearsal")
+        # Run, pressed during a rehearsal, asks first. The rehearsal is begun as the flow opens and Run pressed a
+        # moment later, so a run that began first shows as `rehearsing` being false.
+        try:
+            s = play("rehearse", *on, "-qbPress", "run", also=lambda s: controls(s).get("asking"))
+            check("Run pressed during a rehearsal asks first, as the Mac's does, and stops nothing yet",
+                  controls(s).get("asking") == "runForReal" and controls(s).get("rehearsing") is True,
+                  f"asking={controls(s).get('asking')} rehearsing={controls(s).get('rehearsing')} {did(s)}")
+        except Exception as e:
+            check("Run pressed during a rehearsal asks first, as the Mac's does, and stops nothing yet", False, f"{type(e).__name__}: {e}"[:300])
+        s = play("rehearse;run", *on, also=lambda s: len(did(s)) >= 2)
+        panel = s.get("panel") or {}
+        check("and once that is answered yes, the rehearsal stops for a real run, and the log says so",
+              said(s) == [None, None] and "Stopped the rehearsal for a real run" in panel.get("log", []) and not controls(s).get("rehearsing")
+              and [(r["id"], r["outcome"]) for r in panel.get("runs", []) if r.get("rehearsal")] == [("rehe0001", "stopped")],
+              f"{did(s)} {panel.get('log', [])[-3:]} {panel.get('runs')}")
+
         # The log, costs, pins, agents and Find.
         s = play("clearLog", *on, also=lambda s: len((s.get("panel") or {}).get("log", [])) == 1)
         check("Clear empties the log and the earlier runs, and the Mac says who did it",
@@ -5022,6 +5089,26 @@ GATES = flow("Gates", [
 ], [("Start", "out", "Shout", 9), ("Shout", "pass", "Check it", 9), ("Check it", "approved", "Done", 9),
     ("Check it", "rejected", "Binned", 9), ("Shout", "fail", "Binned", 9), ("Start 2", "out", "Other", 9)])
 
+# No agents, so rehearsing it costs nothing. A rehearsal from Start ends at once, and one from Start 2 waits at Hold
+# for as long as a check needs it to.
+CUES = flow("Cues", [
+    card("start", "Start", 0, 0, command="curtain up"),
+    card("end", "Bow", 312, 0),
+    card("start", "Start 2", 0, 240, command="places, please"),
+    card("approval", "Hold", 312, 240, text="Ready?"),
+    card("end", "Held", 624, 240),
+], [("Start", "out", "Bow", 9), ("Start 2", "out", "Hold", 9), ("Hold", "approved", "Held", 9)])
+
+# An agent, a script and a Delay of 5 minutes, for a rehearsal to go through. It goes in a git repository of its own,
+# inside the scratch project, so that a rehearsal of it has a throwaway copy to work in.
+REHEARSE = flow("Rehearse", [
+    card("start", "Start", 0, 0, command="Say hello."),
+    card("agent", "Writer", 312, 0, instructions="Reply with one short sentence."),
+    card("script", "Echo", 856, 0, command="echo hi"),
+    card("delay", "Wait", 1168, 0, waitMinutes=5),
+    card("end", "Done", 1480, 0),
+], [("Start", "out", "Writer", 3), ("Writer", "out", "Echo", 3), ("Echo", "pass", "Wait", 3), ("Wait", "out", "Done", 3)])
+
 INNER = flow("Inner", [
     card("start", "Input", 0, 0, command="try me"),
     card("script", "Loud", 312, 0, command="tr a-z A-Z"),
@@ -5063,7 +5150,7 @@ DELAYS = flow("Delays", [
     card("end", "Out", 936, 0),
 ], [("Start", "out", "Short", 9), ("Short", "out", "Long", 9), ("Long", "out", "Out", 9)])
 
-FLOWS.update({"gates": GATES, "unasked": UNASKED, "inner": INNER, "subflow": OUTER, "timed": TIMED, "delays": DELAYS})
+FLOWS.update({"gates": GATES, "cues": CUES, "unasked": UNASKED, "inner": INNER, "subflow": OUTER, "timed": TIMED, "delays": DELAYS})
 
 # Agents on a model that doesn't exist, so each turn fails at once and costs nothing. One fails into an End that
 # ends the run as failed; the other tries again through a Delay until its Error link's limit of 2 is used up.
@@ -5271,6 +5358,241 @@ def scenario_gates(app):
     for r in s["runs"]:
         app.op(fid, "keep", run=r["id"], on=False)
     check("and they can be let go again", not any(r["kept"] for r in app.state(fid)["runs"]))
+
+    try:
+        rehearsals_outside_git(app)
+    except Exception as e:  # the rehearsal of a flow with an agent, which follows, is worth having whatever went wrong here
+        check("the rehearsals of a flow outside git ran to the end", False, f"{type(e).__name__}: {e}"[:500])
+    try:
+        rehearsal_in_a_copy(app)
+    except Exception as e:
+        check("the rehearsal of a flow with an agent ran to the end", False, f"{type(e).__name__}: {e}"[:500])
+
+
+def history_record(app, fid, run_id):
+    """A run's record as the app saved it in the flow's history, which has what each card used. The history is kept
+    in the app's folder under a hash of its project's folder and the flow's id."""
+    for p in app.op("app", "projects")["projects"]:
+        path = os.path.join(app.support, "history", hashlib.sha256(f"{p}|{fid}".encode()).hexdigest() + ".json")
+        try:
+            with open(path) as f:
+                runs = json.load(f).get("runs") or []
+        except (OSError, ValueError):
+            continue
+        found = next((r for r in runs if r.get("id") == run_id), None)
+        if found:
+            return found
+    return None
+
+
+def rehearsals_outside_git(app):
+    """Rehearsals of Cues, which has no agents and is in the scratch project, which isn't in git: read-only, with no copy."""
+    print("        rehearsals of a flow with no agents, outside git", flush=True)
+    cid = CUES["id"]
+    app.op(cid, "select")
+    time.sleep(2)
+
+    # A real run stops a rehearsal straight away, as a schedule's or a device's does.
+    s = app.state(cid)
+    mark, before = len(s["log"]), len(s["runs"])
+    r = app.op(cid, "rehearse", card="Start 2")
+    h = held(app, cid, "Hold")
+    s = app.state(cid)
+    check("a flow can be rehearsed, and an Approval in it asks as usual", r.get("began") is True and s["rehearsing"] and h[0]["kind"] == "approval",
+          f"{r} {s['rehearsing']} {h}")
+    check("outside git the log's first line says a rehearsal can't change anything, and it has no copy",
+          "This is a rehearsal on Haiku at low effort. The project isn't in git, so agents can look but not change anything, and no script runs."
+          in s["log"][mark:] and s["copy"] is None, f"{s['log'][mark:mark + 2]} {s['copy']}")
+    check("a second rehearsal is refused while one goes", app.op(cid, "rehearse").get("status") == "A run is going. Rehearse once it has ended.")
+    mark = len(app.state(cid)["log"])
+    app.op(cid, "run")
+    s = app.wait(cid, lambda s: not s["isRunning"] and len(s["runs"]) == before + 2, 20, "the real run that stopped the rehearsal to end")
+    check("a real run stops a rehearsal, and the log says so", "Stopped the rehearsal for a real run" in s["log"][mark:] and not s["rehearsing"],
+          str(s["log"][mark:]))
+    check("and the rehearsal is kept as one, stopped, and the next run is a real one",
+          [(r["rehearsal"], r["outcome"]) for r in s["runs"][-2:]] == [(True, "stopped"), (False, "finished")] and s["results"] == {"Bow": "curtain up"},
+          f"{[(r['rehearsal'], r['outcome']) for r in s['runs'][-2:]]} {s['results']}")
+
+    # Run, as the person presses it at this Mac, asks first during a rehearsal.
+    r = app.op(cid, "rehearse", card="Start 2")
+    held(app, cid, "Hold")
+    asked = app.op(cid, "askToRun", card="Start")
+    s = app.state(cid)
+    check("pressing Run during a rehearsal asks first, and stops nothing yet",
+          asked.get("realRunAsked") is True and s["realRunAsked"] and s["rehearsing"] and s["isRunning"], f"{r} {asked} {s['rehearsing']}")
+    app.op(cid, "answerRealRun", yes=False)
+    s = app.state(cid)
+    check("Cancel leaves the rehearsal going", not s["realRunAsked"] and s["rehearsing"] and [h["card"] for h in s["holds"]] == ["Hold"],
+          f"{s['realRunAsked']} {s['rehearsing']} {s['holds']}")
+    app.op(cid, "askToRun", card="Start")
+    mark = len(app.state(cid)["log"])
+    answer = app.op(cid, "answerRealRun", yes=True)
+    s = app.wait(cid, lambda s: not s["isRunning"] and len(s["runs"]) == before + 4, 20, "the real run asked for to end")
+    check("Run for Real stops the rehearsal and runs the flow for real",
+          not s["realRunAsked"] and "Stopped the rehearsal for a real run" in s["log"][mark:]
+          and [(r["rehearsal"], r["outcome"]) for r in s["runs"][-2:]] == [(True, "stopped"), (False, "finished")],
+          f"{answer} {s['log'][mark:]} {[(r['rehearsal'], r['outcome']) for r in s['runs'][-2:]]}")
+
+    # Rehearsals keep their own 5 latest, so they never push a real run out.
+    real = [r["id"] for r in s["runs"] if not r["rehearsal"]]
+    refusals = []
+    for _ in range(6):
+        last = app.state(cid)["runs"][-1]["id"]
+        r = app.op(cid, "rehearse", card="Start")
+        if r.get("began") is not True:
+            refusals.append(r)
+            continue
+        app.wait(cid, lambda s: not s["isRunning"] and s["runs"][-1]["id"] != last, 30, "a quick rehearsal to end")
+    s = app.state(cid)
+    rehearsed = [r for r in s["runs"] if r["rehearsal"]]
+    check("a flow keeps only its 5 latest rehearsals, and every real run is still there",
+          not refusals and len(rehearsed) == 5 and all(r["outcome"] == "finished" for r in rehearsed)
+          and [r["id"] for r in s["runs"] if not r["rehearsal"]] == real, f"{refusals} {[(r['number'], r['rehearsal']) for r in s['runs']]}")
+    numbers = [r["number"] for r in s["runs"]]
+    check("rehearsals are numbered with the flow's runs", numbers == sorted(set(numbers)) and None not in numbers, str(numbers))
+    app.op(cid, "close")
+
+
+def git_in(repo, *args):
+    return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+
+
+def rehearsal_in_a_copy(app):
+    """A rehearsal of Rehearse, whose Writer is a real agent on Haiku, in a git repository of its own: it works in a
+    throwaway copy, by a stand-in of the Writer, and leaves the Writer's real conversation and the project alone."""
+    print("        a rehearsal of a flow with an agent, in a copy of a git repository", flush=True)
+    rid = REHEARSE["id"]
+    ids = {c["name"]: c["id"] for c in REHEARSE["cards"]}
+    writer, echo = ids["Writer"], ids["Echo"]
+    # Inside the scratch project, which Claude Code already trusts, so neither the Writer nor its stand-in is asked to.
+    repo = os.path.join(app.project, "rehearsal-repo")
+    rehearsals = os.path.join(repo, ".queenbee", "rehearsals")
+    os.makedirs(repo)
+    try:
+        with open(os.path.join(repo, "README.md"), "w") as f:
+            f.write("A project for a rehearsal to copy.\n")
+        write(repo, 0, REHEARSE)
+        # Only the README is committed: the app has `.queenbee` ignore itself in git, as it does in a person's project.
+        made = [git_in(repo, "init", "-q", "-b", "main"), git_in(repo, "add", "README.md"),
+                git_in(repo, "-c", "user.name=Queen Bee test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                       "commit", "-q", "-m", "A flow to rehearse")]
+        if not check("a git repository for the rehearsal to copy is made", all(m.returncode == 0 for m in made),
+                     " ".join(m.stderr.strip() for m in made)[:300]):
+            return
+        app.op("app", "remote-project", path=repo, add=True)
+        app.open_flow(REHEARSE)
+
+        # A real run first, so that Echo has a real output for a rehearsal to pass on.
+        app.op(rid, "run")
+        held(app, rid, "Echo", timeout=180)
+        app.op(rid, "hold", card="Echo", answer="allow")
+        held(app, rid, "Wait")
+        app.op(rid, "hold", card="Wait", answer="sendOn")
+        s = app.wait(rid, lambda s: not s["isRunning"], 30, "the real run to end")
+        check("a real run keeps Echo's output, for a rehearsal to pass on", "hi" in s["scriptOutputs"].get(echo, "")
+              and s["runs"][-1]["rehearsal"] is False, f"{s['scriptOutputs']} {s['runs'][-1:]}")
+        sid = s["sessions"]["Writer"]["sessionID"]
+        found = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl")) if sid else []
+        if not check("the Writer's real conversation is on disk", len(found) == 1, f"{sid} {found}"):
+            return
+        transcript = found[0]
+
+        def settled_size():
+            """The transcript's size once Claude Code has stopped writing to it for a moment."""
+            size = os.path.getsize(transcript)
+            for _ in range(10):
+                time.sleep(2)
+                now = os.path.getsize(transcript)
+                if now == size:
+                    break
+                size = now
+            return size
+
+        size = settled_size()
+        # What git says of the project itself: its branch, and which of its files have changed. The real run saved
+        # the Writer's session in the flow's file, so that one has already.
+        project_before = (git_in(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout, git_in(repo, "rev-parse", "HEAD").stdout,
+                          git_in(repo, "status", "--porcelain", "--untracked-files=no").stdout)
+
+        # The rehearsal, watched as it goes.
+        s = app.state(rid)
+        mark, before = len(s["log"]), len(s["runs"])
+        began = time.time()
+        r = app.op(rid, "rehearse")
+        check("a flow with an agent can be rehearsed", r.get("began") is True, str(r))
+        copy, copy_there, stand_in, stand_ins = None, False, False, []
+        deadline = time.time() + 240
+        while time.time() < deadline:
+            s = app.state(rid)
+            if s["copy"] and copy is None:
+                copy, copy_there = s["copy"], os.path.isdir(s["copy"])
+            stand_in = stand_in or (s["rehearsing"] and s["sessions"]["Writer"]["standIn"] is True)
+            stand_ins = stand_ins or s["standIns"]
+            if not s["isRunning"] and len(s["runs"]) > before:
+                break
+            time.sleep(1)
+        took = time.time() - began
+        s = app.state(rid)
+        new = s["runs"][-1] if len(s["runs"]) > before else {}
+        check("the rehearsal runs to its end, and is kept as a rehearsal", new.get("rehearsal") is True and new.get("outcome") == "finished",
+              f"{new} {s['log'][-6:]}")
+        check("it works in a throwaway copy of the project, in its .queenbee/rehearsals folder",
+              copy is not None and copy_there and os.path.realpath(copy).startswith(os.path.realpath(rehearsals) + os.sep), str(copy))
+        check("the log's first line says it is a rehearsal in a throwaway copy, and that no script runs for real",
+              "This is a rehearsal on Haiku at low effort, in a throwaway copy of the project. No script runs for real." in s["log"][mark:],
+              str(s["log"][mark:mark + 3]))
+        check("the Writer's card shows a stand-in while the rehearsal goes, and its own session again afterwards",
+              stand_in and stand_ins == [writer] and s["sessions"]["Writer"]["standIn"] is False and s["sessions"]["Writer"]["sessionID"] == sid
+              and s["standIns"] == [], f"{stand_in} {stand_ins} {s['sessions']['Writer']['standIn']} {s['sessions']['Writer']['sessionID']}")
+        check("a Script card passes on its last real output, and the log says so",
+              "Echo didn't run its command in the rehearsal, and passed on its last real output" in s["log"][mark:]
+              and "hi" in s["results"].get("Done", ""), f"{s['log'][mark:]} {s['results']}")
+        check("a Delay passes the message on at once, and the log says how long it would have waited",
+              "Wait passed the message on at once: in a rehearsal it doesn't wait its 5 minutes" in s["log"][mark:] and took < 150,
+              f"{took:.0f}s {s['log'][mark:]}")
+        check("the Writer's real conversation isn't touched", settled_size() == size and s["sessions"]["Writer"]["realSession"]["state"] == "idle",
+              f"{size} then {os.path.getsize(transcript)}")
+
+        # What the stand-in used is in the rehearsal's record, under the Writer's card.
+        record, deadline = None, time.time() + 25
+        while time.time() < deadline:
+            record = history_record(app, rid, new.get("id"))
+            if record and ((record.get("usage") or {}).get(writer) or {}).get("cost", 0) > 0:
+                break
+            time.sleep(1)
+        check("what the stand-in spent is kept in the rehearsal's record, under the Writer's card",
+              record is not None and record.get("rehearsal") is True and ((record.get("usage") or {}).get(writer) or {}).get("cost", 0) > 0,
+              str(record and record.get("usage")))
+
+        # Once the rehearsal has ended, its copy and branch go, and the folder's .gitignore stays.
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            branches = git_in(repo, "branch", "--list", "queenbee-rehearsal-*").stdout.strip()
+            worktrees = git_in(repo, "worktree", "list", "--porcelain").stdout
+            if app.state(rid)["copy"] is None and copy and not os.path.exists(copy) and not branches and "queenbee-rehearsal-" not in worktrees:
+                break
+            time.sleep(1)
+        check("its copy and its branch are gone soon after it ends",
+              app.state(rid)["copy"] is None and copy is not None and not os.path.exists(copy) and not branches and "queenbee-rehearsal-" not in worktrees,
+              f"{copy} {branches!r} {worktrees[-300:]!r}")
+        ignore = os.path.join(rehearsals, ".gitignore")
+        check("and the rehearsals folder keeps its .gitignore, and nothing else",
+              os.path.isfile(ignore) and open(ignore).read().strip() == "*" and os.listdir(rehearsals) == [".gitignore"],
+              str(os.listdir(rehearsals) if os.path.isdir(rehearsals) else "no folder"))
+        project_after = (git_in(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout, git_in(repo, "rev-parse", "HEAD").stdout,
+                         git_in(repo, "status", "--porcelain", "--untracked-files=no").stdout)
+        check("and the project itself is on the branch and commit it was, with the same files changed",
+              project_after == project_before, f"{project_before} then {project_after}")
+
+        r = app.op(rid, "keep", run=new.get("id"), on=True)
+        check("a rehearsal can't be kept for good", r.get("problem") == "A rehearsal can't be kept for good. Run the flow for real to keep a run."
+              and app.state(rid)["runs"][-1]["kept"] is False, str(r))
+        r = app.op(rid, "compare", runs=[s["runs"][-2]["id"], new.get("id")])
+        check("and it can't be compared with a real run", r.get("error") == "a rehearsal can't be compared", str(r))
+    finally:
+        app.op(rid, "close")
+        app.op("app", "remote-project", path=repo, add=False)
+        shutil.rmtree(repo, ignore_errors=True)
 
 
 def scenario_unasked(app):
@@ -6508,7 +6830,7 @@ def main():
     # Guard is written first so it is the flow the app opens on, and the others wait their turn.
     for i, name in enumerate(["guard", "pan", "fanout", "switch", "loop", "exit", "apifail", "ask", "gates", "inner", "subflow", "timed"]
                              + [f"level{n}" for n in range(5)] + ["doors", "slow", "edits", "unasked", "browser"]
-                             + ["features", "gaveup", "holds", "spend", "cli", "cliwait", "delays", "errors", "retries"]):
+                             + ["features", "gaveup", "holds", "spend", "cli", "cliwait", "delays", "errors", "retries", "cues"]):
         write(project, i, FLOWS[name])
     print(f"project: {project}", flush=True)
 

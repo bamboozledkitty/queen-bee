@@ -412,7 +412,7 @@ while true {
                                           "allowOnMac": $0.allowOnMac == true] as [String: Any] },
              "awaitingRestart": state.awaitingRestart, "orchestratorNeedsRestart": state.orchestratorNeedsRestart,
              "banner": state.banner ?? NSNull(), "failed": state.marks.filter(\.value.failed).keys.sorted(),
-             "workplace": state.workplace ?? NSNull()])
+             "workplace": state.workplace ?? NSNull(), "rehearsal": state.rehearsal ?? NSNull()])
     case .log(_, let lines, let reset):
         say(["type": "log", "lines": lines.count, "reset": reset])
     case .messages(_, let link, let all):
