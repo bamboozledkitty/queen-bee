@@ -228,6 +228,8 @@ Task {
     case "undo": return .undo(flowID: flow)
     case "redo": return .redo(flowID: flow)
     case "runFromStart": return .runFromStart(flowID: flow, startCardID: text("card"))
+    // Without a card, from the Start card Run uses.
+    case "rehearse": return .rehearse(flowID: flow, startCardID: fields["card"] as? String)
     case "retry": return .retry(flowID: flow, cardID: text("card"))
     case "clearLog": return .clearLog(flowID: flow)
     case "keepRun": return .keepRun(flowID: flow, runID: text("run"), on: flag("on"))

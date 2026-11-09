@@ -132,6 +132,8 @@ final class FlowController: ToolHost {
     /// Set from the moment a rehearsal is ready to begin until it has ended and been tidied away.
     private(set) var rehearsal: RehearsalState?
     var isRehearsing: Bool { rehearsal != nil }
+    /// Where the rehearsal going on works: its throwaway copy. Nil outside a rehearsal, and in one that is read-only.
+    var rehearsalCopyPath: String? { rehearsal?.copy?.path }
     /// A real run the person asked for during a rehearsal, waiting on their "Run for Real".
     struct RealRunAsked: Identifiable {
         let id = UUID()
@@ -150,7 +152,7 @@ final class FlowController: ToolHost {
     /// behind leaves them alone. An id goes once its copy has been removed.
     private static var copiesInUse: Set<String> = []
     /// The last real output of each Script card, by card id, for a rehearsal to pass on.
-    @ObservationIgnored private var scriptOutputs: [String: String] = [:]
+    @ObservationIgnored private(set) var scriptOutputs: [String: String] = [:]
     /// The whole text of the messages in `messages` that are kept there cut short, by message id: what Retry and
     /// "run from here" give a card again.
     @ObservationIgnored private var wholeMessages: [UUID: String] = [:]
@@ -1345,6 +1347,10 @@ final class FlowController: ToolHost {
 
     /// The same, without making a session for a card that has none yet: for views and reports, which only look.
     func shownSessionIfAny(forCard id: String) -> TerminalSession? { standIns[id] ?? sessions[id] }
+
+    /// What every card and the orchestrator show, by key: each card's stand-in while it has one, else its own session.
+    /// What a paired device sees and types into.
+    var shownSessions: [String: TerminalSession] { sessions.merging(standIns) { _, standIn in standIn } }
 
     /// The session a run's hand-offs for a card go to: its stand-in in a rehearsal, else its own.
     private func runSession(forCard id: String) -> TerminalSession {

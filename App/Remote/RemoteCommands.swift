@@ -91,7 +91,8 @@ enum RemoteCommands {
             guard isBlank(command) else {
                 return "A run from a device starts with what its Start card says. To run something else, change the Start card on your Mac."
             }
-            guard !controller.isRunning else { return alreadyRunning }
+            // A real run always wins over a rehearsal: starting it stops the rehearsal.
+            guard !controller.isRunning || controller.isRehearsing else { return alreadyRunning }
             // The Run button is greyed out when the Start card has nothing to start with.
             guard controller.canRun else {
                 return "Nothing to run yet: give the Start card something to start with and link it to a card."
@@ -101,7 +102,7 @@ enum RemoteCommands {
 
         case .runFrom(_, let cardID, let text):
             guard let card = controller.flow.card(cardID) else { return cardGone }
-            guard !controller.isRunning else { return alreadyRunning }
+            guard !controller.isRunning || controller.isRehearsing else { return alreadyRunning }
             guard acceptsInput(card) else { return "Nothing to run: that card takes no input." }
             guard !isBlank(text) else { return "Nothing to run: there is no message to give \(card.name)." }
             let start = await controller.start(from: cardID, message: text, note: "Run started from \(name)")
@@ -367,7 +368,7 @@ enum RemoteCommands {
         case .runFromStart(_, let cardID):
             guard let card = controller.flow.card(cardID) else { return cardGone }
             guard card.kind == .start else { return "Only a Start card starts a run." }
-            guard !controller.isRunning else { return alreadyRunning }
+            guard !controller.isRunning || controller.isRehearsing else { return alreadyRunning }
             // The Start card's Run button is greyed out when it has nothing to start with, or nothing to give it to.
             guard !isBlank(card.command), !controller.flow.links(from: cardID).isEmpty else {
                 return "Nothing to run yet: give \(called(cardID)) something to start with and link it to a card."
@@ -375,13 +376,27 @@ enum RemoteCommands {
             let start = await controller.start(startCardID: cardID, note: "Run started from \(name)")
             return start.began ? nil : start.status
 
-        case .rehearse:
-            // The Mac doesn't say `RemoteFeature.rehearsals` yet, so no device sends this. The real handler comes with the rehearsal itself.
-            return "Rehearsals aren't ready yet."
+        case .rehearse(_, let startCardID):
+            // The Mac's Rehearse, in the Run button's menu: never while a run is going, rehearsal or not.
+            guard !controller.isRunning, !controller.isStartingRun else { return Rehearsal.busyRefusal }
+            if let startCardID {
+                guard let card = controller.flow.card(startCardID) else { return cardGone }
+                guard card.kind == .start else { return "Only a Start card starts a rehearsal." }
+                guard !isBlank(card.command), !controller.flow.links(from: startCardID).isEmpty else {
+                    return "Nothing to rehearse yet: give \(called(startCardID)) something to start with and link it to a card."
+                }
+            } else {
+                // Rehearse is greyed out with Run when the Start card has nothing to start with.
+                guard controller.canRun else {
+                    return "Nothing to rehearse yet: give the Start card something to start with and link it to a card."
+                }
+            }
+            let start = await controller.start(startCardID: startCardID, note: "\(name) started a rehearsal", rehearse: true)
+            return start.began ? nil : start.status
 
         case .retry(_, let cardID):
             guard controller.flow.card(cardID) != nil else { return cardGone }
-            guard !controller.isRunning else { return alreadyRunning }
+            guard !controller.isRunning || controller.isRehearsing else { return alreadyRunning }
             // Retry is only offered on a card the last run stopped at: see `FlowController.canRetry`.
             guard controller.marks[cardID]?.failed == true else { return "The last run didn't stop at \(called(cardID)), so there is nothing to retry." }
             guard controller.flow.card(cardID)?.kind != .end else { return "\(called(cardID)) ended the run as failed, so there is nothing to retry there." }
@@ -903,10 +918,10 @@ enum RemoteCommands {
 
     private static func isBlank(_ text: String?) -> Bool { (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    /// A session that is there and running. Looked up without making one: asking the flow for a card's
-    /// session makes it, and a device naming a card that has none must not.
+    /// A session that is there and running: the one its card shows, which in a rehearsal is its stand-in. Looked up
+    /// without making one: asking the flow for a card's session makes it, and a device naming a card that has none must not.
     private static func running(_ key: String, in controller: FlowController) -> TerminalSession? {
-        guard let session = controller.sessions[key], session.isLive else { return nil }
+        guard let session = controller.shownSessionIfAny(forCard: key), session.isLive else { return nil }
         return session
     }
 }

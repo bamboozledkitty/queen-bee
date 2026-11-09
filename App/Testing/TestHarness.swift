@@ -164,17 +164,33 @@ enum TestHarness {
             controller.shutDown()
             return [:]
         case "run":
+            // Straight to a real run, which stops a rehearsal going on without asking: what a schedule or a device does.
             return ["status": .string(await controller.run(command: payload["command"]?.stringValue))]
+        case "askToRun":
+            // Run as the person presses it at this Mac: during a rehearsal it asks first, and `realRunAsked` says so.
+            controller.askToRun(startCardID: cardID)
+            return ["realRunAsked": .bool(controller.realRunAsked != nil)]
+        case "answerRealRun":
+            // The answer to "Stop the rehearsal and run for real?": true is Run for Real, false is Cancel.
+            guard let asked = controller.realRunAsked else { return ["error": "nothing is being asked"] }
+            controller.realRunAsked = nil
+            guard payload["yes"]?.boolValue ?? true else { return [:] }
+            return ["status": .string(await controller.run(startCardID: asked.startCardID))]
+        case "rehearse":
+            // Rehearse in the Run menu, or the orchestrator's rehearse_flow.
+            let started = await controller.start(command: payload["command"]?.stringValue, startCardID: cardID, rehearse: true)
+            return ["began": .bool(started.began), "status": .string(started.status)]
         case "stop":
             await controller.stop()
             return [:]
         case "type":
             guard let cardID, let text = payload["text"]?.stringValue else { return ["error": "type needs card and text"] }
-            controller.session(forCard: cardID).send(text)
+            // What the person types into the terminal on show: in a rehearsal, the card's stand-in.
+            controller.shownSession(forCard: cardID).send(text)
             return [:]
         case "kill":
             // What a crash looks like from outside: the process is gone without a goodbye.
-            guard let cardID, let pid = controller.sessions[cardID]?.view.process.shellPid, pid > 0 else { return ["error": "no process"] }
+            guard let cardID, let pid = controller.shownSessionIfAny(forCard: cardID)?.view.process.shellPid, pid > 0 else { return ["error": "no process"] }
             kill(pid, SIGKILL)
             return ["pid": .number(Double(pid))]
         case "restart":
@@ -376,8 +392,10 @@ enum TestHarness {
             // Two kept runs side by side, as Compare with… sets them in its sheet.
             let ids = payload["runs"]?.arrayValue?.compactMap(\.stringValue) ?? []
             guard ids.count == 2, let one = controller.runs.first(where: { $0.id == ids[0] }),
-                  let two = controller.runs.first(where: { $0.id == ids[1] }),
-                  let compared = RunComparison(one, two, in: controller.flow) else { return ["error": "compare needs two kept runs"] }
+                  let two = controller.runs.first(where: { $0.id == ids[1] }) else { return ["error": "compare needs two kept runs"] }
+            // A rehearsal isn't set beside real runs: the Runs page doesn't offer it.
+            guard !one.isRehearsal, !two.isRehearsal else { return ["error": "a rehearsal can't be compared"] }
+            guard let compared = RunComparison(one, two, in: controller.flow) else { return ["error": "compare needs two kept runs"] }
             return ["before": .string(compared.before.name), "after": .string(compared.after.name),
                     "changes": .array(compared.changes.map(JSONValue.string)), "comparesReplies": .bool(compared.comparesReplies),
                     "rows": .array(compared.rows.map { row in
@@ -457,23 +475,23 @@ enum TestHarness {
         case "terminal":
             // What a session's own terminal shows, to set against what a device shows for it.
             guard let cardID else { return ["error": "terminal needs card"] }
-            return MirrorWindow.describe(controller.session(forCard: cardID).view)
+            return MirrorWindow.describe(controller.shownSession(forCard: cardID).view)
         case "mirror":
             // A second terminal that sees only what a paired device would be sent.
             guard let cardID else { return ["error": "mirror needs card"] }
-            MirrorWindow.show(controller.session(forCard: cardID), shown: payload["shown"]?.boolValue ?? true)
+            MirrorWindow.show(controller.shownSession(forCard: cardID), shown: payload["shown"]?.boolValue ?? true)
             return [:]
         case "mirror-limit":
             // Makes the kept output small, so a check can see what a long session's mirror starts from.
             guard let cardID, let bytes = payload["bytes"]?.doubleValue else { return ["error": "mirror-limit needs card and bytes"] }
-            controller.session(forCard: cardID).view.output.setLimit(Int(bytes))
+            controller.shownSession(forCard: cardID).view.output.setLimit(Int(bytes))
             return [:]
         case "mirror-close":
             MirrorWindow.close()
             return [:]
         case "mirror-compare":
             guard let cardID else { return ["error": "mirror-compare needs card"] }
-            return MirrorWindow.compare(with: controller.session(forCard: cardID))
+            return MirrorWindow.compare(with: controller.shownSession(forCard: cardID))
         default:
             return ["error": "unknown op"]
         }
@@ -482,7 +500,11 @@ enum TestHarness {
     private static func state(of controller: FlowController) -> JSONValue {
         var sessions: [String: JSONValue] = [:]
         for card in controller.flow.cards where card.kind == .agent {
-            var described = describe(controller.sessions[card.id]).objectValue ?? [:]
+            // The session the card shows: in a rehearsal, its stand-in. `realSession` is the card's own, which a rehearsal leaves alone.
+            var described = describe(controller.shownSessionIfAny(forCard: card.id)).objectValue ?? [:]
+            described["standIn"] = .bool(controller.standIns[card.id] != nil)
+            described["sessionID"] = controller.sessions[card.id]?.claudeSessionID.map(JSONValue.string) ?? card.sessionID.map(JSONValue.string) ?? .null
+            described["realSession"] = describe(controller.sessions[card.id])
             described["awaitingRestart"] = .array(controller.settingsAwaitingRestart(forCard: card.id).map(JSONValue.string))
             described["instructions"] = .string(card.instructions ?? "")
             described["model"] = card.model.map(JSONValue.string) ?? .null
@@ -530,13 +552,20 @@ enum TestHarness {
             "runs": .array(controller.runs.map { ["id": .string($0.id), "outcome": .string($0.outcome.rawValue), "command": .string($0.command),
                                                   "ending": $0.ending.map { .string($0.rawValue) } ?? .null, "summary": .string($0.summary),
                                                   "number": $0.number.map { .number(Double($0)) } ?? .null, "kept": .bool($0.isKept),
-                                                  "hasMessages": .bool(!$0.messages.isEmpty)] }),
+                                                  "hasMessages": .bool(!$0.messages.isEmpty), "rehearsal": .bool($0.isRehearsal)] }),
             "viewedRun": controller.viewedRunID.map(JSONValue.string) ?? .null,
             "messages": .number(Double(controller.messages.values.reduce(0) { $0 + $1.count })),
             "holds": .array(controller.holds.map { ["card": .string(controller.flow.card($0.cardID)?.name ?? ""), "kind": .string($0.kind.rawValue), "text": .string($0.text), "needsAllow": .bool($0.needsAllow), "allowOnMac": .bool($0.allowOnMac == true)] }),
             "selected": .array(controller.flow.cards.filter { controller.selection.cardIDs.contains($0.id) }.map { .string($0.name) }),
             "undo": .string(controller.undoManager.canUndo ? controller.undoManager.undoActionName : ""),
             "isRunning": .bool(controller.isRunning),
+            "rehearsing": .bool(controller.isRehearsing),
+            // The cards that have a stand-in, by card id.
+            "standIns": .array(controller.standIns.keys.sorted().map(JSONValue.string)),
+            "copy": controller.rehearsalCopyPath.map(JSONValue.string) ?? .null,
+            "realRunAsked": .bool(controller.realRunAsked != nil),
+            // The last real output of each Script card, by card id, that a rehearsal passes on.
+            "scriptOutputs": .object(controller.scriptOutputs.mapValues(JSONValue.string)),
             "awaitingAnswer": .array(controller.flow.cards.filter { controller.awaitingAnswer.contains($0.id) }.map { .string($0.name) }),
             "log": .array(controller.log.map { .string($0.text) }),
             "results": .object(results),

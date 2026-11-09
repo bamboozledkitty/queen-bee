@@ -929,7 +929,8 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
     }
 
     func testFocus(cardID: String?) {
-        if let cardID, let terminal = controller?.sessions[cardID]?.view {
+        // The terminal on show: in a rehearsal, the card's stand-in.
+        if let cardID, let terminal = controller?.shownSessionIfAny(forCard: cardID)?.view {
             window?.makeFirstResponder(terminal)
         } else {
             takeFocus()

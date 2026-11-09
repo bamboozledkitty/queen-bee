@@ -379,8 +379,10 @@ final class RemoteSession {
     }
 
     private static func snapshot(of controller: FlowController) -> RemoteFlowSnapshot {
-        // Read so that a session being added, replaced or dropped counts as a change.
+        // Read so that a session being added, replaced or dropped counts as a change. A rehearsal's stand-ins are read
+        // through `shownSessions`, so one coming or going counts too, and the terminal followed for its card changes.
         _ = controller.sessionsRevision
+        let shown = controller.shownSessions
         // What the Mac's "Not in use yet" line lists for each agent card, and its "Restart to apply" for the orchestrator.
         var awaiting: [String: [String]] = [:]
         for card in controller.flow.cards where card.kind == .agent {
@@ -397,10 +399,11 @@ final class RemoteSession {
         let run = RemoteRunState(
             isRunning: controller.isRunning, marks: controller.marks, linkPasses: controller.linkPasses,
             liveLinkIDs: controller.liveLinkIDs.sorted(), handOffs: controller.handOffs, holds: controller.holds,
-            results: controller.results, usage: usage, sessions: controller.sessions.mapValues(\.state),
+            results: controller.results, usage: usage, sessions: shown.mapValues(\.state),
             awaitingAnswer: controller.awaitingAnswer.sorted(), banner: controller.banner, awaitingRestart: awaiting,
             orchestratorNeedsRestart: controller.orchestratorNeedsRestart, runUsage: runUsage,
-            workplace: controller.workplaceChip.map { RemoteOverview.cut(Remote.plainLine($0)) })
+            workplace: controller.workplaceChip.map { RemoteOverview.cut(Remote.plainLine($0)) },
+            rehearsal: controller.isRehearsing ? true : nil)
         // Read so that a schedule turned on or off at the Mac counts as a change: which are on is not in the flow.
         _ = controller.schedulesRevision
         let armed = controller.flow.cards.filter { $0.kind == .start && controller.isArmed($0) }.map(\.id)
@@ -461,11 +464,14 @@ final class RemoteSession {
         // A device that is behind gets nothing more until it has caught up. `sent` calls this again then.
         guard !isFlooded, let controller else { return }
         let flowID = controller.flow.id
-        for (key, held) in feeds where controller.sessions[key] !== held.session {
+        // In a rehearsal a card's terminal is its stand-in's, as on the Mac. A feed whose session is no longer the
+        // one shown is let go, and the one shown now is sent from its screen as it is, which starts the device afresh.
+        let shown = controller.shownSessions
+        for (key, held) in feeds where shown[key] !== held.session {
             held.session.feed.removeListener(held.token)
             feeds[key] = nil
         }
-        for (key, session) in controller.sessions where feeds[key] == nil {
+        for (key, session) in shown where feeds[key] == nil {
             // The screen and the listener are taken together, with nothing awaited between, so no output is missed.
             queueTerminal(flowID, key, session.feed.snapshot())
             let token = session.feed.addListener { [weak self] chunk in self?.queueTerminal(flowID, key, chunk) }
