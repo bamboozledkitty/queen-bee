@@ -151,6 +151,8 @@ final class FlowController: ToolHost {
     /// The ids of the rehearsal copies in use or being made, in every flow, so that a sweep for ones a crash left
     /// behind leaves them alone. An id goes once its copy has been removed.
     private static var copiesInUse: Set<String> = []
+    /// The projects whose leftover rehearsal copies have been looked for since the app started.
+    private static var sweptProjects: Set<String> = []
     /// The last real output of each Script card, by card id, for a rehearsal to pass on.
     @ObservationIgnored private(set) var scriptOutputs: [String: String] = [:]
     /// The whole text of the messages in `messages` that are kept there cut short, by message id: what Retry and
@@ -1378,6 +1380,7 @@ final class FlowController: ToolHost {
         if let old = standIns[id], old.state != .notStarted {
             old.terminate()
             standIns[id] = nil
+            retireStandInSecret(forCard: id)
         }
         let sessionID = UUID().uuidString.lowercased()
         let folder = state.copy.map { Rehearsal.folder(forCard: card.cwd, projectRoot: project.root, copy: $0) }
@@ -1397,7 +1400,14 @@ final class FlowController: ToolHost {
     /// rehearsal's cost has been read from their transcripts.
     private func retireStandIns() {
         standIns.values.forEach { $0.terminate() }
+        standIns.keys.forEach(retireStandInSecret(forCard:))
         standIns.removeAll()
+    }
+
+    /// A stand-in that has been told to quit can still have a hook or a hand-off on its way. Every stand-in of a card
+    /// has the same key, so its secret goes, and what it sends after is refused rather than taken as the next one's.
+    private func retireStandInSecret(forCard id: String) {
+        services.retireCredential(for: "\(flow.id)/\(Rehearsal.standInKey(for: id))")
     }
 
     /// Forgets the stand-ins of a rehearsal that has been costed, or was never going to be.
@@ -2192,7 +2202,9 @@ final class FlowController: ToolHost {
                 leftInRealFolders.forEach { Transcripts.removeSession($0) }
             }
         }
-        guard ended.ownsCopy, let copy = ended.copy, let id = ended.runID else { return }
+        guard ended.ownsCopy, let id = ended.runID else { return }
+        // The worktree itself, which `copy` is a subfolder of for a project in a subfolder of its repository.
+        let copy = rehearsalsFolder.appendingPathComponent(id, isDirectory: true)
         let root = project.root
         // Claude Code names a transcripts folder after its folder with links followed, so that is read while the copy is there.
         let copyPath = Self.realPath(copy.path)
@@ -2217,6 +2229,8 @@ final class FlowController: ToolHost {
     /// start meanwhile. A copy another copy of the app is using is newer than a day unless it has been going that long.
     private func sweepLeftoverRehearsals() {
         let root = project.root
+        // Once a launch for each project: what a crash left is more than a day old, and every flow shares the folder.
+        guard Self.sweptProjects.insert(root.standardizedFileURL.path).inserted else { return }
         let folder = rehearsalsFolder
         let isInUse: @Sendable (String) async -> Bool = { id in await MainActor.run { FlowController.copiesInUse.contains(id) } }
         Task.detached(priority: .utility) {
@@ -2329,7 +2343,7 @@ final class FlowController: ToolHost {
         }
         // And a Delay passes the message on at once.
         if rehearsal != nil, hold.kind == .delay {
-            append(Rehearsal.delayLine(cardName: card.name, minutes: Int(DelayTime.wait(for: card).components.seconds / 60)))
+            append(Rehearsal.delayLine(cardName: card.name, minutes: DelayTime.minutes(for: card)))
             holds.append(pending)
             return resolve(pending.id, port: "out", text: nil)
         }

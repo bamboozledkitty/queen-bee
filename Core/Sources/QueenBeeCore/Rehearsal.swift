@@ -127,6 +127,23 @@ public enum Rehearsal {
     /// An End card's save in a rehearsal of a project outside git, which has no copy to save into.
     public static let readOnlySaveLine = "a rehearsal outside git saves nothing"
 
+    /// Why a rehearsal didn't begin when the person's uncommitted changes couldn't be copied in, with what git said.
+    public static func uncommittedRefusal(_ gitSaid: String) -> String {
+        let said = gitSaid.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "Your uncommitted changes couldn't be copied in, so the rehearsal would have tried an older version."
+            + " Finish or undo a merge that is part-way, then rehearse again." + (said.isEmpty ? "" : " Git said: \(said)")
+    }
+
+    /// The folder in a rehearsal's copy that stands for where the flow works. A copy is of the whole repository, so a
+    /// project in a subfolder of its repository works in that subfolder of the copy. `subfolder` is what
+    /// `git rev-parse --show-prefix` printed: empty at the repository's top, else the path with a "/" on the end.
+    /// Nil for one that would lead out of the copy.
+    public static func workFolder(inCopy copy: URL, subfolder: String) -> URL? {
+        let parts = subfolder.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "/").map(String.init)
+        guard !parts.contains(where: { $0 == ".." || $0 == "." }) else { return nil }
+        return parts.reduce(copy) { $0.appendingPathComponent($1, isDirectory: true) }
+    }
+
     public static func branch(forRun id: String) -> String { branchPrefix + id }
     public static func isRehearsalBranch(_ name: String) -> Bool { name.hasPrefix(branchPrefix) }
 

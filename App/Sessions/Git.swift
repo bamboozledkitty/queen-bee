@@ -102,14 +102,19 @@ nonisolated enum Git {
 
     /// Makes a throwaway copy of `source`, where a flow works, for the rehearsal `runID`: a worktree on a new
     /// branch at `source`'s current commit, in `folder`, the project's rehearsals folder, with `source`'s
-    /// uncommitted changes, tracked and untracked but not ignored, copied in. The copy's path, or what went wrong.
-    /// A copy that went wrong part-way is removed.
+    /// uncommitted changes, tracked and untracked but not ignored, copied in. The folder in the copy that stands for
+    /// `source`, or what went wrong. A worktree is of the whole repository, so for a `source` in a subfolder of its
+    /// repository that is the same subfolder of the copy. A copy that went wrong part-way is removed.
     /// Off the main actor, since copying untracked files can take a while.
     @concurrent
     nonisolated static func makeRehearsalCopy(of source: URL, runID: String, in folder: URL) async -> Result<URL, RehearsalCopyError> {
         let copy = folder.appendingPathComponent(runID, isDirectory: true)
         // Ignored before anything is copied, as the copy can sit inside `source` itself: no rehearsal copies another.
         makeIgnoredFolder(folder)
+        let prefix = await run(["rev-parse", "--show-prefix"], in: source)
+        guard prefix.ok, let work = Rehearsal.workFolder(inCopy: copy, subfolder: prefix.output) else {
+            return .failure(.init(prefix.error.isEmpty ? "git couldn't say where the project is in its repository." : prefix.error))
+        }
         let branch = Rehearsal.branch(forRun: runID)
         let made = await run(["worktree", "add", "-b", branch, copy.path, "HEAD"], in: source)
         guard made.ok else {
@@ -118,23 +123,28 @@ nonisolated enum Git {
             return .failure(.init(made.error.isEmpty ? "git couldn't make the copy." : made.error))
         }
         // Tracked changes: a stash commit made without touching the working tree or the stash list, applied in the copy.
+        // When git can't make one, as in a merge that is part-way, the copy would be without them, so it isn't made.
         let stash = await run(["stash", "create"], in: source)
-        if stash.ok, !stash.output.isEmpty {
+        guard stash.ok else {
+            await removeRehearsalCopy(copy, runID: runID, from: source)
+            return .failure(.init(Rehearsal.uncommittedRefusal(stash.error)))
+        }
+        if !stash.output.isEmpty {
             let applied = await run(["stash", "apply", stash.output], in: copy)
             if !applied.ok {
                 await removeRehearsalCopy(copy, runID: runID, from: source)
-                return .failure(.init("Your uncommitted changes couldn't be copied in: \(applied.error)"))
+                return .failure(.init(Rehearsal.uncommittedRefusal(applied.error)))
             }
         }
-        // Untracked files that git doesn't ignore.
+        // Untracked files that git doesn't ignore, which git names from `source`, wherever it is in the repository.
         let untracked = await run(["ls-files", "--others", "--exclude-standard", "-z"], in: source)
         for path in untracked.output.split(separator: "\0").map(String.init) where !path.isEmpty {
             let from = source.appendingPathComponent(path)
-            let to = copy.appendingPathComponent(path)
+            let to = work.appendingPathComponent(path)
             try? FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? FileManager.default.copyItem(at: from, to: to)
         }
-        return .success(copy)
+        return .success(work)
     }
 
     /// Removes a rehearsal's copy and its branch. Nothing in it is kept.

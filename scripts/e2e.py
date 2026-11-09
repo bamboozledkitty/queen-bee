@@ -5109,6 +5109,14 @@ REHEARSE = flow("Rehearse", [
     card("end", "Done", 1480, 0),
 ], [("Start", "out", "Writer", 3), ("Writer", "out", "Echo", 3), ("Echo", "pass", "Wait", 3), ("Wait", "out", "Done", 3)])
 
+# No agents, so rehearsing it costs nothing. Its project is a subfolder of a git repository, as in a monorepo, and its
+# Script card runs in rehearsals, to say where it ran and what it found there.
+MONOREPO = flow("Monorepo", [
+    card("start", "Start", 0, 0, command="look around"),
+    card("script", "Look", 312, 0, command="pwd; cat notes.md; cat tracked.txt", runsInRehearsals=True),
+    card("end", "Done", 624, 0),
+], [("Start", "out", "Look", 3), ("Look", "pass", "Done", 3)])
+
 INNER = flow("Inner", [
     card("start", "Input", 0, 0, command="try me"),
     card("script", "Loud", 312, 0, command="tr a-z A-Z"),
@@ -5367,6 +5375,10 @@ def scenario_gates(app):
         rehearsal_in_a_copy(app)
     except Exception as e:
         check("the rehearsal of a flow with an agent ran to the end", False, f"{type(e).__name__}: {e}"[:500])
+    try:
+        rehearsal_in_a_subfolder(app)
+    except Exception as e:
+        check("the rehearsal of a project in a subfolder of its repository ran to the end", False, f"{type(e).__name__}: {e}"[:500])
 
 
 def history_record(app, fid, run_id):
@@ -5540,13 +5552,16 @@ def rehearsal_in_a_copy(app):
         began = time.time()
         r = app.op(rid, "rehearse")
         check("a flow with an agent can be rehearsed", r.get("began") is True, str(r))
-        copy, copy_there, stand_in, stand_ins = None, False, False, []
+        copy, copy_there, stand_in, stand_ins, old_secret = None, False, False, [], None
         deadline = time.time() + 240
         while time.time() < deadline:
             s = app.state(rid)
             if s["copy"] and copy is None:
                 copy, copy_there = s["copy"], os.path.isdir(s["copy"])
             stand_in = stand_in or (s["rehearsing"] and s["sessions"]["Writer"]["standIn"] is True)
+            # What the stand-in's helper sends the app with, while it works: once it has quit, that is refused.
+            if stand_in and old_secret is None and s["rehearsing"]:
+                old_secret = app.op(rid, "secret", card="Writer", standIn=True).get("secret")
             stand_ins = stand_ins or s["standIns"]
             if not s["isRunning"] and len(s["runs"]) > before:
                 break
@@ -5572,6 +5587,14 @@ def rehearsal_in_a_copy(app):
               f"{took:.0f}s {s['log'][mark:]}")
         check("the Writer's real conversation isn't touched", settled_size() == size and s["sessions"]["Writer"]["realSession"]["state"] == "idle",
               f"{size} then {os.path.getsize(transcript)}")
+        # A stand-in that has quit can still have something on its way. The next rehearsal's stand-in has the same key,
+        # so what the old one sends must not be taken as the new one's.
+        late = app.op(rid, "wire", kind="may-send", secret=old_secret or "", payload={"to": "Writer"})
+        routed = app.op(rid, "wire", kind="route", secret=old_secret or "", payload={"answer": "a late reply"})
+        check("what a stand-in sends once it has quit is refused, and hands nothing on",
+              old_secret is not None and late.get("allowed") is False and late.get("reason") == "This session has ended."
+              and routed.get("deliveries") == [] and app.op(rid, "secret", card="Writer", standIn=True).get("secret") != old_secret,
+              f"{old_secret is not None} {late} {routed}")
 
         # What the stand-in used is in the rehearsal's record, under the Writer's card.
         record, deadline = None, time.time() + 25
@@ -5615,6 +5638,110 @@ def rehearsal_in_a_copy(app):
         # app as its canvas catches up, which is a bug of its own, not a rehearsal's.
         app.op(GATES["id"], "select")
         app.op("app", "remote-project", path=repo, add=False)
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def rehearsal_in_a_subfolder(app):
+    """A rehearsal of Monorepo, whose project is a subfolder of a git repository: its copy is of the whole repository,
+    and the flow works in the same subfolder of it, with the person's uncommitted changes and untracked files where
+    they are. Then, with a merge part-way, a rehearsal that can't copy those changes in doesn't begin, and leaves nothing."""
+    print("        a rehearsal of a project in a subfolder of its git repository", flush=True)
+    fid = MONOREPO["id"]
+    repo = os.path.join(app.project, "rehearsal-mono")
+    project = os.path.join(repo, "app")
+    os.makedirs(project)
+    commit = ["-c", "user.name=Queen Bee test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q"]
+    try:
+        with open(os.path.join(project, "tracked.txt"), "w") as f:
+            f.write("committed\n")
+        made = [git_in(repo, "init", "-q", "-b", "main"), git_in(repo, "add", "app/tracked.txt"), git_in(repo, *commit, "-m", "one")]
+        if not check("a git repository with the project in a subfolder is made", all(m.returncode == 0 for m in made),
+                     " ".join(m.stderr.strip() for m in made)[:300]):
+            return
+        # A change to a committed file, and a file git hasn't been told about, neither of them committed.
+        with open(os.path.join(project, "tracked.txt"), "w") as f:
+            f.write("edited\n")
+        with open(os.path.join(project, "notes.md"), "w") as f:
+            f.write("an untracked note\n")
+        write(project, 0, MONOREPO)
+        # What a crash left: a copy's folder made long ago, which goes when the project opens, and one made just now,
+        # which can be another copy of the app's rehearsal, and stays.
+        rehearsals = os.path.join(project, ".queenbee", "rehearsals")
+        old, young = os.path.join(rehearsals, "left-by-a-crash"), os.path.join(rehearsals, "made-just-now")
+        os.makedirs(old)
+        os.makedirs(young)
+        subprocess.run(["SetFile", "-d", "01/01/2020 00:00:00", old], check=True)
+        app.op("app", "remote-project", path=project, add=True)
+        deadline = time.time() + 30
+        while "sessions" not in app.state(fid):
+            if time.time() > deadline:
+                raise RuntimeError("the app never loaded the flow Monorepo")
+            time.sleep(0.5)
+        app.op(fid, "select")
+        deadline = time.time() + 15
+        while time.time() < deadline and os.path.exists(old):
+            time.sleep(0.5)
+        check("a rehearsal copy a crash left long ago goes when the project's flow opens, and a new one stays",
+              not os.path.exists(old) and os.path.isdir(young), str(os.listdir(rehearsals)))
+        # The project is looked at once a launch, not each time one of its flows is picked.
+        os.makedirs(old)
+        subprocess.run(["SetFile", "-d", "01/01/2020 00:00:00", old], check=True)
+        app.op(GATES["id"], "select")
+        app.op(fid, "select")
+        time.sleep(4)
+        check("and it is looked for once a launch, not each time a flow is picked", os.path.isdir(old), str(os.listdir(rehearsals)))
+        shutil.rmtree(old)
+        shutil.rmtree(young)
+
+        r = app.op(fid, "rehearse")
+        check("a project in a subfolder of its repository can be rehearsed", r.get("began") is True, str(r))
+        held(app, fid, "Look", timeout=60)
+        app.op(fid, "hold", card="Look", answer="allow")
+        s = app.wait(fid, lambda s: not s["isRunning"], 60, "the rehearsal to end")
+        lines = s["results"].get("Done", "").splitlines()
+        where = lines[0] if lines else ""
+        rehearsals = os.path.realpath(os.path.join(project, ".queenbee", "rehearsals"))
+        check("its script ran in the project's own subfolder of the copy",
+              os.path.realpath(where).startswith(rehearsals + os.sep) and os.path.basename(where) == "app", str(lines))
+        check("with the untracked file in that subfolder, and the uncommitted change",
+              "an untracked note" in lines and "edited" in lines, str(lines))
+        deadline = time.time() + 20
+        while time.time() < deadline and (git_in(repo, "branch", "--list", "queenbee-rehearsal-*").stdout.strip()
+                                          or "queenbee-rehearsal-" in git_in(repo, "worktree", "list", "--porcelain").stdout):
+            time.sleep(1)
+        check("and its copy of the whole repository goes, with its branch",
+              not git_in(repo, "branch", "--list", "queenbee-rehearsal-*").stdout.strip()
+              and "queenbee-rehearsal-" not in git_in(repo, "worktree", "list", "--porcelain").stdout
+              and os.listdir(rehearsals) == [".gitignore"], str(os.listdir(rehearsals)))
+
+        # A merge stopped part-way on a conflict: git can't put the uncommitted state into a copy.
+        steps = [git_in(repo, "add", "-A", "app/tracked.txt", "app/notes.md"), git_in(repo, *commit, "-m", "two"),
+                 git_in(repo, "checkout", "-q", "-b", "other")]
+        with open(os.path.join(project, "tracked.txt"), "w") as f:
+            f.write("theirs\n")
+        steps += [git_in(repo, *commit, "-am", "theirs"), git_in(repo, "checkout", "-q", "main")]
+        with open(os.path.join(project, "tracked.txt"), "w") as f:
+            f.write("ours\n")
+        steps += [git_in(repo, *commit, "-am", "ours")]
+        merged = git_in(repo, "-c", "user.name=Queen Bee test", "-c", "user.email=test@example.invalid", "merge", "other")
+        if not check("a merge stopped on a conflict is set up", all(m.returncode == 0 for m in steps) and merged.returncode != 0
+                     and "UU" in git_in(repo, "status", "--porcelain").stdout, " ".join(m.stderr.strip() for m in steps + [merged])[:300]):
+            return
+        before = len(app.state(fid)["runs"])
+        r = app.op(fid, "rehearse")
+        check("then a rehearsal doesn't begin, and says the uncommitted changes couldn't be copied in",
+              r.get("began") is False and "Your uncommitted changes couldn't be copied in" in str(r.get("status")), str(r))
+        time.sleep(2)
+        check("and leaves no copy, branch or run behind",
+              not git_in(repo, "branch", "--list", "queenbee-rehearsal-*").stdout.strip()
+              and "queenbee-rehearsal-" not in git_in(repo, "worktree", "list", "--porcelain").stdout
+              and os.listdir(rehearsals) == [".gitignore"] and len(app.state(fid)["runs"]) == before and not app.state(fid)["isRunning"],
+              f"{os.listdir(rehearsals)} {git_in(repo, 'branch').stdout!r}")
+    finally:
+        app.op(fid, "close")
+        # Back to the gates flow before the project goes: see `rehearsal_in_a_copy`.
+        app.op(GATES["id"], "select")
+        app.op("app", "remote-project", path=project, add=False)
         shutil.rmtree(repo, ignore_errors=True)
 
 

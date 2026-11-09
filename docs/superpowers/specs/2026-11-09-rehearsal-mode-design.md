@@ -108,7 +108,8 @@ A flow has one run at a time.
 - `FlowController.start(...)` takes `rehearsal: Bool`, and so does `runToEnd`, so sub-flows rehearse too.
 - **The copy:**
   - `Git` makes a worktree of the flow's workplace at its current commit, in the project's `.queenbee/rehearsals` folder, with a branch named `queenbee-rehearsal-<run id>`. The folder has a `.gitignore` of `*`, as `.queenbee/worktrees` does. It is inside the project because Claude Code asks whether to trust a folder it hasn't seen, which would stop every stand-in, and a folder inside one the person trusts doesn't ask.
-  - Uncommitted changes, both tracked and untracked but not ignored, are copied in.
+  - Uncommitted changes, both tracked and untracked but not ignored, are copied in. When git can't take them, as in a merge that is part-way, the rehearsal doesn't begin and says why, rather than try an older version.
+  - A worktree is of the whole repository, so a project in a subfolder of its repository works in the same subfolder of the copy.
   - When the rehearsal ends, however it ends, the worktree and its branch are removed.
   - On launch, the app removes any `queenbee-rehearsal-*` worktrees and branches a crash left behind, once they are more than a day old. A younger one can be another flow's rehearsal, or another copy of the app's, such as Queen Bee Dev beside an installed copy. Each is checked again just before it goes, in case a rehearsal began meanwhile.
 - **Read-only:** in a folder that isn't in git, stand-ins start with `--permission-mode plan`, and no Script card runs for real.
@@ -117,7 +118,7 @@ A flow has one run at a time.
   - Their ids are never written to `Card.sessionID` or the flow file.
   - `--resume` and the carry-over of conversations never apply to them.
   - The hand-off code sends a card's messages to its stand-in during a rehearsal.
-  - When the rehearsal ends, the stand-ins quit.
+  - When the rehearsal ends, the stand-ins quit. Each one's secret for the app's socket ends with it, so a hook or hand-off still on its way is refused, not taken as the next rehearsal's stand-in's, which has the same key.
 - **Cost:** `UsageReader` reads the stand-ins' transcripts from the copy's folder, so the spending limit and the cost are right. The transcripts are deleted with the copy, once the cost has been read. In a read-only rehearsal there is no copy, so once the cost has been read, each stand-in's own transcript and the folder Claude Code keeps beside it are deleted by its session id, and nothing else, so it never shows among the person's conversations.
 - **Showing a stand-in:** the card view shows the stand-in's terminal and the "Rehearsing on Haiku" strip while one exists.
 - **Rehearse in the window:** the Run menu gains Rehearse, the Runs page gains the pill, and the Run pill gains its label. All of them come from the design system.

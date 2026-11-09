@@ -150,6 +150,23 @@ import Testing
         #expect(off.problem == nil)
         #expect(off.cardPatch.runsInRehearsals == false)
     }
+
+    @Test func aProjectInASubfolderOfItsRepositoryWorksInThatSubfolderOfTheCopy() {
+        let copy = URL(fileURLWithPath: "/p/.queenbee/rehearsals/id", isDirectory: true)
+        #expect(Rehearsal.workFolder(inCopy: copy, subfolder: "")?.path == "/p/.queenbee/rehearsals/id")
+        #expect(Rehearsal.workFolder(inCopy: copy, subfolder: "\n")?.path == "/p/.queenbee/rehearsals/id")
+        #expect(Rehearsal.workFolder(inCopy: copy, subfolder: "apps/web/\n")?.path == "/p/.queenbee/rehearsals/id/apps/web")
+        // Never out of the copy.
+        #expect(Rehearsal.workFolder(inCopy: copy, subfolder: "../") == nil)
+        #expect(Rehearsal.workFolder(inCopy: copy, subfolder: "a/../../b/") == nil)
+    }
+
+    @Test func uncommittedChangesThatCantBeCopiedSayWhy() {
+        let line = Rehearsal.uncommittedRefusal("Cannot save the current index state\n")
+        #expect(line.hasPrefix("Your uncommitted changes couldn't be copied in"))
+        #expect(line.hasSuffix("Git said: Cannot save the current index state"))
+        #expect(!Rehearsal.uncommittedRefusal("  ").contains("Git said"))
+    }
 }
 
 extension Array where Element == String {

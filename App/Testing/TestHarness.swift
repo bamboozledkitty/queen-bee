@@ -236,6 +236,15 @@ enum TestHarness {
             guard let cardID else { return ["error": "browserDoor needs card"] }
             let secret = AppServices.shared.credential(for: "\(controller.flow.id)/\(cardID)")
             return await AppServices.shared.handle(WireRequest(kind: "browser-mcp", session: secret, payload: payload["message"] ?? [:]))
+        case "secret":
+            // The secret a card's session, or with `standIn` its stand-in's, sends to the app, as its helper would.
+            guard let cardID else { return ["error": "secret needs card"] }
+            let key = payload["standIn"]?.boolValue == true ? Rehearsal.standInKey(for: cardID) : cardID
+            return ["secret": .string(AppServices.shared.credential(for: "\(controller.flow.id)/\(key)"))]
+        case "wire":
+            // A request to the app with the secret given, as a session's helper sends it: a hook, a route or may-send.
+            guard let kind = payload["kind"]?.stringValue, let secret = payload["secret"]?.stringValue else { return ["error": "wire needs kind and secret"] }
+            return await AppServices.shared.handle(WireRequest(kind: kind, session: secret, payload: payload["payload"] ?? [:]))
         case "browserClick":
             // A click by the person in a card's browser half.
             guard let cardID, let tab = controller.browserTab(forCard: cardID) else { return ["error": "that card has no browser"] }
