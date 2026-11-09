@@ -214,42 +214,129 @@ private struct SubflowLine: View {
 }
 
 /// Stops in a row, joined by a line that is green as far as the run has come. Scrolls sideways when there are more
-/// than fit, and keeps the stop the run is at in view.
+/// than fit: the cut edges fade, arrows page along, and a count says how many stops are out of view. It keeps the
+/// stop the run is at in view.
 private struct StopsRow: View {
     let stops: [RunProgress.Stop]
     let selectedID: String?
     let compact: Bool
     let pick: (String) -> Void
 
+    @State private var position = ScrollPosition(idType: String.self)
+    @State private var view = Seen()
+
+    /// Where the row is scrolled to, how wide its stops are together and how wide the part in view is.
+    private struct Seen: Equatable {
+        var offset: CGFloat = 0
+        var content: CGFloat = 0
+        var width: CGFloat = 0
+    }
+
     private var liveID: String? { stops.first { [.live, .needsYou, .failed, .endedHere].contains($0.state) }?.id }
+    /// The furthest stop the run reached: the line is green up to it, with no break, whatever went on in between.
+    private var furthest: Int { stops.lastIndex { $0.state != .notYet && $0.state != .skipped } ?? -1 }
+    private var column: CGFloat { compact ? DS.Size.stopColumn * 0.8 : DS.Size.stopColumn }
+    private var size: CGFloat { compact ? DS.Size.stop * 0.75 : DS.Size.stop }
+    private var top: CGFloat { compact ? 0 : DS.Space.l }
+
+    /// Stops not wholly in view before and after the part that is.
+    private var before: Int { max(0, Int(((view.offset - 0.5) / column).rounded(.up))) }
+    private var after: Int { max(0, Int(((view.content - view.offset - view.width - 0.5) / column).rounded(.up))) }
 
     var body: some View {
-        ScrollViewReader { reader in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
-                        StopView(stop: stop, isFirst: index == 0, isLast: index == stops.count - 1,
-                                 previous: index > 0 ? stops[index - 1].state : nil,
-                                 isSelected: stop.id == selectedID, compact: compact) { pick(stop.id) }
-                            .id(stop.id)
-                    }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
+                    StopView(stop: stop, lineIn: index == 0 ? nil : index <= furthest,
+                             lineOut: index == stops.count - 1 ? nil : index < furthest,
+                             isSelected: stop.id == selectedID, compact: compact) { pick(stop.id) }
+                        .id(stop.id)
                 }
-                .padding(.top, compact ? 0 : DS.Space.l)
             }
-            .onAppear { if let liveID { reader.scrollTo(liveID, anchor: .center) } }
-            .onChange(of: liveID) { _, id in
-                guard let id else { return }
-                withAnimation(Theme.Motion.standard) { reader.scrollTo(id, anchor: .center) }
+            .scrollTargetLayout()
+            .padding(.top, top)
+        }
+        .scrollPosition($position)
+        .onScrollGeometryChange(for: Seen.self) { geometry in
+            Seen(offset: geometry.contentOffset.x, content: geometry.contentSize.width, width: geometry.containerSize.width)
+        } action: { _, seen in view = seen }
+        .mask { edges }
+        .overlay(alignment: .topLeading) { if before > 0 { arrow(back: true, count: before) } }
+        .overlay(alignment: .topTrailing) { if after > 0 { arrow(back: false, count: after) } }
+        .dsAnimation(DS.Motion.quick, value: before > 0)
+        .dsAnimation(DS.Motion.quick, value: after > 0)
+        .onAppear { if let liveID { position.scrollTo(id: liveID, anchor: .center) } }
+        .onChange(of: liveID) { _, id in
+            guard let id else { return }
+            withAnimation(Theme.Motion.standard) { position.scrollTo(id: id, anchor: .center) }
+        }
+    }
+
+    /// Fades out the stops at an edge where more are out of view, and clears the very edge so the arrow and its
+    /// count stand on nothing. Only how see-through it is counts in a mask.
+    private var edges: some View {
+        let clear = DS.Size.lineFadeClear / DS.Size.lineFade
+        return HStack(spacing: 0) {
+            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .clear, location: clear), .init(color: .black, location: 1)],
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(width: before > 0 ? DS.Size.lineFade : 0)
+            Rectangle()
+            LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .clear, location: 1 - clear), .init(color: .clear, location: 1)],
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(width: after > 0 ? DS.Size.lineFade : 0)
+        }
+    }
+
+    /// A round button over the faded edge that pages along, and under it how many stops are that way.
+    private func arrow(back: Bool, count: Int) -> some View {
+        VStack(spacing: DS.Space.xxs) {
+            Button { page(back: back) } label: {
+                Image(systemName: back ? "chevron.left" : "chevron.right").dsIcon(DS.IconSize.xs, .semibold)
+            }
+            .buttonStyle(PageButtonStyle())
+            .help(back ? "Show the stops before" : "Show the stops after")
+            .accessibilityLabel(back ? "Earlier stops, \(count) out of view" : "Later stops, \(count) out of view")
+            if !compact {
+                Text(back ? "\(count) earlier" : "\(count) more")
+                    .textRole(.footnote)
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.textMuted.color)
+                    .fixedSize()
             }
         }
+        .padding(.top, top + size / 2 - DS.Size.control / 2)
+        .transition(.opacity)
+    }
+
+    /// Moves along by what's in view, less one stop, so the stop at the edge stays in sight.
+    private func page(back: Bool) {
+        let step = max(column, view.width - column)
+        let x = min(max(0, view.offset + (back ? -step : step)), max(0, view.content - view.width))
+        withAnimation(Theme.Motion.standard) { position.scrollTo(x: x) }
+    }
+}
+
+/// The round arrow that pages a run's line along.
+private struct PageButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Palette.text.color)
+            .frame(width: DS.Size.control, height: DS.Size.control)
+            .background((isHovered || configuration.isPressed ? Palette.hover : Palette.overlay).color, in: Circle())
+            .overlay(Circle().strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.hairline))
+            .contentShape(Circle())
+            .onHover { isHovered = $0 }
+            .dsAnimation(DS.Motion.quick, value: isHovered)
     }
 }
 
 private struct StopView: View {
     let stop: RunProgress.Stop
-    let isFirst: Bool
-    let isLast: Bool
-    let previous: RunProgress.StopState?
+    /// Whether the line coming in and going out is green; nil where there is no line, at the ends.
+    let lineIn: Bool?
+    let lineOut: Bool?
     let isSelected: Bool
     let compact: Bool
     let pick: () -> Void
@@ -262,20 +349,22 @@ private struct StopView: View {
             VStack(spacing: DS.Space.xs) {
                 ZStack {
                     HStack(spacing: 0) {
-                        Rectangle().fill((reached ? Palette.pass : Palette.hairlineStrong).color).opacity(isFirst ? 0 : 1)
-                        Rectangle().fill((stop.state == .done ? Palette.pass : Palette.hairlineStrong).color).opacity(isLast ? 0 : 1)
+                        Rectangle().fill((lineIn == true ? Palette.pass : Palette.hairlineStrong).color).opacity(lineIn == nil ? 0 : 1)
+                        Rectangle().fill((lineOut == true ? Palette.pass : Palette.hairlineStrong).color).opacity(lineOut == nil ? 0 : 1)
                     }
                     .frame(height: DS.Stroke.track)
                     dot
                 }
                 .frame(height: size)
                 .overlay(alignment: .top) { if !compact, let loop = stop.loopBack { loopMark(loop) } }
+                // Two lines, so names that share a start or an end still read differently.
                 Text(stop.name)
                     .textRole(compact ? .footnote : .caption)
                     .fontWeight(reached && stop.state != .done ? .semibold : .regular)
                     .foregroundStyle((stop.state == .notYet || stop.state == .skipped ? Palette.textFaint : Palette.text).color)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(compact ? 1 : 2)
+                    .truncationMode(compact ? .middle : .tail)
                 if !compact, let note {
                     Text(note)
                         .textRole(.footnote)
@@ -289,6 +378,7 @@ private struct StopView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(stop.name)
         .accessibilityLabel("\(stop.name): \(note ?? stop.state.rawValue)")
     }
 
