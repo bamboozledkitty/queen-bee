@@ -6,6 +6,8 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-11-09
+
 ### Changed
 
 - When a run's line of stops is longer than its panel, the cut edges fade, round arrows page along, and a count says how many stops are out of view, such as "5 more". Stop names wrap to two lines, so two names that start or end alike still read differently, and pointing at a stop shows its whole name.
@@ -357,7 +359,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.8.0...v0.9.0
