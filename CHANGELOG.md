@@ -12,7 +12,7 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Fixed
 
-- The green on a run's line now runs unbroken up to the furthest stop the run reached. Before, it broke off between two stops the run was at together.
+- The green on a run's line is now all one colour between two stops: green where the run reached both, grey otherwise. Before, the line between two stops the run was at together was half grey and half green, and a stop the run hadn't reached could sit on green.
 
 ## [0.10.1] - 2026-11-08
 

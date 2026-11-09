@@ -213,9 +213,9 @@ private struct SubflowLine: View {
     }
 }
 
-/// Stops in a row, joined by a line that is green as far as the run has come. Scrolls sideways when there are more
-/// than fit: the cut edges fade, arrows page along, and a count says how many stops are out of view. It keeps the
-/// stop the run is at in view.
+/// Stops in a row, joined by a line that is green between stops the run reached. Scrolls sideways when there are
+/// more than fit: the cut edges fade, arrows page along, and a count says how many stops are out of view. It keeps
+/// the stop the run is at in view.
 private struct StopsRow: View {
     let stops: [RunProgress.Stop]
     let selectedID: String?
@@ -223,32 +223,35 @@ private struct StopsRow: View {
     let pick: (String) -> Void
 
     @State private var position = ScrollPosition(idType: String.self)
-    @State private var view = Seen()
+    /// How many stops are out of view each way. Only this redraws the row as it scrolls.
+    @State private var out = RunLine.OutOfView()
+    @State private var spot = Spot()
+    @Environment(\.density) private var density
 
-    /// Where the row is scrolled to, how wide its stops are together and how wide the part in view is.
-    private struct Seen: Equatable {
+    /// Where the row is scrolled to, kept for the arrows without redrawing the row at every step of a scroll.
+    private final class Spot {
         var offset: CGFloat = 0
         var content: CGFloat = 0
         var width: CGFloat = 0
     }
 
+    private struct Seen: Equatable {
+        var offset: CGFloat
+        var content: CGFloat
+        var width: CGFloat
+    }
+
     private var liveID: String? { stops.first { [.live, .needsYou, .failed, .endedHere].contains($0.state) }?.id }
-    /// The furthest stop the run reached: the line is green up to it, with no break, whatever went on in between.
-    private var furthest: Int { stops.lastIndex { $0.state != .notYet && $0.state != .skipped } ?? -1 }
-    private var column: CGFloat { compact ? DS.Size.stopColumn * 0.8 : DS.Size.stopColumn }
-    private var size: CGFloat { compact ? DS.Size.stop * 0.75 : DS.Size.stop }
     private var top: CGFloat { compact ? 0 : DS.Space.l }
 
-    /// Stops not wholly in view before and after the part that is.
-    private var before: Int { max(0, Int(((view.offset - 0.5) / column).rounded(.up))) }
-    private var after: Int { max(0, Int(((view.content - view.offset - view.width - 0.5) / column).rounded(.up))) }
-
     var body: some View {
+        let green = RunLine.green(stops)
+        let column = StopView.column(compact: compact)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
-                    StopView(stop: stop, lineIn: index == 0 ? nil : index <= furthest,
-                             lineOut: index == stops.count - 1 ? nil : index < furthest,
+                    StopView(stop: stop, lineIn: index == 0 ? nil : green[index - 1],
+                             lineOut: index == stops.count - 1 ? nil : green[index],
                              isSelected: stop.id == selectedID, compact: compact) { pick(stop.id) }
                         .id(stop.id)
                 }
@@ -259,12 +262,18 @@ private struct StopsRow: View {
         .scrollPosition($position)
         .onScrollGeometryChange(for: Seen.self) { geometry in
             Seen(offset: geometry.contentOffset.x, content: geometry.contentSize.width, width: geometry.containerSize.width)
-        } action: { _, seen in view = seen }
-        .mask { edges }
-        .overlay(alignment: .topLeading) { if before > 0 { arrow(back: true, count: before) } }
-        .overlay(alignment: .topTrailing) { if after > 0 { arrow(back: false, count: after) } }
-        .dsAnimation(DS.Motion.quick, value: before > 0)
-        .dsAnimation(DS.Motion.quick, value: after > 0)
+        } action: { _, seen in
+            spot.offset = seen.offset; spot.content = seen.content; spot.width = seen.width
+        }
+        .onScrollGeometryChange(for: RunLine.OutOfView.self) { geometry in
+            RunLine.OutOfView(offset: geometry.contentOffset.x, content: geometry.contentSize.width,
+                              width: geometry.containerSize.width, column: column)
+        } action: { _, seen in out = seen }
+        .edgeFade(leading: out.before > 0, trailing: out.after > 0)
+        .overlay(alignment: .leading) { if out.before > 0 { edge(back: true, count: out.before) } }
+        .overlay(alignment: .trailing) { if out.after > 0 { edge(back: false, count: out.after) } }
+        .dsAnimation(DS.Motion.quick, value: out.before > 0)
+        .dsAnimation(DS.Motion.quick, value: out.after > 0)
         .onAppear { if let liveID { position.scrollTo(id: liveID, anchor: .center) } }
         .onChange(of: liveID) { _, id in
             guard let id else { return }
@@ -272,28 +281,16 @@ private struct StopsRow: View {
         }
     }
 
-    /// Fades out the stops at an edge where more are out of view, and clears the very edge so the arrow and its
-    /// count stand on nothing. Only how see-through it is counts in a mask.
-    private var edges: some View {
-        let clear = DS.Size.lineFadeClear / DS.Size.lineFade
-        return HStack(spacing: 0) {
-            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .clear, location: clear), .init(color: .black, location: 1)],
-                           startPoint: .leading, endPoint: .trailing)
-                .frame(width: before > 0 ? DS.Size.lineFade : 0)
-            Rectangle()
-            LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .clear, location: 1 - clear), .init(color: .clear, location: 1)],
-                           startPoint: .leading, endPoint: .trailing)
-                .frame(width: after > 0 ? DS.Size.lineFade : 0)
-        }
-    }
-
-    /// A round button over the faded edge that pages along, and under it how many stops are that way.
-    private func arrow(back: Bool, count: Int) -> some View {
-        VStack(spacing: DS.Space.xxs) {
+    /// The cleared strip at an edge with more out of view: a round arrow over the dots that pages along, and under
+    /// it how many stops are that way. The whole strip takes clicks, so none reaches a stop faded out beneath it.
+    private func edge(back: Bool, count: Int) -> some View {
+        let side = DSRoundButtonStyle.side(small: compact, density: density)
+        return VStack(spacing: DS.Space.xxs) {
             Button { page(back: back) } label: {
-                Image(systemName: back ? "chevron.left" : "chevron.right").dsIcon(DS.IconSize.xs, .semibold)
+                Image(systemName: back ? "chevron.left" : "chevron.right")
+                    .dsIcon(compact ? DS.IconSize.xxs : DS.IconSize.xs, .semibold)
             }
-            .buttonStyle(PageButtonStyle())
+            .buttonStyle(.dsRound(small: compact))
             .help(back ? "Show the stops before" : "Show the stops after")
             .accessibilityLabel(back ? "Earlier stops, \(count) out of view" : "Later stops, \(count) out of view")
             if !compact {
@@ -301,34 +298,25 @@ private struct StopsRow: View {
                     .textRole(.footnote)
                     .monospacedDigit()
                     .foregroundStyle(Palette.textMuted.color)
-                    .fixedSize()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
+            Spacer(minLength: 0)
         }
-        .padding(.top, top + size / 2 - DS.Size.control / 2)
+        .padding(.top, max(0, top + StopView.dot(compact: compact) / 2 - side / 2))
+        .frame(width: DS.Size.lineFadeClear)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture { page(back: back) }
         .transition(.opacity)
     }
 
     /// Moves along by what's in view, less one stop, so the stop at the edge stays in sight.
     private func page(back: Bool) {
-        let step = max(column, view.width - column)
-        let x = min(max(0, view.offset + (back ? -step : step)), max(0, view.content - view.width))
+        let column = StopView.column(compact: compact)
+        let step = max(column, spot.width - column)
+        let x = min(max(0, spot.offset + (back ? -step : step)), max(0, spot.content - spot.width))
         withAnimation(Theme.Motion.standard) { position.scrollTo(x: x) }
-    }
-}
-
-/// The round arrow that pages a run's line along.
-private struct PageButtonStyle: ButtonStyle {
-    @State private var isHovered = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(Palette.text.color)
-            .frame(width: DS.Size.control, height: DS.Size.control)
-            .background((isHovered || configuration.isPressed ? Palette.hover : Palette.overlay).color, in: Circle())
-            .overlay(Circle().strokeBorder(Palette.hairlineStrong.color, lineWidth: DS.Stroke.hairline))
-            .contentShape(Circle())
-            .onHover { isHovered = $0 }
-            .dsAnimation(DS.Motion.quick, value: isHovered)
     }
 }
 
@@ -341,8 +329,13 @@ private struct StopView: View {
     let compact: Bool
     let pick: () -> Void
 
-    private var size: CGFloat { compact ? DS.Size.stop * 0.75 : DS.Size.stop }
-    private var reached: Bool { stop.state != .notYet && stop.state != .skipped }
+    /// The room a stop takes, and how big its dot is, in a row of either size. The row counts what's out of view by
+    /// the first, and lines its arrows up with the second.
+    static func column(compact: Bool) -> CGFloat { compact ? DS.Size.stopColumn * 0.8 : DS.Size.stopColumn }
+    static func dot(compact: Bool) -> CGFloat { compact ? DS.Size.stop * 0.75 : DS.Size.stop }
+
+    private var size: CGFloat { Self.dot(compact: compact) }
+    private var reached: Bool { stop.isReached }
 
     var body: some View {
         Button(action: pick) {
@@ -374,7 +367,7 @@ private struct StopView: View {
                 }
                 if !compact, let items = stop.items, items.count <= 12 { ticks(items) }
             }
-            .frame(width: compact ? DS.Size.stopColumn * 0.8 : DS.Size.stopColumn)
+            .frame(width: Self.column(compact: compact))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
