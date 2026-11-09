@@ -88,4 +88,75 @@ nonisolated enum Git {
         let done = await run(arguments, in: root)
         return done.ok ? nil : (done.error.isEmpty ? "git couldn't make the worktree." : done.error)
     }
+
+    // MARK: Rehearsal copies
+
+    nonisolated struct RehearsalCopyError: Error, Sendable {
+        let text: String
+        init(_ text: String) { self.text = text }
+    }
+
+    /// Makes a throwaway copy of `source`, where a flow works, for the rehearsal `runID`: a worktree on a new
+    /// branch at `source`'s current commit, in `folder`, with `source`'s uncommitted changes, tracked and untracked
+    /// but not ignored, copied in. The copy's path, or what went wrong. A copy that went wrong part-way is removed.
+    /// Off the main actor, since copying untracked files can take a while.
+    @concurrent
+    nonisolated static func makeRehearsalCopy(of source: URL, runID: String, in folder: URL) async -> Result<URL, RehearsalCopyError> {
+        let copy = folder.appendingPathComponent(runID, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let branch = Rehearsal.branch(forRun: runID)
+        let made = await run(["worktree", "add", "-b", branch, copy.path, "HEAD"], in: source)
+        guard made.ok else {
+            // git can make the branch and then fail to fill the folder.
+            await removeRehearsalCopy(copy, runID: runID, from: source)
+            return .failure(.init(made.error.isEmpty ? "git couldn't make the copy." : made.error))
+        }
+        // Tracked changes: a stash commit made without touching the working tree or the stash list, applied in the copy.
+        let stash = await run(["stash", "create"], in: source)
+        if stash.ok, !stash.output.isEmpty {
+            let applied = await run(["stash", "apply", stash.output], in: copy)
+            if !applied.ok {
+                await removeRehearsalCopy(copy, runID: runID, from: source)
+                return .failure(.init("Your uncommitted changes couldn't be copied in: \(applied.error)"))
+            }
+        }
+        // Untracked files that git doesn't ignore.
+        let untracked = await run(["ls-files", "--others", "--exclude-standard", "-z"], in: source)
+        for path in untracked.output.split(separator: "\0").map(String.init) where !path.isEmpty {
+            let from = source.appendingPathComponent(path)
+            let to = copy.appendingPathComponent(path)
+            try? FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.copyItem(at: from, to: to)
+        }
+        return .success(copy)
+    }
+
+    /// Removes a rehearsal's copy and its branch. Nothing in it is kept.
+    nonisolated static func removeRehearsalCopy(_ copy: URL, runID: String, from root: URL) async {
+        _ = await run(["worktree", "remove", "--force", copy.path], in: root)
+        try? FileManager.default.removeItem(at: copy)
+        _ = await run(["worktree", "prune"], in: root)
+        _ = await run(["branch", "-D", Rehearsal.branch(forRun: runID)], in: root)
+    }
+
+    /// Removes the copies and branches of rehearsals a crash or a quit left behind, in the repository at `root`.
+    /// Only copies in `folder`, this app's own, are touched, and none whose id is in `inUse`: another flow of the
+    /// project can be rehearsing. A branch still open in a worktree is left, as git refuses to delete it.
+    nonisolated static func sweepRehearsalCopies(at root: URL, in folder: URL, keeping inUse: Set<String>) async {
+        guard let info = await info(at: root) else { return }
+        let ours = folder.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        func isOurs(_ path: String) -> Bool {
+            URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(ours)
+        }
+        func id(of branch: String) -> String { String(branch.dropFirst(Rehearsal.branchPrefix.count)) }
+        for worktree in info.worktrees {
+            guard let branch = worktree.branch, Rehearsal.isRehearsalBranch(branch), !inUse.contains(id(of: branch)),
+                  isOurs(worktree.path) else { continue }
+            _ = await run(["worktree", "remove", "--force", worktree.path], in: root)
+        }
+        _ = await run(["worktree", "prune"], in: root)
+        for branch in info.branches where Rehearsal.isRehearsalBranch(branch) && !inUse.contains(id(of: branch)) {
+            _ = await run(["branch", "-D", branch], in: root)
+        }
+    }
 }
