@@ -118,6 +118,8 @@ public enum Rehearsal {
     public static let noOrchestrator = "In a rehearsal, agents can't message the orchestrator. Answer from what you have."
     public static let turningOnRefusal = "Only the person can turn on “Runs in rehearsals”, in the card's settings on their Mac."
     public static let saveLine = "In a rehearsal this was saved in the throwaway copy, so nothing was saved for real"
+    /// An End card's save in a rehearsal of a project outside git, which has no copy to save into.
+    public static let readOnlySaveLine = "a rehearsal outside git saves nothing"
 
     public static func branch(forRun id: String) -> String { branchPrefix + id }
     public static func isRehearsalBranch(_ name: String) -> Bool { name.hasPrefix(branchPrefix) }

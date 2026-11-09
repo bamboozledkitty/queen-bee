@@ -40,6 +40,8 @@ nonisolated struct RunHistory: Codable, Sendable {
     /// The highest run number the flow has given, so numbers aren't reused after the log is cleared.
     /// Nil in a file from before it was kept.
     var lastRunNumber: Int?
+    /// The last real output of each Script card, by card id, for a rehearsal to pass on. Nil in older files.
+    var scriptOutputs: [String: String]?
 }
 
 /// One open flow: the graph, its sessions, and its runs. Every change to the graph goes
@@ -119,6 +121,29 @@ final class FlowController: ToolHost {
     /// The card whose "run from here" box is open in the settings panel.
     var runFromCardID: String?
     @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
+    /// A rehearsal going on: where it works, and whether this flow made that copy, or a flow above lent it.
+    struct RehearsalState {
+        var copy: URL?
+        var readOnly: Bool
+        var ownsCopy: Bool
+        /// The copy's own id, which names its folder and branch. Nil when there is no copy of this flow's own.
+        var runID: String? = nil
+    }
+    /// Set from the moment a rehearsal is ready to begin until it has ended and been tidied away.
+    private(set) var rehearsal: RehearsalState?
+    var isRehearsing: Bool { rehearsal != nil }
+    /// Where this run's scripts run and its End cards save: the rehearsal's copy, or where the flow works.
+    private var runRoot: URL { rehearsal?.copy ?? workRoot }
+    /// True while a rehearsal is being started, until it has begun or been turned down. A real run asked for then
+    /// waits for this, so that it can stop the rehearsal rather than run in its copy or be refused by it.
+    @ObservationIgnored private var rehearsalStarting = false
+    /// Real runs waiting for a rehearsal to finish starting.
+    @ObservationIgnored private var rehearsalStartWaiters: [CheckedContinuation<Void, Never>] = []
+    /// The ids of the rehearsal copies in use or being made, in every flow, so that a sweep for ones a crash left
+    /// behind leaves them alone. An id goes once its copy has been removed.
+    private static var copiesInUse: Set<String> = []
+    /// The last real output of each Script card, by card id, for a rehearsal to pass on.
+    @ObservationIgnored private var scriptOutputs: [String: String] = [:]
     /// The whole text of the messages in `messages` that are kept there cut short, by message id: what Retry and
     /// "run from here" give a card again.
     @ObservationIgnored private var wholeMessages: [UUID: String] = [:]
@@ -357,7 +382,8 @@ final class FlowController: ToolHost {
         // The flow's own agents change files too. A change during a run, or straight after
         // one this started, isn't a reason to start another. Nor is the app saving a flow,
         // or git doing its own housekeeping, which often land in the same batch as a real change.
-        guard !isRunning, Date().timeIntervalSince(lastFileFire) > 5, Date().timeIntervalSince(lastRunEnded) > 10,
+        // A rehearsal's agents work in its copy, so a change here during one is the person's, and a real run wins.
+        guard !isRunning || rehearsal != nil, Date().timeIntervalSince(lastFileFire) > 5, Date().timeIntervalSince(lastRunEnded) > 10,
               let path = paths.first(where: { !$0.contains("/.queenbee/") && !$0.contains("/.git/") }) else { return }
         lastFileFire = Date()
         // The watcher reports paths with links followed, so the project's folder is compared the same way.
@@ -376,7 +402,8 @@ final class FlowController: ToolHost {
             append("Skipped a run of \(card.name) (\(reason)): Claude Code wasn't ready yet")
             return
         }
-        if isRunning {
+        // A real run always wins over a rehearsal: `start` stops the rehearsal.
+        if isRunning, rehearsal == nil {
             append("Skipped a run of \(card.name) (\(reason)): a run was already going")
             return
         }
@@ -425,6 +452,7 @@ final class FlowController: ToolHost {
         wholeMessages = CarriedMessages.kept(wholeMessages, for: messages)
         runs = history.runs ?? []
         highestRunNumber = max(history.lastRunNumber ?? 0, runs.compactMap(\.number).max() ?? 0)
+        scriptOutputs = (history.scriptOutputs ?? [:]).filter { flow.card($0.key) != nil }
         // What was loaded is earlier runs; the orchestrator is only told about new ones.
         runLogStart = log.count
     }
@@ -459,7 +487,7 @@ final class FlowController: ToolHost {
         let history = RunHistory(log: log, results: latest?.results ?? results, marks: latest?.marks ?? marks,
                                  linkPasses: latest?.linkPasses ?? linkPasses, handOffs: latest?.handOffs ?? handOffs,
                                  messages: latestMessages, runs: runs, wholeMessages: whole.isEmpty ? nil : whole,
-                                 lastRunNumber: highestRunNumber)
+                                 lastRunNumber: highestRunNumber, scriptOutputs: scriptOutputs.isEmpty ? nil : scriptOutputs)
         // Encoding and writing can take a while for a long log, so neither holds up the canvas. The writes can
         // finish in any order, so each takes a ticket now and one never lands on top of a newer one.
         let url = historyURL
@@ -614,7 +642,7 @@ final class FlowController: ToolHost {
         let record = RunRecord(id: run.id, started: run.started, ended: Date(), outcome: outcome, command: run.command,
                                log: Array(log.dropFirst(runLogStart)), results: results, marks: marks, linkPasses: linkPasses,
                                messages: messages, handOffs: handOffs, ending: ending,
-                               number: nextRunNumber)
+                               number: nextRunNumber, rehearsal: rehearsal != nil ? true : nil)
         highestRunNumber = record.number ?? highestRunNumber
         runs.append(record)
         // Which runs stay, and which keep what their links carried, is `RunKeeping`'s to say. How much of each
@@ -666,6 +694,7 @@ final class FlowController: ToolHost {
         isDeleted = true
         historyTask?.cancel()
         historyTask = nil
+        scriptOutputs.removeAll()
         try? FileManager.default.removeItem(at: historyURL)
     }
 
@@ -691,6 +720,7 @@ final class FlowController: ToolHost {
             await refreshUsage()
         }
         reschedule()
+        if rehearsal == nil { sweepLeftoverRehearsals() }
     }
 
     /// A paired device's "Start its agents": what choosing the flow in the sidebar does to its sessions, and
@@ -717,6 +747,8 @@ final class FlowController: ToolHost {
         spendingWatch?.cancel()
         currentRun = nil
         isRunning = false
+        // Once closed, the engine's word that the run stopped is not taken in, so a rehearsal is tidied away here.
+        endRehearsal()
         // A Flow card waiting on this flow's run hears that it ended with nothing to pass on.
         endWaiters.values.joined().forEach { $0.resume(returning: nil) }
         endWaiters.removeAll()
@@ -1717,16 +1749,36 @@ final class FlowController: ToolHost {
 
     /// `note` is a line for the run's log saying who started it, when that wasn't the person at this Mac.
     /// `inside` is the flows a Flow card's run of this one is inside.
+    /// `rehearse` starts a rehearsal, in a copy made for it or in `lentCopy`, the copy of the flow above's rehearsal.
+    /// A rehearsal never joins a run that is going, and a real run asked for during a rehearsal stops it.
     func start(command: String? = nil, startCardID: String? = nil, levelsLeft given: Int? = nil, inside: Set<String> = [],
-               note: String? = nil) async -> RunStart {
+               note: String? = nil, rehearse: Bool = false, lentCopy: RehearsalState? = nil) async -> RunStart {
         guard let engine = readyEngine() else { return RunStart(began: false, status: services.problem ?? "Claude Code isn't ready yet.") }
+        if rehearse, isRunning || isStartingRun { return RunStart(began: false, status: Rehearsal.busyRefusal) }
         runsStarting += 1
+        if rehearse { rehearsalStarting = true }
+        var began = false
         defer {
+            // A rehearsal that didn't begin leaves nothing behind: its copy goes.
+            if rehearse, !began { endRehearsal() }
+            if rehearse {
+                rehearsalStarting = false
+                let waiting = rehearsalStartWaiters
+                rehearsalStartWaiters.removeAll()
+                waiting.forEach { $0.resume() }
+            }
             runsStarting -= 1
             subflowTurns.somethingEnded()
         }
+        // A real run always wins over a rehearsal.
+        if !rehearse { await stopRehearsalForRealRun() }
         // A run only begins where the flow is set to work. The branch or worktree can have changed since it opened.
         if !isRunning, let refusal = await prepareWorkplace() { return RunStart(began: false, status: refusal) }
+        if rehearse {
+            // Nothing else begins while a rehearsal starts, but nothing is taken for granted either.
+            if isRunning { return RunStart(began: false, status: Rehearsal.busyRefusal) }
+            if let refusal = await readyRehearsal(lent: lentCopy) { return RunStart(began: false, status: refusal) }
+        }
         isClosed = false
         // Run directly, a flow goes by its own place under the flow at the top. Run by a Flow
         // card, it is handed what is left of the run's allowance.
@@ -1739,10 +1791,13 @@ final class FlowController: ToolHost {
         if startCardID == nil, case .card(let id) = selection, flow.card(id)?.kind == .start { startCardID = id }
         let output = await engine.start(flow: flow, startCardID: startCardID, command: command)
         // Only a run that actually began clears the last one off the canvas.
-        var began = false
         if let id = output.runID, !isRunning {
             began = true
             clearForRun()
+            if let rehearsal {
+                let scripts = flow.cards.filter { $0.kind == .script && $0.runsInRehearsals == true }.map(\.name)
+                append(Rehearsal.firstLine(readOnly: rehearsal.readOnly, scriptsThatRun: scripts), kept: true)
+            }
             let first = command ?? (startCardID.flatMap { flow.card($0) } ?? flow.cards.first { $0.kind == .start })?.command ?? ""
             currentRun = (id, Date(), String(first.prefix(200)))
             if let note { append(note, kept: true) }
@@ -1760,6 +1815,8 @@ final class FlowController: ToolHost {
 
     func start(from cardID: String, message: String, sender: String = "You", note: String? = nil) async -> RunStart {
         guard let engine = readyEngine() else { return RunStart(began: false, status: services.problem ?? "Claude Code isn't ready yet.") }
+        // A real run always wins over a rehearsal.
+        await stopRehearsalForRealRun()
         guard !isRunning else {
             banner = "A run is already going. Stop it before starting another."
             return RunStart(began: false, status: banner ?? "")
@@ -1881,14 +1938,98 @@ final class FlowController: ToolHost {
             subflowTurns.somethingEnded()
             notifyOrchestrator(of: output)
             let failed = output.ending == .failed || marks.values.contains(where: \.failed)
-            Notifier.post(title: "\(flow.name) \(failed ? RunEnding.failed.label : (output.ending ?? .finishedWithAnswer).label)",
+            let prefix = rehearsal != nil ? "Rehearsal: " : ""
+            Notifier.post(title: "\(prefix)\(flow.name) \(failed ? RunEnding.failed.label : (output.ending ?? .finishedWithAnswer).label)",
                           body: log.last?.text ?? "", flowID: flow.id, cardID: nil)
+            // Last, as the record, the notice and the orchestrator above all ask whether this was a rehearsal.
+            endRehearsal()
         } else if output.runID != nil {
             isRunning = true
         }
         // Kept up even while the progress is closed or an older run is on show, so it is right when it comes back.
         progressFloor = latestProgress?.fraction ?? progressFloor
         return forPlugin
+    }
+
+    // MARK: Rehearsals
+
+    /// Where this app keeps rehearsals' copies, for every project.
+    private var rehearsalsFolder: URL { services.supportDirectory.appendingPathComponent("rehearsals", isDirectory: true) }
+
+    /// Gets a rehearsal's place ready: a copy of where the flow works, a copy a flow above lent this one, or no copy
+    /// outside git. Nil when ready, else why not.
+    private func readyRehearsal(lent: RehearsalState?) async -> String? {
+        if let lent {
+            rehearsal = RehearsalState(copy: lent.copy, readOnly: lent.readOnly, ownsCopy: false)
+            return nil
+        }
+        guard git != nil else {
+            rehearsal = RehearsalState(copy: nil, readOnly: true, ownsCopy: false)
+            return nil
+        }
+        let id = UUID().uuidString.lowercased()
+        // In use from before git starts on it, so a sweep that begins meanwhile leaves it alone.
+        Self.copiesInUse.insert(id)
+        switch await Git.makeRehearsalCopy(of: workRoot, runID: id, in: rehearsalsFolder) {
+        case .success(let copy):
+            rehearsal = RehearsalState(copy: copy, readOnly: false, ownsCopy: true, runID: id)
+            return nil
+        case .failure(let error):
+            Self.copiesInUse.remove(id)
+            return refuse("The rehearsal couldn't make its copy of the project: \(error.text)")
+        }
+    }
+
+    /// A real run was asked for while this flow rehearses: the rehearsal stops, and says why. A rehearsal still
+    /// starting is waited for first, so the real run never begins inside it.
+    private func stopRehearsalForRealRun() async {
+        while rehearsalStarting { await withCheckedContinuation { rehearsalStartWaiters.append($0) } }
+        guard rehearsal != nil else { return }
+        append(Rehearsal.stoppedForRealRun, kept: true)
+        if isRunning { await stop() }
+        // Stopping normally ends it already. This is for a run the engine had nothing more to say about.
+        endRehearsal()
+    }
+
+    /// Tidies a rehearsal away once it has ended: its stand-ins quit, and its copy goes once their cost is read.
+    /// Doing it twice does nothing.
+    private func endRehearsal() {
+        guard let ended = rehearsal else { return }
+        rehearsal = nil
+        retireStandIns()
+        guard ended.ownsCopy, let copy = ended.copy, let id = ended.runID else { return }
+        let root = project.root
+        Task.detached {
+            // Long enough for `recordUsage`, which reads the stand-ins' transcripts 4 seconds after the run.
+            try? await Task.sleep(for: .seconds(8))
+            await Git.removeRehearsalCopy(copy, runID: id, from: root)
+            await MainActor.run { _ = FlowController.copiesInUse.remove(id) }
+        }
+    }
+
+    /// The rehearsal's stand-ins quit. Stand-ins come with a later change; until then there are none.
+    private func retireStandIns() {}
+
+    /// Removes rehearsal copies a crash or a quit left behind: the project's worktrees and branches, and any folder
+    /// in this app's rehearsals folder older than a day, which a crash leaves even after git has forgotten it.
+    private func sweepLeftoverRehearsals() {
+        let root = project.root
+        let folder = rehearsalsFolder
+        let inUse = Self.copiesInUse
+        Task.detached(priority: .utility) {
+            await Git.sweepRehearsalCopies(at: root, in: folder, keeping: inUse)
+            FlowController.removeOldRehearsalFolders(in: folder, keeping: inUse)
+        }
+    }
+
+    nonisolated private static func removeOldRehearsalFolders(in folder: URL, keeping inUse: Set<String>) {
+        let files = FileManager.default
+        guard let found = try? files.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        let dayAgo = Date().addingTimeInterval(-24 * 60 * 60)
+        for item in found where !inUse.contains(item.lastPathComponent) {
+            guard let made = try? item.resourceValues(forKeys: [.creationDateKey]).creationDate, made < dayAgo else { continue }
+            try? files.removeItem(at: item)
+        }
     }
 
     // MARK: Progress
@@ -2484,10 +2625,13 @@ final class FlowController: ToolHost {
 
     private func runScript(_ hold: PendingHold) {
         guard let environment = services.environment else { return resolve(hold.id, port: "fail", text: "Queen Bee was still starting up.") }
-        let folder = workRoot
+        let folder = runRoot
+        // Only a real run's output is passed on by later rehearsals.
+        let real = rehearsal == nil
         holdTasks[hold.id] = Task {
             let result = await ScriptRunner.run(hold.command, message: hold.text, from: hold.from, in: folder, environment: environment)
             guard !Task.isCancelled else { return }
+            if real { self.scriptOutputs[hold.cardID] = Rehearsal.stored(result.output) }
             self.holdTasks[hold.id] = nil
             self.resolve(hold.id, port: result.passed ? "pass" : "fail", text: result.output)
         }
@@ -2612,8 +2756,13 @@ final class FlowController: ToolHost {
     }
 
     private func save(_ text: String, to file: String, card: String) {
+        // Outside git a rehearsal has no copy to save into, and it changes nothing for real.
+        if let rehearsal, rehearsal.copy == nil {
+            append("\(card) didn't save to \(file): \(Rehearsal.readOnlySaveLine)")
+            return
+        }
         // Symlinks are followed before the checks, so a link inside the project can't point the save somewhere else.
-        let root = workRoot.resolvingSymlinksInPath()
+        let root = runRoot.resolvingSymlinksInPath()
         let url = Self.resolvingExistingPart(of: root.appendingPathComponent(file).standardizedFileURL)
         guard url.path.hasPrefix(root.path + "/") else {
             append("\(card) didn't save: \(file) is outside the project folder")
@@ -2627,6 +2776,7 @@ final class FlowController: ToolHost {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try text.write(to: url, atomically: true, encoding: .utf8)
             append("\(card) saved the answer to \(file)")
+            if rehearsal != nil { append("\(card): \(Rehearsal.saveLine)") }
         } catch {
             append("\(card) couldn't save to \(file): \(error.localizedDescription)")
         }
@@ -2645,7 +2795,8 @@ final class FlowController: ToolHost {
     }
 
     private func notifyOrchestrator(of output: RunOutput) {
-        guard flow.notifyOrchestrator, orchestrator.isLive else { return }
+        // A rehearsal's end isn't told: that saves the orchestrator's cost.
+        guard flow.notifyOrchestrator, rehearsal == nil, orchestrator.isLive else { return }
         let lines = log.dropFirst(runLogStart).suffix(12).map { "- \($0.text)" }.joined(separator: "\n")
         let ended = runs.last.map { " It \($0.summary)." } ?? ""
         var text = "[Queen Bee · notice] The run\(output.runID.map { " \($0)" } ?? "") has ended.\(ended) This is information from the app, not a new request.\n\nWhat happened:\n\(lines)"
@@ -3026,7 +3177,9 @@ final class FlowController: ToolHost {
     }
 
     func rehearseFlow(command: String?) async throws -> String {
-        throw FlowError.invalid("Rehearsals aren't ready yet.")
+        let started = await start(command: command, rehearse: true)
+        guard started.began else { throw FlowError.invalid(started.status) }
+        return "Rehearsal started. " + started.status
     }
 
     func stopFlow() async {
