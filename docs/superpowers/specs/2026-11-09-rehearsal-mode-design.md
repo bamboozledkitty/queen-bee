@@ -32,6 +32,7 @@ build on it: the self-coaching flow and self-repairing runs test their suggested
   - Rehearsals keep their own list of the 5 latest, apart from the 20 latest real runs, so they never push a real run out.
   - A rehearsal can't be kept for good.
   - Rehearsals don't appear in Compare, and later features that learn from past runs leave them out.
+  - Retry isn't offered after a rehearsal, on the Mac or a device, and "Run from here" starts with nothing filled in: the message a card was given came from a stand-in, and both start a real run.
 - The log's first line names the rehearsal. It says where it works (the copy, or read-only), and which Script cards will run for real.
 
 ## How each card behaves in a rehearsal
@@ -52,16 +53,21 @@ build on it: the self-coaching flow and self-repairing runs test their suggested
 
 ## What a rehearsal can't stop
 
-The copy keeps your files safe, but it isn't a full sandbox. Stand-ins keep their card's permissions, and get:
+The copy keeps what the agents change in it away from your real files, but it isn't a sandbox. Stand-ins keep their
+card's permissions, and get:
 
 - no browser
 - none of your other connected tools (MCP servers), such as email or Slack
-- no `git push`
+- no `git push`, but only in its usual form. Claude Code matches the start of the command, so `git -C . push` or
+  `git -c name=value push` still runs. This version doesn't try to catch every form.
+
+A stand-in works in the copy, but nothing stops it reaching a file outside it by its full path. One allowed to change
+files without asking, as in auto mode, can change your real project that way.
 
 They can still reach the app's socket, as the cards' own sessions can. So a stand-in told to run `qb run` starts a real
 run of a flow. If that is the flow being rehearsed, the rehearsal stops, since a real run always wins.
 
-They can still reach the internet in other ways. For example, a shell command like `curl` or a deploy tool would still really run. A rehearsal is safe for your files, but not for an agent whose instructions tell it to publish something. `SECURITY.md` says this.
+They can still reach the internet in other ways. For example, a shell command like `curl` or a deploy tool would still really run. A rehearsal keeps an agent's ordinary work on your files in the copy, but it isn't safe for an agent whose instructions tell it to publish something, or to work on files by their full path. `SECURITY.md` says this.
 
 Claude Code has the switches for these limits: `--strict-mcp-config`, `--mcp-config` and `--disallowedTools`. The build must check that `--strict-mcp-config` still loads the qb-link plugin, which a run needs in order to hand messages on. If it doesn't, the stand-ins get the plugin's server by name through `--mcp-config`.
 
@@ -104,7 +110,7 @@ A flow has one run at a time.
   - `Git` makes a worktree of the flow's workplace at its current commit, in the project's `.queenbee/rehearsals` folder, with a branch named `queenbee-rehearsal-<run id>`. The folder has a `.gitignore` of `*`, as `.queenbee/worktrees` does. It is inside the project because Claude Code asks whether to trust a folder it hasn't seen, which would stop every stand-in, and a folder inside one the person trusts doesn't ask.
   - Uncommitted changes, both tracked and untracked but not ignored, are copied in.
   - When the rehearsal ends, however it ends, the worktree and its branch are removed.
-  - On launch, the app removes any `queenbee-rehearsal-*` worktrees and branches a crash left behind.
+  - On launch, the app removes any `queenbee-rehearsal-*` worktrees and branches a crash left behind, once they are more than a day old. A younger one can be another flow's rehearsal, or another copy of the app's, such as Queen Bee Dev beside an installed copy. Each is checked again just before it goes, in case a rehearsal began meanwhile.
 - **Read-only:** in a folder that isn't in git, stand-ins start with `--permission-mode plan`, and no Script card runs for real.
 - **Stand-ins:**
   - Their sessions live in a dictionary next to the cards' own sessions, keyed by card id.

@@ -25,10 +25,12 @@ whatever Claude Code can do under the permission mode its card has, so treat a f
   It only runs a command you typed into its settings on this Mac or allowed yourself. A command written by the
   orchestrator, pasted in, arriving in a flow file or written from a paired device stops the run and asks you
   first. What you allowed is kept in the app's own settings, not in the flow file.
-- **A rehearsal keeps your files safe, but it isn't a sandbox.** A rehearsal's agents are throwaway copies on
-  Haiku, working in a throwaway copy of the project. They keep their cards' permissions, with no browser, none of your
-  MCP servers and no `git push`. Other commands they run, such as `curl` or a deploy tool, still reach the network.
-  They can also reach the app's socket, as the cards' own sessions can, so one told to run `qb run` starts a real
+- **A rehearsal works in a copy of your project, but it isn't a sandbox.** A rehearsal's agents are throwaway copies
+  on Haiku, working in a throwaway copy of the project. They keep their cards' permissions, with no browser and none
+  of your MCP servers. `git push` is refused only in its usual form: a command such as `git -C . push` gets past it.
+  The copy only keeps your files safe from changes made inside it: an agent allowed to change files can still change
+  one outside the copy, such as your real project, by naming its full path. Other commands they run, such as `curl`
+  or a deploy tool, still reach the network. They can also reach the app's socket, as the cards' own sessions can, so one told to run `qb run` starts a real
   run of a flow; if that is the flow being rehearsed, the rehearsal stops. In a project that isn't in git there is no
   copy: they start in plan mode in the real folder, and no Script card runs.
 - **A Script card can run in rehearsals.** A Script card with "Runs in rehearsals" on runs its command in a
