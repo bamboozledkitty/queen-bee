@@ -37,6 +37,15 @@ private struct StartPrompt: View {
     }
 }
 
+/// The strip over a card's terminal while it shows the card's stand-in in a rehearsal.
+private struct StandInStrip: View {
+    var body: some View {
+        StatusPill(Rehearsal.standInLabel, tone: .neutral, dot: false)
+            .padding(.horizontal, DS.Space.s)
+            .padding(.vertical, DS.Space.xs)
+    }
+}
+
 /// An agent's card: its live terminal under the title, its session's state beside the name,
 /// and a Start button while no session is running.
 final class AgentCardView: CardView {
@@ -49,6 +58,10 @@ final class AgentCardView: CardView {
     private var startTitle = "Start agent"
     private let terminalHolder = FlippedView()
     private weak var terminal: NSView?
+    /// Says the terminal below it is the card's stand-in's, in a rehearsal.
+    private let standInStrip = NSHostingView(rootView: StandInStrip())
+    /// The terminal is the card's stand-in's. The Start button acts on the card's own session, so it isn't offered.
+    private var isStandIn = false
     private var stateText = ""
     /// The card's browser half, while its Browser switch is on.
     private(set) var browserPane: BrowserPaneView?
@@ -68,6 +81,9 @@ final class AgentCardView: CardView {
 
         terminalHolder.wantsLayer = true
         content.addSubview(terminalHolder)
+        // Inside the terminal's holder, so it hides with the terminal when the canvas zooms out to the overview.
+        standInStrip.isHidden = true
+        terminalHolder.addSubview(standInStrip)
 
         content.addSubview(startButton)
         content.addSubview(errorRow)
@@ -141,12 +157,17 @@ final class AgentCardView: CardView {
         costBadge.set(context.cost ?? "", tone: .plain)
         let live = state != .notStarted && state != .exited
         // A turn that ended with an error leaves the session going, and it can be typed to, or restarted.
-        lastTurnFailed = state == .failed && !context.isSlowToStart
-        startButton.isHidden = live && !context.isSlowToStart && !lastTurnFailed
+        lastTurnFailed = state == .failed && !context.isSlowToStart && !context.isStandIn
+        if isStandIn != context.isStandIn {
+            isStandIn = context.isStandIn
+            standInStrip.isHidden = !isStandIn
+            needsLayout = true
+        }
+        startButton.isHidden = isStandIn || (live && !context.isSlowToStart && !lastTurnFailed)
         startTitle = context.isSlowToStart ? "Retry" : state == .exited || lastTurnFailed ? "Restart agent" : "Start agent"
         startButton.toolTip = context.isSlowToStart ? "Stop this agent's Claude Code and start it again"
             : lastTurnFailed ? "Stop this agent's Claude Code and start it again, carrying on its conversation" : nil
-        isSlowToStart = context.isSlowToStart
+        isSlowToStart = context.isSlowToStart && !context.isStandIn
         errorRow.set(name: portLabel("error"), count: context.mark.ports["error"] ?? 0,
                      isLatest: context.mark.lastPort == "error", isRunning: context.isRunning)
         super.update(card: new, context: context)
@@ -185,6 +206,11 @@ final class AgentCardView: CardView {
         if inStrip {
             let strip = startButton.frame.maxY + DS.Space.xs
             area.origin.y = max(area.origin.y, strip)
+            area.size.height = max(0, terminalHolder.bounds.height - 4 - area.origin.y)
+        }
+        if isStandIn {
+            standInStrip.frame = CGRect(origin: .zero, size: standInStrip.fittingSize)
+            area.origin.y = max(area.origin.y, standInStrip.frame.maxY)
             area.size.height = max(0, terminalHolder.bounds.height - 4 - area.origin.y)
         }
         terminal?.frame = area

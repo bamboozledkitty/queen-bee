@@ -359,7 +359,9 @@ final class CanvasView: NSView, NSGestureRecognizerDelegate {
             context.mark = controller.marks[card.id] ?? RunMark()
             context.isRunning = controller.isRunning
             if card.kind == .agent, let agentView = view as? AgentCardView {
-                let session = controller.session(forCard: card.id)
+                // In a rehearsal the card shows its stand-in, whose state is the one that matters to the run.
+                let session = controller.shownSession(forCard: card.id)
+                context.isStandIn = controller.standIns[card.id] != nil
                 context.sessionState = session.state
                 context.isSlowToStart = session.isSlowToStart
                 context.needsRestart = !controller.settingsAwaitingRestart(forCard: card.id).isEmpty

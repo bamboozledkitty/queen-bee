@@ -387,14 +387,17 @@ final class RemoteSession {
             let pending = controller.settingsAwaitingRestart(forCard: card.id)
             if !pending.isEmpty { awaiting[card.id] = pending }
         }
+        // A rehearsal's stand-ins are known by keys of their own, which are no card's: a device is told their use
+        // as their cards' run use, and nothing else.
+        let usage = controller.usage.filter { !Rehearsal.cardID(ofKey: $0.key).isStandIn }
         var runUsage: [String: Usage] = [:]
-        for key in controller.usage.keys {
+        for key in Set(controller.usage.keys.map { Rehearsal.cardID(ofKey: $0).cardID }) {
             if let used = controller.runUsage(forCard: key), !used.isZero { runUsage[key] = used }
         }
         let run = RemoteRunState(
             isRunning: controller.isRunning, marks: controller.marks, linkPasses: controller.linkPasses,
             liveLinkIDs: controller.liveLinkIDs.sorted(), handOffs: controller.handOffs, holds: controller.holds,
-            results: controller.results, usage: controller.usage, sessions: controller.sessions.mapValues(\.state),
+            results: controller.results, usage: usage, sessions: controller.sessions.mapValues(\.state),
             awaitingAnswer: controller.awaitingAnswer.sorted(), banner: controller.banner, awaitingRestart: awaiting,
             orchestratorNeedsRestart: controller.orchestratorNeedsRestart, runUsage: runUsage,
             workplace: controller.workplaceChip.map { RemoteOverview.cut(Remote.plainLine($0)) })

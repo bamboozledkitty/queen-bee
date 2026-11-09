@@ -178,6 +178,17 @@ final class FlowController: ToolHost {
     @ObservationIgnored private(set) var sessions: [String: TerminalSession] = [:] {
         didSet { sessionsRevision += 1 }
     }
+    /// Each agent card's stand-in in the rehearsal going on, by card id. Never saved, and never in `Card.sessionID`.
+    private(set) var standIns: [String: TerminalSession] = [:]
+    /// Every session id each stand-in has had, by stand-in key, until the rehearsal's cost has been read from their
+    /// transcripts. A stand-in that quit and was handed more work has had more than one.
+    @ObservationIgnored private var standInSessionIDs: [String: [String]] = [:]
+    /// Reading the latest run's cost. A rehearsal's copy, which holds its stand-ins' transcripts, waits for it to
+    /// finish before it goes.
+    @ObservationIgnored private var usageRecording: Task<Void, Never>?
+    /// Tidying away the last rehearsal's stand-ins, once their cost is read. The next rehearsal's stand-ins have the
+    /// same keys, so it waits for this.
+    @ObservationIgnored private var standInsRetiring: Task<Void, Never>?
     @ObservationIgnored private var engine: Engine?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var historyTask: Task<Void, Never>?
@@ -246,7 +257,7 @@ final class FlowController: ToolHost {
     /// Agent cards whose session is waiting on the person, in canvas order.
     var cardsNeedingYou: [Card] {
         let waiting = Set(holds.filter { $0.kind == .approval || $0.needsAllow }.map(\.cardID))
-        return flow.cards.filter { ($0.kind == .agent && sessions[$0.id]?.state == .needsYou) || waiting.contains($0.id) }
+        return flow.cards.filter { ($0.kind == .agent && (sessions[$0.id]?.state == .needsYou || standIns[$0.id]?.state == .needsYou)) || waiting.contains($0.id) }
     }
 
     var activity: FlowActivity {
@@ -499,8 +510,9 @@ final class FlowController: ToolHost {
 
     // MARK: Cost
 
-    /// Everything this flow's own sessions have used, the orchestrator included.
-    var totalUsage: Usage { usage.values.reduce(Usage(), +) }
+    /// Everything this flow's own sessions have used, the orchestrator included. A rehearsal's stand-ins aren't the
+    /// flow's sessions: what they used is in the rehearsal's record, as its cost.
+    var totalUsage: Usage { usage.filter { !Rehearsal.cardID(ofKey: $0.key).isStandIn }.values.reduce(Usage(), +) }
 
     /// The flows this one's Flow cards run, each once, in canvas order.
     var innerFlows: [FlowController] { nesting.innerFlows(of: flow.id).compactMap(project.controller) }
@@ -524,17 +536,28 @@ final class FlowController: ToolHost {
     /// What a card used in the run on show: the recorded figure for a finished run, or the
     /// running difference while one is going.
     func runUsage(forCard id: String) -> Usage? {
-        if isRunning || currentRun != nil { return usage[id].map { $0.since(usageAtRunStart[id] ?? Usage()) } }
+        if isRunning || currentRun != nil {
+            // In a rehearsal, a card's work is its stand-in's.
+            let key = rehearsal != nil && id != Self.orchestratorKey ? Rehearsal.standInKey(for: id) : id
+            return usage[key].map { $0.since(usageAtRunStart[key] ?? Usage()) }
+        }
         let record = viewedRunID.flatMap { id in runs.first { $0.id == id } } ?? runs.last
         return record?.usage?[id]
     }
 
     /// Reads usage again from the sessions' transcripts: one session's, or all of them.
     func refreshUsage(_ only: String? = nil) async {
-        var ids: [String: String] = [:]
-        if only == nil || only == Self.orchestratorKey { ids[Self.orchestratorKey] = flow.orchestratorSessionID }
-        for card in flow.cards where card.kind == .agent && (only == nil || only == card.id) { ids[card.id] = card.sessionID }
-        let read = await Task.detached { ids.compactMapValues { UsageReader.usage(sessionID: $0) } }.value
+        var ids: [String: [String]] = [:]
+        if only == nil || only == Self.orchestratorKey { ids[Self.orchestratorKey] = flow.orchestratorSessionID.map { [$0] } }
+        for card in flow.cards where card.kind == .agent && (only == nil || only == card.id) { ids[card.id] = card.sessionID.map { [$0] } }
+        // A stand-in's use is every session it has had in the rehearsal, read until the rehearsal has been costed.
+        for (key, sids) in standInSessionIDs where only == nil || only == key { ids[key] = sids }
+        let read = await Task.detached {
+            ids.compactMapValues { sids -> Usage? in
+                let found = sids.compactMap { UsageReader.usage(sessionID: $0) }
+                return found.isEmpty ? nil : found.reduce(Usage(), +)
+            }
+        }.value
         for (key, value) in read where usage[key] != value { usage[key] = value }
         stopIfPastSpendingLimit()
     }
@@ -543,7 +566,10 @@ final class FlowController: ToolHost {
     /// are interrupted, and the log and a notice say why. The orchestrator's use is not the run's.
     private func stopIfPastSpendingLimit() {
         guard isRunning, currentRun != nil, flow.spendingLimit != nil, let engine else { return }
-        let spent = usage.filter { $0.key != Self.orchestratorKey }
+        // A rehearsal's spend is its stand-ins'. A real run's is the cards' own sessions', even straight after a
+        // rehearsal whose stand-ins are still being costed.
+        let rehearsing = rehearsal != nil
+        let spent = usage.filter { $0.key != Self.orchestratorKey && Rehearsal.cardID(ofKey: $0.key).isStandIn == rehearsing }
             .reduce(Usage()) { $0 + $1.value.since(usageAtRunStart[$1.key] ?? Usage()) }
         guard let line = SpendingLimit.passed(limit: flow.spendingLimit, spent: spent) else { return }
         Task { self.absorb(await engine.stop(ending: .spentLimit, line: line), sender: nil) }
@@ -553,15 +579,20 @@ final class FlowController: ToolHost {
     /// still done when the flow has been closed meanwhile, as it often is straight after a run.
     private func recordUsage(forRun id: String) {
         let before = usageAtRunStart
-        Task {
+        // A rehearsal's agents are its stand-ins, and a real run's the cards' own sessions. The other kind can be at
+        // work meanwhile: a real run can start the moment a rehearsal stops, and the person can type to a real agent.
+        let rehearsed = rehearsal != nil
+        usageRecording = Task {
             // Long enough for a sub-flow that ended just before this run to have costed its own.
             try? await Task.sleep(for: .seconds(4))
             await self.refreshUsage()
             guard !self.isDeleted, let index = self.runs.firstIndex(where: { $0.id == id }) else { return }
             var shares: [String: Usage] = [:]
             for (key, now) in self.usage where key != Self.orchestratorKey {
+                let (card, isStandIn) = Rehearsal.cardID(ofKey: key)
+                guard isStandIn == rehearsed else { continue }
                 let share = now.since(before[key] ?? Usage())
-                if !share.isZero { shares[key] = share }
+                if !share.isZero { shares[card] = (shares[card] ?? Usage()) + share }
             }
             // A Flow card's share is what the flow it ran used while this run was going.
             let run = self.runs[index]
@@ -954,11 +985,19 @@ final class FlowController: ToolHost {
     /// and clear a selection that points at something gone.
     private func reconcile() {
         let agentIDs = Set(flow.cards.filter { $0.kind == .agent }.map(\.id))
+        var stopped: Set<String> = []
         for (id, session) in sessions where id != Self.orchestratorKey && !agentIDs.contains(id) {
             let name = session.launched?.name
             session.terminate()
             sessions[id] = nil
             agentStopped(id, name: name, reason: "its card was deleted")
+            stopped.insert(id)
+        }
+        for (id, standIn) in standIns where !agentIDs.contains(id) {
+            standIn.terminate()
+            standIns[id] = nil
+            // The run is told once, whether or not the card's own session was going too.
+            if !stopped.contains(id) { agentStopped(id, name: standIn.launched?.name, reason: "its card was deleted") }
         }
         heldBack.formIntersection(agentIDs)
         // A card that was deleted, or had its Browser switch turned off, gives its tab back.
@@ -1287,6 +1326,61 @@ final class FlowController: ToolHost {
 
     var orchestrator: TerminalSession { session(forCard: Self.orchestratorKey) }
 
+    /// What a card shows: its stand-in while it has one, else its own session.
+    func shownSession(forCard id: String) -> TerminalSession { standIns[id] ?? session(forCard: id) }
+
+    /// The session a run's hand-offs for a card go to: its stand-in in a rehearsal, else its own.
+    private func runSession(forCard id: String) -> TerminalSession {
+        rehearsal != nil ? standIn(forCard: id) : session(forCard: id)
+    }
+
+    private func standIn(forCard id: String) -> TerminalSession {
+        if let existing = standIns[id] { return existing }
+        let key = Rehearsal.standInKey(for: id)
+        let made = TerminalSession(key: "\(flow.id)/\(key)")
+        made.onExit = { [weak self] _ in self?.sessionExited(key) }
+        standIns[id] = made
+        return made
+    }
+
+    /// Starts an agent card's stand-in in the rehearsal going on: a new session each time, never the card's own.
+    private func startStandIn(forCard id: String) {
+        guard let environment = services.environment, let state = rehearsal, let card = flow.card(id), card.kind == .agent else { return }
+        // A terminal that has run a process doesn't take a second one.
+        if let old = standIns[id], old.state != .notStarted {
+            old.terminate()
+            standIns[id] = nil
+        }
+        let sessionID = UUID().uuidString.lowercased()
+        let folder = state.copy.map { Rehearsal.folder(forCard: card.cwd, projectRoot: project.root, copy: $0) }
+            ?? ClaudeLauncher.folder(for: card, projectRoot: project.root, workRoot: workRoot)
+        // Unlike a card's own session, nothing about it is noted down for later: it starts with today's instructions
+        // and is gone once the rehearsal is.
+        guard let spec = ClaudeLauncher.standIn(flow: flow, card: card, sessionID: sessionID, folder: folder,
+                                                readOnly: state.readOnly, services: services, environment: environment) else {
+            banner = services.problem
+            return
+        }
+        standIn(forCard: id).start(spec, settings: AgentSettings(card))
+        standInSessionIDs[Rehearsal.standInKey(for: id), default: []].append(sessionID)
+    }
+
+    /// The rehearsal has ended: its stand-ins quit. Their session ids stay in `standInSessionIDs` until the
+    /// rehearsal's cost has been read from their transcripts.
+    private func retireStandIns() {
+        standIns.values.forEach { $0.terminate() }
+        standIns.removeAll()
+    }
+
+    /// Forgets the stand-ins of a rehearsal that has been costed, or was never going to be.
+    private func forgetStandIns() {
+        for (key, sids) in standInSessionIDs {
+            usage[key] = nil
+            sids.forEach(UsageReader.forget(sessionID:))
+        }
+        standInSessionIDs.removeAll()
+    }
+
     /// The settings changed on a card since its session started, which the running session
     /// doesn't have yet. Empty when the session isn't running or is up to date.
     func settingsAwaitingRestart(forCard id: String) -> [String] {
@@ -1492,14 +1586,19 @@ final class FlowController: ToolHost {
             old.terminate()
             sessions[id] = nil
             sessionGeneration += 1
-            // A run waiting on this agent will never hear the reply its old session owed.
-            if wasLive, id != Self.orchestratorKey { agentStopped(id, reason: "it was restarted") }
+            // A run waiting on this agent will never hear the reply its old session owed. In a rehearsal the run
+            // waits on the agent's stand-in, not on this.
+            if wasLive, id != Self.orchestratorKey, rehearsal == nil { agentStopped(id, reason: "it was restarted") }
         }
         return session(forCard: id)
     }
 
-    private func sessionExited(_ id: String) {
-        guard id != Self.orchestratorKey else { return }
+    /// `key` is a card id, a stand-in's key, or the orchestrator's.
+    private func sessionExited(_ key: String) {
+        guard key != Self.orchestratorKey else { return }
+        let (id, isStandIn) = Rehearsal.cardID(ofKey: key)
+        // In a rehearsal only stand-ins work for the run; outside one, only cards' own sessions.
+        guard isStandIn == (rehearsal != nil) else { return }
         agentStopped(id, reason: "its session ended")
     }
 
@@ -1537,11 +1636,16 @@ final class FlowController: ToolHost {
 
     /// A Claude Code hook fired in one of this flow's sessions.
     /// Returns what Claude Code should put in front of the session, if anything.
+    /// `who` is a card id, a stand-in's key, or the orchestrator's.
     @discardableResult
     func handleHook(from who: String, payload: JSONValue) -> JSONValue {
-        guard let session = sessions[who] else { return [:] }
-        let context = payload["hook_event_name"]?.stringValue == "SessionStart" ? startContext(for: who, session: session, payload: payload) : [:]
-        applyHook(from: who, session: session, payload: payload)
+        let (cardID, isStandIn) = Rehearsal.cardID(ofKey: who)
+        guard let session = isStandIn ? standIns[cardID] : sessions[who] else { return [:] }
+        // A stand-in always starts afresh with today's instructions, and has nothing more to be told.
+        let context = payload["hook_event_name"]?.stringValue == "SessionStart" && !isStandIn
+            ? startContext(for: who, session: session, payload: payload) : [:]
+        // In a rehearsal only stand-ins work for the run; outside one, only cards' own sessions.
+        applyHook(from: cardID, key: who, session: session, payload: payload, forRun: isStandIn == (rehearsal != nil))
         return context
     }
 
@@ -1573,7 +1677,10 @@ final class FlowController: ToolHost {
         return ["hookSpecificOutput": ["hookEventName": "SessionStart", "additionalContext": .string(parts.joined(separator: "\n\n"))]]
     }
 
-    private func applyHook(from who: String, session: TerminalSession, payload: JSONValue) {
+    /// `who` is the card, or the orchestrator, and `key` the session's own key, which is a stand-in's for one.
+    /// `forRun` is false for a session whose turns are no part of the run going on, as a card's own is in a rehearsal:
+    /// its state is kept up, and nothing more.
+    private func applyHook(from who: String, key: String, session: TerminalSession, payload: JSONValue, forRun: Bool) {
         let event = payload["hook_event_name"]?.stringValue ?? ""
         let type = payload["notification_type"]?.stringValue
             ?? ((payload["message"]?.stringValue ?? "").localizedCaseInsensitiveContains("permission") ? "permission_prompt" : nil)
@@ -1581,7 +1688,7 @@ final class FlowController: ToolHost {
         session.apply(hook: event, notificationType: type, source: payload["source"]?.stringValue, trigger: payload["trigger"]?.stringValue)
         if session.state == .needsYou, !wasWaiting {
             let name = who == Self.orchestratorKey ? "The orchestrator" : flow.card(who)?.name ?? "An agent"
-            Notifier.post(title: "\(name) needs you", body: "In \(flow.name). It is waiting for your answer or your go-ahead.",
+            Notifier.post(title: "\(key != who ? "Rehearsal: " : "")\(name) needs you", body: "In \(flow.name). It is waiting for your answer or your go-ahead.",
                           flowID: flow.id, cardID: who)
         }
         if event == "Stop", let reply = payload["last_assistant_message"]?.stringValue { session.lastReply = reply }
@@ -1589,10 +1696,11 @@ final class FlowController: ToolHost {
             // The turn's cost reaches the transcript a moment after the hook fires.
             Task {
                 try? await Task.sleep(for: .milliseconds(1500))
-                await self.refreshUsage(who)
+                await self.refreshUsage(key)
             }
         }
         guard who != Self.orchestratorKey else { return }
+        guard forRun else { return }
         switch event {
         case "SessionStart":
             // A summary made mid-conversation keeps the same process, and the plugin it had loaded.
@@ -1637,10 +1745,13 @@ final class FlowController: ToolHost {
     /// hand-offs for that plugin to send as session messages. `asked` is the plugin saying the
     /// turn got a message through to another session of the flow: the answer to it arrives as
     /// a new turn, so this turn's last words aren't the reply.
-    func handleRoute(from who: String, answer: String, asked: Bool = false) async -> [(to: String, text: String)] {
+    func handleRoute(from key: String, answer: String, asked: Bool = false) async -> [(to: String, text: String)] {
+        let (who, isStandIn) = Rehearsal.cardID(ofKey: key)
+        // In a rehearsal only stand-ins work for the run; outside one, only cards' own sessions.
+        guard isStandIn == (rehearsal != nil) else { return [] }
         guard who != Self.orchestratorKey, flow.card(who) != nil else { return [] }
         pluginSpoke.insert(who)
-        sessions[who]?.lastReply = answer
+        (isStandIn ? standIns[who] : sessions[who])?.lastReply = answer
         guard let engine = readyEngine() else { return [] }
         // Each turn is routed once, so what is known of the run it worked for goes with it.
         let forRun = turnRun.removeValue(forKey: who)
@@ -1650,13 +1761,15 @@ final class FlowController: ToolHost {
     }
 
     /// The plugin reports how its sends went. A hand-off that didn't arrive is typed in.
-    func handleSent(from who: String, results: [JSONValue]) {
+    func handleSent(from key: String, results: [JSONValue]) {
+        // Hand-offs were given to a stand-in's plugin only in a rehearsal, and to a card's own only outside one.
+        guard Rehearsal.cardID(ofKey: key).isStandIn == (rehearsal != nil) else { return }
         for result in results {
             guard let to = result["to"]?.stringValue, let delivery = inFlight.removeValue(forKey: to) else { continue }
             if result["isDelivered"]?.boolValue == false {
                 let name = flow.card(delivery.toCardID)?.name ?? delivery.toCardID
                 append("Couldn't message \(name) directly (\(result["reason"]?.stringValue ?? "no reason given")), so the message was typed into its terminal")
-                session(forCard: delivery.toCardID).send(delivery.text)
+                runSession(forCard: delivery.toCardID).send(delivery.text)
             }
         }
     }
@@ -1674,25 +1787,40 @@ final class FlowController: ToolHost {
     /// flow's cards is that card, whatever other sessions on the machine share the name, so
     /// the answer carries the card's session id. An agent may only message agents its card is
     /// linked to, and the orchestrator. The orchestrator may message any agent.
-    func judgeSend(from who: String, to: String) -> SendVerdict {
+    /// `key` is a card id, a stand-in's key, or the orchestrator's. A stand-in may only message the other stand-ins
+    /// of its rehearsal that its card is linked to: never the orchestrator, and never anybody's real session.
+    func judgeSend(from key: String, to: String) -> SendVerdict {
         let address = to.lowercased()
-        if who != Self.orchestratorKey, address.hasPrefix(ClaudeLauncher.orchestratorName(for: flow).lowercased()) {
+        let (who, isStandIn) = Rehearsal.cardID(ofKey: key)
+        let toOrchestrator = address.hasPrefix(ClaudeLauncher.orchestratorName(for: flow).lowercased())
+        if isStandIn {
+            guard rehearsal != nil else { return SendVerdict(refusal: Rehearsal.onlyThisFlow) }
+            if toOrchestrator { return SendVerdict(refusal: Rehearsal.noOrchestrator) }
+        }
+        if who != Self.orchestratorKey, toOrchestrator {
             return SendVerdict(inFlow: true, sessionID: flow.orchestratorSessionID)
         }
         let target = flow.cards
             .filter { card in
                 guard card.kind == .agent, card.id != who else { return false }
                 if let sid = card.sessionID, address.contains(sid) { return true }
+                if isStandIn, let sid = standIns[card.id]?.claudeSessionID, address.contains(sid) { return true }
                 let name = card.name.lowercased()
                 return address == name || address.hasPrefix(name + "-") || address.hasPrefix(name + " ")
             }
             .max { $0.name.count < $1.name.count }
-        // Not one of this flow's sessions: Claude Code decides.
-        guard let target else { return SendVerdict() }
+        // Not one of this flow's sessions: Claude Code decides, except for a stand-in.
+        guard let target else { return isStandIn ? SendVerdict(refusal: Rehearsal.onlyThisFlow) : SendVerdict() }
         if who != Self.orchestratorKey, let sender = flow.card(who), !linkedAgents(of: who).contains(target.id) {
             return SendVerdict(refusal: "\(sender.name) isn't linked to \(target.name) in the flow \"\(flow.name)\". Ask the person or the orchestrator to link the two cards first.")
         }
-        return SendVerdict(inFlow: who != Self.orchestratorKey, sessionID: target.sessionID)
+        guard isStandIn else { return SendVerdict(inFlow: who != Self.orchestratorKey, sessionID: target.sessionID) }
+        // A stand-in's message goes to the other card's stand-in, which may not have been handed anything yet.
+        guard let live = standIns[target.id], live.isLive, let sid = live.claudeSessionID else {
+            startStandIn(forCard: target.id)
+            return SendVerdict(refusal: "\(target.name) is still starting in the rehearsal. Try again in a moment.")
+        }
+        return SendVerdict(inFlow: true, sessionID: sid)
     }
 
     /// The run hangs on agents that asked a question and have had no answer. The log says so at
@@ -1884,9 +2012,10 @@ final class FlowController: ToolHost {
         var forPlugin: [(to: String, text: String)] = []
         // A run that has ended hands nothing more to anyone.
         for delivery in output.finished ? [] : output.deliveries {
-            let target = session(forCard: delivery.toCardID)
-            if !target.isLive { startSession(forCard: delivery.toCardID) }
-            let live = session(forCard: delivery.toCardID)
+            // In a rehearsal, a card's hand-offs go to its stand-in, and its own session is left alone.
+            let target = runSession(forCard: delivery.toCardID)
+            if !target.isLive { rehearsal != nil ? startStandIn(forCard: delivery.toCardID) : startSession(forCard: delivery.toCardID) }
+            let live = runSession(forCard: delivery.toCardID)
             let settled = live.state == .idle || live.state == .working || live.state == .needsYou
             // A session can't message itself, so a hand-off that loops straight back to the
             // agent that just replied is typed in.
@@ -1902,7 +2031,7 @@ final class FlowController: ToolHost {
         }
         // Agents still working on a run that has ended stop, so they spend nothing more on it.
         for id in output.leftWaiting {
-            sessions[id]?.interrupt()
+            (rehearsal != nil ? standIns[id] : sessions[id])?.interrupt()
             turnRun[id] = nil
             turnNotHandedOff.remove(id)
         }
@@ -1959,6 +2088,8 @@ final class FlowController: ToolHost {
     /// Gets a rehearsal's place ready: a copy of where the flow works, a copy a flow above lent this one, or no copy
     /// outside git. Nil when ready, else why not.
     private func readyRehearsal(lent: RehearsalState?) async -> String? {
+        // The last rehearsal's stand-ins had the same keys as this one's will, so they are gone first.
+        await standInsRetiring?.value
         if let lent {
             rehearsal = RehearsalState(copy: lent.copy, readOnly: lent.readOnly, ownsCopy: false)
             return nil
@@ -1991,24 +2122,36 @@ final class FlowController: ToolHost {
         endRehearsal()
     }
 
-    /// Tidies a rehearsal away once it has ended: its stand-ins quit, and its copy goes once their cost is read.
-    /// Doing it twice does nothing.
+    /// Tidies a rehearsal away once it has ended: its stand-ins quit, and once their cost has been read, they are
+    /// forgotten and its copy goes, with their transcripts. Doing it twice does nothing.
     private func endRehearsal() {
         guard let ended = rehearsal else { return }
         rehearsal = nil
         retireStandIns()
+        // A rehearsal that ran to a record has its cost read from the stand-ins' transcripts a moment after it ended.
+        let costing = usageRecording
+        let retiring = Task {
+            await costing?.value
+            self.forgetStandIns()
+        }
+        standInsRetiring = retiring
         guard ended.ownsCopy, let copy = ended.copy, let id = ended.runID else { return }
         let root = project.root
+        // Claude Code names a transcripts folder after its folder with links followed, so that is read while the copy is there.
+        let copyPath = Self.realPath(copy.path)
         Task.detached {
-            // Long enough for `recordUsage`, which reads the stand-ins' transcripts 4 seconds after the run.
-            try? await Task.sleep(for: .seconds(8))
+            await retiring.value
+            // Stand-ins that have just been told to quit may still be writing.
+            try? await Task.sleep(for: .seconds(2))
             await Git.removeRehearsalCopy(copy, runID: id, from: root)
+            Transcripts.removeFolder(for: copyPath)
             await MainActor.run { _ = FlowController.copiesInUse.remove(id) }
         }
     }
 
-    /// The rehearsal's stand-ins quit. Stand-ins come with a later change; until then there are none.
-    private func retireStandIns() {}
+    nonisolated private static func realPath(_ path: String) -> String {
+        realpath(path, nil).map { resolved in defer { free(resolved) }; return String(cString: resolved) } ?? path
+    }
 
     /// Removes rehearsal copies a crash or a quit left behind: the project's worktrees and branches, and any folder
     /// in this app's rehearsals folder older than a day, which a crash leaves even after git has forgotten it.
@@ -2057,7 +2200,9 @@ final class FlowController: ToolHost {
         for hold in holds {
             if hold.kind == .approval { needs[hold.cardID] = .approval } else if hold.needsAllow { needs[hold.cardID] = .allowCommand }
         }
-        for card in flow.cards where card.kind == .agent && sessions[card.id]?.state == .needsYou { needs[card.id] = .session }
+        for card in flow.cards where card.kind == .agent && (rehearsal != nil ? standIns[card.id] : sessions[card.id])?.state == .needsYou {
+            needs[card.id] = .session
+        }
         for id in awaitingAnswer { needs[id] = .question }
         var inner: [String: Double] = [:]
         for hold in holds where hold.kind == .flow {

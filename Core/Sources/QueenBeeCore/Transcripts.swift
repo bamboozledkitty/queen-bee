@@ -50,6 +50,19 @@ public enum Transcripts {
         return name.hasPrefix(String(full.prefix(longestFolderName)) + "-")
     }
 
+    /// Deletes Claude Code's folders of transcripts for sessions that worked in `directory` or in a folder inside it,
+    /// as for a rehearsal's copy once it is gone. `directory` is given with its links followed, as Claude Code names
+    /// folders. A folder inside it is named with the directory's name, a "-" and more, so a folder whose own name
+    /// merely starts the same way would go too: only use this for a directory with a name of its own, such as an id.
+    public static func removeFolder(for directory: String,
+                                    projects: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")) {
+        guard let name = exactFolderName(for: directory) else { return }
+        let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
+        for folder in folders where folder.lastPathComponent == name || folder.lastPathComponent.hasPrefix(name + "-") {
+            try? FileManager.default.removeItem(at: folder)
+        }
+    }
+
     /// How a session should be started, given where its transcript is.
     public enum Start: Equatable, Sendable {
         /// The transcript is in the folder the session starts in: carry on with it.

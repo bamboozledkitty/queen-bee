@@ -44,6 +44,20 @@ import Testing
         #expect(Transcripts.copies(of: id, in: projects).first?.deletingLastPathComponent().lastPathComponent == "-same")
     }
 
+    @Test func removingACopysTranscriptsTakesItsFoldersOnly() throws {
+        let projects = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: projects) }
+        let copy = "/tmp/rehearsals/abc123"
+        let inside = "/tmp/rehearsals/abc123/App/" + String(repeating: "a", count: 250)
+        let names = [Transcripts.folderName(for: copy), Transcripts.folderName(for: copy + "/App"),
+                     String(Transcripts.folderName(for: inside).prefix(200)) + "-k3x9",
+                     Transcripts.folderName(for: "/tmp/rehearsals"), Transcripts.folderName(for: "/tmp/rehearsals/abc1234"), "-other"]
+        for name in names { try FileManager.default.createDirectory(at: projects.appendingPathComponent(name), withIntermediateDirectories: true) }
+        Transcripts.removeFolder(for: copy, projects: projects)
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: projects.path))
+        #expect(left == [Transcripts.folderName(for: "/tmp/rehearsals"), Transcripts.folderName(for: "/tmp/rehearsals/abc1234"), "-other"])
+    }
+
     @Test func aTranscriptLeftInAnotherFolderStartsANewConversation() {
         #expect(Transcripts.start(inFolder: true, elsewhere: true) == .resume)
         #expect(Transcripts.start(inFolder: true, elsewhere: false) == .resume)

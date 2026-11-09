@@ -116,6 +116,10 @@ public enum Rehearsal {
     public static let stoppedForRealRun = "Stopped the rehearsal for a real run"
     public static let busyRefusal = "A run is going. Rehearse once it has ended."
     public static let noOrchestrator = "In a rehearsal, agents can't message the orchestrator. Answer from what you have."
+    /// A stand-in messaging a session that isn't one of its flow's stand-ins, which would be somebody's real one.
+    public static let onlyThisFlow = "In a rehearsal, agents can only message the other agents of this flow's rehearsal."
+    /// What an agent card says over its stand-in's terminal.
+    public static let standInLabel = "Rehearsing on Haiku"
     public static let turningOnRefusal = "Only the person can turn on “Runs in rehearsals”, in the card's settings on their Mac."
     public static let saveLine = "In a rehearsal this was saved in the throwaway copy, so nothing was saved for real"
     /// An End card's save in a rehearsal of a project outside git, which has no copy to save into.
