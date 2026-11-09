@@ -469,8 +469,11 @@ enum DebugCannedRun {
                     }
                 case .retry(_, let cardID):
                     let name = edits?.flow.card(cardID)?.name ?? "a card"
-                    stopRehearsalForRealRun()
-                    if run.isRunning {
+                    // As the Mac: never during a rehearsal or after one, whose message was a stand-in's.
+                    let afterRehearsal = !run.isRunning && client.mirror.snapshot?.runs.last?.isRehearsal == true
+                    if run.rehearsal == true || afterRehearsal {
+                        refusal = Rehearsal.noRetry
+                    } else if run.isRunning {
                         refusal = running
                     } else if run.marks[cardID]?.failed != true {
                         refusal = "The last run didn't stop at \(name), so there is nothing to retry."
