@@ -131,6 +131,10 @@ public enum DS {
         /// The room each stop on a run's line takes, and the widest the line's panel is drawn.
         public static let stopColumn: CGFloat = 104
         public static let progressLineWidth: CGFloat = 720
+        /// How far in a run's line fades at an edge where more stops are out of view, and how much of that, at the
+        /// very edge, is cleared for the arrow and its count.
+        public static let lineFade: CGFloat = 100
+        public static let lineFadeClear: CGFloat = 50
         public static let commandFooter: CGFloat = 36
         /// A small label's least height: a badge.
         public static let badge: CGFloat = 20

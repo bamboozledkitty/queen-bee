@@ -30,6 +30,25 @@ extension View {
     public func raisedSurface(radius: CGFloat = DS.Radius.l, ground: Shade = Palette.raised) -> some View {
         modifier(RaisedSurface(radius: radius, ground: ground))
     }
+
+    /// Fades out what scrolls under an edge where there is more out of view: clear for `DS.Size.lineFadeClear` at
+    /// the very edge, for a control to stand on, then fading in over the rest of `DS.Size.lineFade`.
+    public func edgeFade(leading: Bool, trailing: Bool) -> some View {
+        mask {
+            let clear = DS.Size.lineFadeClear / DS.Size.lineFade
+            // A mask only reads how see-through it is, so these two say "hidden" and "shown", not colours.
+            let hidden = Color.clear, shown = Color.black
+            HStack(spacing: 0) {
+                LinearGradient(stops: [.init(color: hidden, location: 0), .init(color: hidden, location: clear),
+                                       .init(color: shown, location: 1)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: leading ? DS.Size.lineFade : 0)
+                Rectangle().fill(shown)
+                LinearGradient(stops: [.init(color: shown, location: 0), .init(color: hidden, location: 1 - clear),
+                                       .init(color: hidden, location: 1)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: trailing ? DS.Size.lineFade : 0)
+            }
+        }
+    }
 }
 
 /// A one-point line between rows or sections.

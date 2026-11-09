@@ -11,6 +11,16 @@ All notable changes to Queen Bee are listed here. The format follows
 - Keep a run for good. On the Mac, pick a run on the Runs page and choose Keep this run; on an iPhone or iPad, touch and hold it on the flow's Runs page. A kept run stays whole, with what its agents said, however many newer runs go by, so new runs can always be compared with it. Kept runs are marked in the lists and don't take one of a flow's 20 places for runs. A flow can keep 10 runs. Clearing the log leaves them. Stop keeping a run and it is let go like any other once newer runs come.
 - Rehearse a flow. Rehearse, in the Run button's menu on the Mac, iPad and iPhone, runs the whole flow on Haiku at low effort, by throwaway copies of its agents in a throwaway copy of the project. Their changes stay in the copy, and your agents' own conversations are left alone. Script cards pass on their last real output unless you turn on Runs in rehearsals in their settings on the Mac, Delays pass the message on at once, and Approvals ask as usual. In a project that isn't in git, a rehearsal can look but not change anything. Rehearsals are kept apart from real runs: they show in Runs with a Rehearsal pill, keep their own 5 latest, and can't be kept for good or compared. They are numbered in the same count as the flow's real runs, so a real run's number can skip one a rehearsal took. Retry isn't offered after a rehearsal, since it would start a real run with a stand-in's message. A real run always wins: one started during a rehearsal stops it, and Run on the Mac asks first. The orchestrator can start a rehearsal too.
 
+## [0.10.2] - 2026-11-09
+
+### Changed
+
+- When a run's line of stops is longer than its panel, the cut edges fade, round arrows page along, and a count says how many stops are out of view, such as "5 more". Stop names wrap to two lines, so two names that start or end alike still read differently, and pointing at a stop shows its whole name.
+
+### Fixed
+
+- The green on a run's line is now all one colour between two stops: green where the run reached both, grey otherwise. Before, the line between two stops the run was at together was half grey and half green, and a stop the run hadn't reached could sit on green.
+
 ## [0.10.1] - 2026-11-08
 
 ### Fixed
@@ -354,7 +364,8 @@ First public release.
 - The test harness is compiled out of release builds.
 - Releases are signed with a Developer ID and use the hardened runtime. They are not yet notarized by Apple.
 
-[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/bamboozledkitty/queen-bee/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/bamboozledkitty/queen-bee/compare/v0.8.0...v0.9.0
