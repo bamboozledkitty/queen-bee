@@ -27,6 +27,8 @@ import Testing
 
     private let flowCommands: [RemoteCommand] = [
         .runFromStart(flowID: "f", startCardID: "s"),
+        .rehearse(flowID: "f", startCardID: nil),
+        .rehearse(flowID: "f", startCardID: "s"),
         .retry(flowID: "f", cardID: "a"),
         .clearLog(flowID: "f"),
         .keepRun(flowID: "f", runID: "r", on: true),
@@ -110,6 +112,7 @@ import Testing
         let others: [RemoteCommand] = [
             .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "a"), .clearLog(flowID: "f"),
             .keepRun(flowID: "f", runID: "r", on: true),
+            .rehearse(flowID: "f", startCardID: nil), .rehearse(flowID: "f", startCardID: "s"),
             .dismissBanner(flowID: "f"), .stopAgents(flowID: "f"), .armSchedule(flowID: "f", cardID: "s", on: true),
             .pin(flowID: "f", on: true), .updateRole(roleID: "r", flowID: "f", cardID: "a"),
         ] + apart
@@ -119,6 +122,7 @@ import Testing
     @Test func runningFromAStartAndRetryingCanTakeTime() {
         #expect(RemoteCommand.runFromStart(flowID: "f", startCardID: "s").canTakeTime)
         #expect(RemoteCommand.retry(flowID: "f", cardID: "a").canTakeTime)
+        #expect(RemoteCommand.rehearse(flowID: "f", startCardID: nil).canTakeTime)
         #expect(!RemoteCommand.stopAgents(flowID: "f").canTakeTime)
         #expect(!RemoteCommand.armSchedule(flowID: "f", cardID: "s", on: true).canTakeTime)
         #expect(!RemoteCommand.clearBrowserData(projectID: "/p").canTakeTime)

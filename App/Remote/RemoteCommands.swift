@@ -375,6 +375,10 @@ enum RemoteCommands {
             let start = await controller.start(startCardID: cardID, note: "Run started from \(name)")
             return start.began ? nil : start.status
 
+        case .rehearse:
+            // The Mac doesn't say `RemoteFeature.rehearsals` yet, so no device sends this. The real handler comes with the rehearsal itself.
+            return "Rehearsals aren't ready yet."
+
         case .retry(_, let cardID):
             guard controller.flow.card(cardID) != nil else { return cardGone }
             guard !controller.isRunning else { return alreadyRunning }
