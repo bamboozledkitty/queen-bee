@@ -120,6 +120,8 @@ public enum Rehearsal {
     public static let onlyThisFlow = "In a rehearsal, agents can only message the other agents of this flow's rehearsal."
     /// What an agent card says over its stand-in's terminal.
     public static let standInLabel = "Rehearsing on Haiku"
+    /// Retry starts a real run with the message the card was given, which in a rehearsal was a stand-in's.
+    public static let noRetry = "Retry isn't offered after a rehearsal. Run the flow for real, or rehearse it again."
     public static let turningOnRefusal = "Only the person can turn on “Runs in rehearsals”, in the card's settings on their Mac."
     public static let saveLine = "In a rehearsal this was saved in the throwaway copy, so nothing was saved for real"
     /// An End card's save in a rehearsal of a project outside git, which has no copy to save into.
@@ -127,4 +129,25 @@ public enum Rehearsal {
 
     public static func branch(forRun id: String) -> String { branchPrefix + id }
     public static func isRehearsalBranch(_ name: String) -> Bool { name.hasPrefix(branchPrefix) }
+
+    // MARK: Copies a crash left behind
+
+    /// How old a rehearsal's copy or branch must be before a sweep takes it as left behind. Another flow of the
+    /// project, or another copy of the app sharing the project's rehearsals folder, can be rehearsing in a newer one.
+    public static let leftoverAge: TimeInterval = 24 * 60 * 60
+
+    /// Whether something made at `made` is old enough to be swept. Something whose age isn't known is kept.
+    public static func isLeftover(madeAt made: Date?, now: Date = Date()) -> Bool {
+        guard let made else { return false }
+        return made < now.addingTimeInterval(-leftoverAge)
+    }
+
+    /// When a branch last moved, from git's `log -g -1 --date=unix --format=%gd <branch>`, which prints
+    /// "<branch>@{<seconds>}". Nil when that isn't what it printed, as for a branch with no reflog.
+    public static func branchMoved(reflogLine line: String) -> Date? {
+        let line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard line.hasSuffix("}"), let open = line.range(of: "@{", options: .backwards),
+              let seconds = TimeInterval(line[open.upperBound..<line.index(before: line.endIndex)]) else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
 }

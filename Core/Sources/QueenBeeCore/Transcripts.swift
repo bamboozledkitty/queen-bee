@@ -50,15 +50,36 @@ public enum Transcripts {
         return name.hasPrefix(String(full.prefix(longestFolderName)) + "-")
     }
 
+    /// How much of a directory's own name must come before the cut in a long folder name for the folder to be told
+    /// apart by it. A rehearsal copy's name is an id, so this much of it is enough.
+    static let enoughOfTheName = 16
+
     /// Deletes Claude Code's folders of transcripts for sessions that worked in `directory` or in a folder inside it,
-    /// as for a rehearsal's copy once it is gone. `directory` is given with its links followed, as Claude Code names
-    /// folders. A folder inside it is named with the directory's name, a "-" and more, so a folder whose own name
-    /// merely starts the same way would go too: only use this for a directory with a name of its own, such as an id.
-    public static func removeFolder(for directory: String,
+    /// as for a rehearsal's copy once it is gone, and the transcripts of `sessions` wherever they are. `directory` is
+    /// given with its links followed, as Claude Code names folders. A folder inside it is named with the directory's
+    /// name, a "-" and more, so a folder whose own name merely starts the same way would go too: only use this for a
+    /// directory with a name of its own, such as an id.
+    ///
+    /// A long path's folder is cut short and ends in a hash this can't work out, so it is matched on the part before
+    /// the cut, as `isFolder` does, but only when enough of the directory's own name is in that part. Otherwise the
+    /// part before the cut could be the parent's alone, which is shared with the person's own folders, and only the
+    /// transcripts of `sessions` go.
+    public static func removeFolder(for directory: String, sessions: [String] = [],
                                     projects: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")) {
-        guard let name = exactFolderName(for: directory) else { return }
+        sessions.forEach { removeSession($0, projects: projects) }
+        let full = folderName(for: directory)
+        let matches: (String) -> Bool
+        if full.count <= longestFolderName {
+            matches = { $0 == full || $0.hasPrefix(full + "-") }
+        } else {
+            let parent = folderName(for: (directory as NSString).deletingLastPathComponent)
+            // The parent's name, then the "-" that stood for the "/", then as much of this directory's own name as fits.
+            guard longestFolderName - (parent.count + 1) >= enoughOfTheName else { return }
+            let start = String(full.prefix(longestFolderName)) + "-"
+            matches = { $0.hasPrefix(start) }
+        }
         let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
-        for folder in folders where folder.lastPathComponent == name || folder.lastPathComponent.hasPrefix(name + "-") {
+        for folder in folders where matches(folder.lastPathComponent) {
             try? FileManager.default.removeItem(at: folder)
         }
     }

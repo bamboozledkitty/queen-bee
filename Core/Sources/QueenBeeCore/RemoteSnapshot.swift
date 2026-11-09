@@ -69,11 +69,18 @@ public enum RemoteSnapshot {
 }
 
 extension RemoteFlowSnapshot {
-    /// Whether the Mac offers Retry on a card: the last run stopped there, no run is going, and a message
-    /// reached the card in that run, which is what it is given again.
+    /// Whether the latest run is a rehearsal: the one going, or the last one filed once it has ended.
+    public var latestRunIsRehearsal: Bool {
+        run.rehearsal == true || (!run.isRunning && runs.last?.isRehearsal == true)
+    }
+
+    /// Whether the Mac offers Retry on a card: the last run stopped there, no run is going, it wasn't a rehearsal,
+    /// and a message reached the card in that run, which is what it is given again.
     public func canRetry(_ cardID: String) -> Bool {
         // An End card that failed the run is where it ended, not something to try again.
         guard run.marks[cardID]?.failed == true, !run.isRunning, flow.card(cardID)?.kind != .end else { return false }
+        // Retry is a real run, and a rehearsal's message was a stand-in's.
+        guard !latestRunIsRehearsal else { return false }
         return flow.links(into: cardID).contains { !(messages[$0.id] ?? []).isEmpty }
     }
 }

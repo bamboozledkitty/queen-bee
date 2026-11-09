@@ -31,6 +31,8 @@ nonisolated struct RunOnShow: Equatable {
     /// What each card used in this run, by card id. While a run is going, what it has used so far, when the Mac
     /// says. Nil for a moment after it ends: the Mac works a run's share out once the run is over.
     var usage: [String: Usage]?
+    /// The run on show is a rehearsal. See `FlowController.runOnShowIsRehearsal`.
+    var isRehearsal = false
 
     /// The Mac's `shownLog`, `view(run:)` and `runUsage(forCard:)`.
     init(_ snapshot: RemoteFlowSnapshot, viewed: RunRecord?) {
@@ -43,6 +45,14 @@ nonisolated struct RunOnShow: Equatable {
         marks = viewed?.marks ?? run.marks
         holds = viewed == nil ? run.holds : []
         usage = isRunning ? (run.runUsage.isEmpty ? nil : run.runUsage) : (viewed ?? snapshot.runs.last)?.usage
+        isRehearsal = viewed?.isRehearsal ?? snapshot.latestRunIsRehearsal
+    }
+
+    /// The Mac's `lastMessage(into:)`: what "Run from here" starts with. Nothing after a rehearsal, whose message
+    /// was a stand-in's.
+    func startingMessage(into cardID: String, in flow: Flow) -> String {
+        guard !isRehearsal else { return "" }
+        return flow.links(into: cardID).compactMap { messages[$0.id]?.last }.max { $0.date < $1.date }?.text ?? ""
     }
 }
 
@@ -243,6 +253,7 @@ nonisolated struct Details: Equatable {
         case .script:
             add(.code, "Command", said(card.command))
             if let line = EditForm.waitLine(card) { add(.row, "If nobody allows it", line) }
+            if card.runsInRehearsals == true { add(.row, "Runs in rehearsals", "On") }
             add(.note, "Runs this command in the project's folder, as if you had typed it in Terminal. If the command succeeds, the run carries on from Pass. If it fails, from Fail. Whatever the command prints is what gets passed on.")
             if let hold {
                 if hold.needsAllow {

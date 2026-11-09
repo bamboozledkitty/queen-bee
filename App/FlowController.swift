@@ -568,13 +568,18 @@ final class FlowController: ToolHost {
         for card in flow.cards where card.kind == .agent && (only == nil || only == card.id) { ids[card.id] = card.sessionID.map { [$0] } }
         // A stand-in's use is every session it has had in the rehearsal, read until the rehearsal has been costed.
         for (key, sids) in standInSessionIDs where only == nil || only == key { ids[key] = sids }
+        let asked = ids
         let read = await Task.detached {
-            ids.compactMapValues { sids -> Usage? in
+            asked.compactMapValues { sids -> Usage? in
                 let found = sids.compactMap { UsageReader.usage(sessionID: $0) }
                 return found.isEmpty ? nil : found.reduce(Usage(), +)
             }
         }.value
-        for (key, value) in read where usage[key] != value { usage[key] = value }
+        for (key, value) in read where usage[key] != value {
+            // A stand-in forgotten while this was read, or one of a newer rehearsal under the same key, is not written back.
+            if Rehearsal.cardID(ofKey: key).isStandIn, standInSessionIDs[key] != asked[key] { continue }
+            usage[key] = value
+        }
         stopIfPastSpendingLimit()
     }
 
@@ -2005,14 +2010,20 @@ final class FlowController: ToolHost {
         return RunStart(began: output.runID != nil, status: output.log.last ?? "Nothing to run", runID: output.runID)
     }
 
-    /// Whether Retry is offered on a card: the last run stopped there, and a message reached it.
+    /// Whether Retry is offered on a card: the last run stopped there, and a message reached it. Never after a
+    /// rehearsal: Retry is a real run, and the message was a stand-in's.
     func canRetry(_ cardID: String) -> Bool {
         // An End card that failed the run is where it ended, not something to try again.
-        marks[cardID]?.failed == true && !isRunning && flow.card(cardID)?.kind != .end && lastMessage(into: cardID) != nil
+        marks[cardID]?.failed == true && !isRunning && !runOnShowIsRehearsal && flow.card(cardID)?.kind != .end
+            && lastMessage(into: cardID) != nil
     }
 
     /// Tries the card a run stopped at again, with the message it was given.
     func retry(_ cardID: String) {
+        guard !runOnShowIsRehearsal else {
+            banner = Rehearsal.noRetry
+            return
+        }
         guard let last = lastMessage(into: cardID) else {
             banner = "There is no message to give this card again."
             return
@@ -2164,7 +2175,8 @@ final class FlowController: ToolHost {
         retireStandIns()
         // Outside git the stand-ins worked in the project's real folders, so their transcripts would show among the
         // person's own conversations. Taken now, as they are forgotten once costed.
-        let leftInRealFolders = ended.copy == nil ? standInSessionIDs.values.flatMap { $0 } : []
+        let standInIDs = standInSessionIDs.values.flatMap { $0 }
+        let leftInRealFolders = ended.copy == nil ? standInIDs : []
         // A rehearsal that ran to a record has its cost read from the stand-ins' transcripts a moment after it ended.
         let costing = usageRecording
         let retiring = Task {
@@ -2189,7 +2201,8 @@ final class FlowController: ToolHost {
             // Stand-ins that have just been told to quit may still be writing.
             try? await Task.sleep(for: .seconds(2))
             await Git.removeRehearsalCopy(copy, runID: id, from: root)
-            Transcripts.removeFolder(for: copyPath)
+            // By its stand-ins' ids too, for a copy whose path is so long that its folder can't be told apart by name.
+            Transcripts.removeFolder(for: copyPath, sessions: standInIDs)
             await MainActor.run { _ = FlowController.copiesInUse.remove(id) }
         }
     }
@@ -2199,27 +2212,28 @@ final class FlowController: ToolHost {
     }
 
     /// Removes rehearsal copies a crash or a quit left behind: the project's worktrees and branches, and any folder
-    /// in the project's rehearsals folder older than a day, which a crash leaves even after git has forgotten it.
+    /// in the project's rehearsals folder, each older than a day, as a crash leaves a folder even after git has
+    /// forgotten it. A copy in use is asked about again just before it would go, since a rehearsal of another flow can
+    /// start meanwhile. A copy another copy of the app is using is newer than a day unless it has been going that long.
     private func sweepLeftoverRehearsals() {
         let root = project.root
         let folder = rehearsalsFolder
-        let inUse = Self.copiesInUse
+        let isInUse: @Sendable (String) async -> Bool = { id in await MainActor.run { FlowController.copiesInUse.contains(id) } }
         Task.detached(priority: .utility) {
-            await Git.sweepRehearsalCopies(at: root, in: folder, keeping: inUse)
-            FlowController.removeOldRehearsalFolders(in: folder, keeping: inUse)
+            await Git.sweepRehearsalCopies(at: root, in: folder, isInUse: isInUse)
+            await FlowController.removeOldRehearsalFolders(in: folder, isInUse: isInUse)
         }
     }
 
-    nonisolated private static func removeOldRehearsalFolders(in folder: URL, keeping inUse: Set<String>) {
+    nonisolated private static func removeOldRehearsalFolders(in folder: URL, isInUse: @Sendable (String) async -> Bool) async {
         let files = FileManager.default
         let keys: [URLResourceKey] = [.creationDateKey, .isDirectoryKey]
         // Hidden files are left alone: the folder's .gitignore is one.
         guard let found = try? files.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys, options: .skipsHiddenFiles) else { return }
-        let dayAgo = Date().addingTimeInterval(-24 * 60 * 60)
-        for item in found where !inUse.contains(item.lastPathComponent) {
+        for item in found {
             // Only a copy's own folder, named for its id.
             guard let values = try? item.resourceValues(forKeys: Set(keys)), values.isDirectory == true,
-                  let made = values.creationDate, made < dayAgo else { continue }
+                  Rehearsal.isLeftover(madeAt: values.creationDate), await !isInUse(item.lastPathComponent) else { continue }
             try? files.removeItem(at: item)
         }
     }
@@ -2447,10 +2461,13 @@ final class FlowController: ToolHost {
         if inner.isRunning || inner.isStartingRun || inner.subflowTurns.isTaken {
             append("\(inner.flow.name) is already running, so \(flow.card(hold.cardID)?.name ?? "the Flow card") waits for that run to end")
         }
+        // A rehearsal's Flow card rehearses the flow it runs too, in the same copy. Taken now: by the time the task
+        // runs, a real run can have stopped this rehearsal.
+        let lent = rehearsal
         holdTasks[hold.id] = Task {
+            guard !Task.isCancelled else { return }
             // Cancelling this stops the inner run, if it has begun: see `runToEnd`.
-            // A rehearsal's Flow card rehearses the flow it runs too, in the same copy.
-            let answer = await inner.runToEnd(command: hold.text, levelsLeft: levels, inside: inside, forHold: hold.id, rehearse: self.rehearsal)
+            let answer = await inner.runToEnd(command: hold.text, levelsLeft: levels, inside: inside, forHold: hold.id, rehearse: lent)
             guard !Task.isCancelled else { return }
             self.holdTasks[hold.id] = nil
             self.resolve(hold.id, port: answer.finished ? "done" : "fail", text: answer.text)

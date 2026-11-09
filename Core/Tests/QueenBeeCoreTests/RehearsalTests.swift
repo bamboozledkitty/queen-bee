@@ -98,6 +98,23 @@ import Testing
         #expect(Rehearsal.isRehearsalBranch("queenbee-rehearsal-r-1"))
         #expect(!Rehearsal.isRehearsalBranch("main"))
     }
+
+    @Test func onlyACopyOlderThanADayIsSwept() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(Rehearsal.isLeftover(madeAt: now.addingTimeInterval(-25 * 60 * 60), now: now))
+        #expect(!Rehearsal.isLeftover(madeAt: now.addingTimeInterval(-23 * 60 * 60), now: now))
+        // Another flow's rehearsal, or another copy of the app's, can have just begun.
+        #expect(!Rehearsal.isLeftover(madeAt: now, now: now))
+        // Something whose age isn't known is kept.
+        #expect(!Rehearsal.isLeftover(madeAt: nil, now: now))
+    }
+
+    @Test func whenABranchLastMovedIsReadFromItsReflog() {
+        #expect(Rehearsal.branchMoved(reflogLine: "queenbee-rehearsal-r-1@{1794242719}\n") == Date(timeIntervalSince1970: 1_794_242_719))
+        #expect(Rehearsal.branchMoved(reflogLine: "") == nil)
+        #expect(Rehearsal.branchMoved(reflogLine: "queenbee-rehearsal-r-1@{0}x") == nil)
+        #expect(Rehearsal.branchMoved(reflogLine: "queenbee-rehearsal-r-1@{soon}") == nil)
+    }
 }
 
 /// The "Runs in rehearsals" setting on a Script card, and who may turn it on.

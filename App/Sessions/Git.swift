@@ -146,24 +146,50 @@ nonisolated enum Git {
     }
 
     /// Removes the copies and branches of rehearsals a crash or a quit left behind, in the repository at `root`.
-    /// Only copies in `folder`, the project's rehearsals folder, are touched, and none whose id is in `inUse`:
-    /// another flow of the project can be rehearsing. A branch still open in a worktree is left, as git refuses to
-    /// delete it.
-    nonisolated static func sweepRehearsalCopies(at root: URL, in folder: URL, keeping inUse: Set<String>) async {
+    /// Only copies in `folder`, the project's rehearsals folder, are touched, and only ones made more than
+    /// `Rehearsal.leftoverAge` ago: another flow of the project, or another copy of the app, can be rehearsing in a
+    /// newer one. `isInUse` is asked again just before each removal, as a rehearsal can start while this goes on.
+    /// A branch whose copy is still there is left, as git refuses to delete a branch open in a worktree.
+    nonisolated static func sweepRehearsalCopies(at root: URL, in folder: URL, isInUse: @Sendable (String) async -> Bool) async {
         guard let info = await info(at: root) else { return }
         let ours = folder.resolvingSymlinksInPath().standardizedFileURL.path + "/"
         func isOurs(_ path: String) -> Bool {
             URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(ours)
         }
         func id(of branch: String) -> String { String(branch.dropFirst(Rehearsal.branchPrefix.count)) }
+        func made(_ path: String) -> Date? {
+            (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.creationDateKey]))?.creationDate
+        }
+        // The branches of the copies still there, which are left alone.
+        var open: Set<String> = []
         for worktree in info.worktrees {
-            guard let branch = worktree.branch, Rehearsal.isRehearsalBranch(branch), !inUse.contains(id(of: branch)),
-                  isOurs(worktree.path) else { continue }
+            guard let branch = worktree.branch, Rehearsal.isRehearsalBranch(branch) else { continue }
+            guard isOurs(worktree.path) else {
+                open.insert(branch)
+                continue
+            }
+            // A worktree git knows of whose folder has gone is forgotten by the prune below.
+            guard FileManager.default.fileExists(atPath: worktree.path) else { continue }
+            guard Rehearsal.isLeftover(madeAt: made(worktree.path)), await !isInUse(id(of: branch)) else {
+                open.insert(branch)
+                continue
+            }
             _ = await run(["worktree", "remove", "--force", worktree.path], in: root)
+            if FileManager.default.fileExists(atPath: worktree.path) { open.insert(branch) }
         }
         _ = await run(["worktree", "prune"], in: root)
-        for branch in info.branches where Rehearsal.isRehearsalBranch(branch) && !inUse.contains(id(of: branch)) {
+        for branch in info.branches where Rehearsal.isRehearsalBranch(branch) && !open.contains(branch) {
+            // A copy is made by making its branch first, so a young branch with no folder yet can be a copy on its way.
+            guard Rehearsal.isLeftover(madeAt: await lastMoved(branch, at: root)), await !isInUse(id(of: branch)) else { continue }
             _ = await run(["branch", "-D", branch], in: root)
         }
+    }
+
+    /// When `branch` last moved: from its reflog, or else its commit's date, which is no later.
+    nonisolated private static func lastMoved(_ branch: String, at root: URL) async -> Date? {
+        let reflog = await run(["log", "-g", "-1", "--date=unix", "--format=%gd", "refs/heads/" + branch, "--"], in: root)
+        if reflog.ok, let moved = Rehearsal.branchMoved(reflogLine: reflog.output) { return moved }
+        let commit = await run(["log", "-1", "--format=%ct", "refs/heads/" + branch, "--"], in: root)
+        return commit.ok ? TimeInterval(commit.output).map(Date.init(timeIntervalSince1970:)) : nil
     }
 }

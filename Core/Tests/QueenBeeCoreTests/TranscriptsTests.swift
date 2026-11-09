@@ -58,6 +58,43 @@ import Testing
         #expect(left == [Transcripts.folderName(for: "/tmp/rehearsals"), Transcripts.folderName(for: "/tmp/rehearsals/abc1234"), "-other"])
     }
 
+    @Test func removingALongCopysTranscriptsTakesItsFoldersOnly() throws {
+        let projects = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: projects) }
+        // The copy's id starts inside the first 200 characters of its folder's name and runs past them.
+        let parent = "/" + String(repeating: "p", count: 170) + "/rehearsals"
+        let copy = parent + "/1b4e28ba-2fa1-11d2-883f-0016d3cca427"
+        let sibling = parent + "/9c1f0d2e-77aa-4b3e-9d10-5e6f7a8b9c0d"
+        #expect(Transcripts.folderName(for: copy).count > 200)
+        func cut(_ path: String, _ hash: String) -> String { String(Transcripts.folderName(for: path).prefix(200)) + "-" + hash }
+        let names = [cut(copy, "a1"), cut(copy + "/App", "b2"), cut(sibling, "c3"), Transcripts.folderName(for: parent)]
+        for name in names { try FileManager.default.createDirectory(at: projects.appendingPathComponent(name), withIntermediateDirectories: true) }
+        Transcripts.removeFolder(for: copy, projects: projects)
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: projects.path))
+        #expect(left == [cut(sibling, "c3"), Transcripts.folderName(for: parent)])
+    }
+
+    @Test func aCopyWhoseNameIsAllPastTheCutGoesBySessionOnly() throws {
+        let projects = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: projects) }
+        let files = FileManager.default
+        // The project's own path is past the cut, so its folder and the copy's start the same way.
+        let project = "/" + String(repeating: "p", count: 230)
+        let copy = project + "/.queenbee/rehearsals/1b4e28ba-2fa1-11d2-883f-0016d3cca427"
+        func cut(_ path: String, _ hash: String) -> String { String(Transcripts.folderName(for: path).prefix(200)) + "-" + hash }
+        let own = projects.appendingPathComponent(cut(project, "a1"))
+        let copys = projects.appendingPathComponent(cut(copy, "b2"))
+        #expect(own.lastPathComponent.hasPrefix(String(copys.lastPathComponent.prefix(200))))
+        let standIn = UUID().uuidString.lowercased(), real = UUID().uuidString.lowercased()
+        for dir in [own, copys] { try files.createDirectory(at: dir, withIntermediateDirectories: true) }
+        try Data("a\n".utf8).write(to: own.appendingPathComponent("\(real).jsonl"))
+        try Data("a\n".utf8).write(to: copys.appendingPathComponent("\(standIn).jsonl"))
+        Transcripts.removeFolder(for: copy, sessions: [standIn], projects: projects)
+        // The person's own conversation stays; the stand-in's goes.
+        #expect(files.fileExists(atPath: own.appendingPathComponent("\(real).jsonl").path))
+        #expect(!files.fileExists(atPath: copys.appendingPathComponent("\(standIn).jsonl").path))
+    }
+
     @Test func removingASessionTakesItsTranscriptAndFilesOnly() throws {
         let projects = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: projects) }
