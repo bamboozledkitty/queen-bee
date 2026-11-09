@@ -59,7 +59,9 @@ final class FlowController: ToolHost {
         }
     }
     @ObservationIgnored let fileURL: URL
-    @ObservationIgnored unowned let project: ProjectModel
+    /// Held strongly: a canvas, a late observation or a `Task` can still reach this flow after its project
+    /// is taken out of the sidebar. The project lets go of its flows when it closes, which breaks the cycle.
+    @ObservationIgnored let project: ProjectModel
 
     var selection: Selection = .none
     /// The agent card whose terminal has the keyboard.

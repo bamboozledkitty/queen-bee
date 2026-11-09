@@ -6,6 +6,10 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Choosing Remove from This List for a project whose flow was on the canvas can no longer crash the app.
+
 ## [0.10.2] - 2026-11-09
 
 ### Changed
