@@ -1559,7 +1559,7 @@ git commit -m "Rehearsal mode: end-to-end checks on the Mac and devices"
 - [ ] **Step 3: The spec.** Change these lines in the spec:
 - Status: "Built", once merged.
 - "The engine is told a run is a rehearsal when it starts" becomes "The engine doesn't know: a rehearsal is the app's, marked on its record".
-- The copy's location: the app's support folder, under `rehearsals/`.
+- The copy's location: already changed to the project's `.queenbee/rehearsals` folder, with the fix that moved it there.
 
 - [ ] **Step 4: Final checks and commit.**
 

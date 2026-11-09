@@ -2082,8 +2082,9 @@ final class FlowController: ToolHost {
 
     // MARK: Rehearsals
 
-    /// Where this app keeps rehearsals' copies, for every project.
-    private var rehearsalsFolder: URL { services.supportDirectory.appendingPathComponent("rehearsals", isDirectory: true) }
+    /// Where the project keeps its rehearsals' copies: inside the project, which the person already trusts, so
+    /// Claude Code doesn't ask each stand-in whether to trust its copy. Git ignores it.
+    private var rehearsalsFolder: URL { project.root.appendingPathComponent(Workplace.rehearsalsFolder, isDirectory: true) }
 
     /// Gets a rehearsal's place ready: a copy of where the flow works, a copy a flow above lent this one, or no copy
     /// outside git. Nil when ready, else why not.
@@ -2128,6 +2129,9 @@ final class FlowController: ToolHost {
         guard let ended = rehearsal else { return }
         rehearsal = nil
         retireStandIns()
+        // Outside git the stand-ins worked in the project's real folders, so their transcripts would show among the
+        // person's own conversations. Taken now, as they are forgotten once costed.
+        let leftInRealFolders = ended.copy == nil ? standInSessionIDs.values.flatMap { $0 } : []
         // A rehearsal that ran to a record has its cost read from the stand-ins' transcripts a moment after it ended.
         let costing = usageRecording
         let retiring = Task {
@@ -2135,6 +2139,14 @@ final class FlowController: ToolHost {
             self.forgetStandIns()
         }
         standInsRetiring = retiring
+        if !leftInRealFolders.isEmpty {
+            Task.detached {
+                await retiring.value
+                // Stand-ins that have just been told to quit may still be writing.
+                try? await Task.sleep(for: .seconds(2))
+                leftInRealFolders.forEach { Transcripts.removeSession($0) }
+            }
+        }
         guard ended.ownsCopy, let copy = ended.copy, let id = ended.runID else { return }
         let root = project.root
         // Claude Code names a transcripts folder after its folder with links followed, so that is read while the copy is there.
@@ -2154,7 +2166,7 @@ final class FlowController: ToolHost {
     }
 
     /// Removes rehearsal copies a crash or a quit left behind: the project's worktrees and branches, and any folder
-    /// in this app's rehearsals folder older than a day, which a crash leaves even after git has forgotten it.
+    /// in the project's rehearsals folder older than a day, which a crash leaves even after git has forgotten it.
     private func sweepLeftoverRehearsals() {
         let root = project.root
         let folder = rehearsalsFolder
@@ -2167,10 +2179,14 @@ final class FlowController: ToolHost {
 
     nonisolated private static func removeOldRehearsalFolders(in folder: URL, keeping inUse: Set<String>) {
         let files = FileManager.default
-        guard let found = try? files.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        let keys: [URLResourceKey] = [.creationDateKey, .isDirectoryKey]
+        // Hidden files are left alone: the folder's .gitignore is one.
+        guard let found = try? files.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys, options: .skipsHiddenFiles) else { return }
         let dayAgo = Date().addingTimeInterval(-24 * 60 * 60)
         for item in found where !inUse.contains(item.lastPathComponent) {
-            guard let made = try? item.resourceValues(forKeys: [.creationDateKey]).creationDate, made < dayAgo else { continue }
+            // Only a copy's own folder, named for its id.
+            guard let values = try? item.resourceValues(forKeys: Set(keys)), values.isDirectory == true,
+                  let made = values.creationDate, made < dayAgo else { continue }
             try? files.removeItem(at: item)
         }
     }

@@ -80,13 +80,17 @@ nonisolated enum Git {
     /// Carries out a worktree plan. Nil when it worked, else what git said.
     nonisolated static func make(_ plan: Workplace.WorktreePlan, at root: URL) async -> String? {
         guard let arguments = plan.gitArguments else { return nil }
-        // Kept out of git even in a project that has chosen to commit its .queenbee folder.
-        let folder = root.appendingPathComponent(Workplace.worktreesFolder, isDirectory: true)
+        makeIgnoredFolder(root.appendingPathComponent(Workplace.worktreesFolder, isDirectory: true))
+        let done = await run(arguments, in: root)
+        return done.ok ? nil : (done.error.isEmpty ? "git couldn't make the worktree." : done.error)
+    }
+
+    /// Makes `folder` if it isn't there, with a `.gitignore` that keeps everything in it out of git, even in a
+    /// project that has chosen to commit its .queenbee folder.
+    nonisolated static func makeIgnoredFolder(_ folder: URL) {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let ignore = folder.appendingPathComponent(".gitignore")
         if !FileManager.default.fileExists(atPath: ignore.path) { try? Data("*\n".utf8).write(to: ignore) }
-        let done = await run(arguments, in: root)
-        return done.ok ? nil : (done.error.isEmpty ? "git couldn't make the worktree." : done.error)
     }
 
     // MARK: Rehearsal copies
@@ -97,13 +101,15 @@ nonisolated enum Git {
     }
 
     /// Makes a throwaway copy of `source`, where a flow works, for the rehearsal `runID`: a worktree on a new
-    /// branch at `source`'s current commit, in `folder`, with `source`'s uncommitted changes, tracked and untracked
-    /// but not ignored, copied in. The copy's path, or what went wrong. A copy that went wrong part-way is removed.
+    /// branch at `source`'s current commit, in `folder`, the project's rehearsals folder, with `source`'s
+    /// uncommitted changes, tracked and untracked but not ignored, copied in. The copy's path, or what went wrong.
+    /// A copy that went wrong part-way is removed.
     /// Off the main actor, since copying untracked files can take a while.
     @concurrent
     nonisolated static func makeRehearsalCopy(of source: URL, runID: String, in folder: URL) async -> Result<URL, RehearsalCopyError> {
         let copy = folder.appendingPathComponent(runID, isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // Ignored before anything is copied, as the copy can sit inside `source` itself: no rehearsal copies another.
+        makeIgnoredFolder(folder)
         let branch = Rehearsal.branch(forRun: runID)
         let made = await run(["worktree", "add", "-b", branch, copy.path, "HEAD"], in: source)
         guard made.ok else {
@@ -140,8 +146,9 @@ nonisolated enum Git {
     }
 
     /// Removes the copies and branches of rehearsals a crash or a quit left behind, in the repository at `root`.
-    /// Only copies in `folder`, this app's own, are touched, and none whose id is in `inUse`: another flow of the
-    /// project can be rehearsing. A branch still open in a worktree is left, as git refuses to delete it.
+    /// Only copies in `folder`, the project's rehearsals folder, are touched, and none whose id is in `inUse`:
+    /// another flow of the project can be rehearsing. A branch still open in a worktree is left, as git refuses to
+    /// delete it.
     nonisolated static func sweepRehearsalCopies(at root: URL, in folder: URL, keeping inUse: Set<String>) async {
         guard let info = await info(at: root) else { return }
         let ours = folder.resolvingSymlinksInPath().standardizedFileURL.path + "/"

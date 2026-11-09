@@ -58,6 +58,29 @@ import Testing
         #expect(left == [Transcripts.folderName(for: "/tmp/rehearsals"), Transcripts.folderName(for: "/tmp/rehearsals/abc1234"), "-other"])
     }
 
+    @Test func removingASessionTakesItsTranscriptAndFilesOnly() throws {
+        let projects = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: projects) }
+        let id = UUID().uuidString.lowercased()
+        let other = UUID().uuidString.lowercased()
+        let files = FileManager.default
+        for folder in ["-project", "-project-App"] {
+            let dir = projects.appendingPathComponent(folder)
+            try files.createDirectory(at: dir.appendingPathComponent(id), withIntermediateDirectories: true)
+            try files.createDirectory(at: dir.appendingPathComponent(other), withIntermediateDirectories: true)
+            for name in ["\(id).jsonl", "\(other).jsonl", "\(id).jsonl.bak"] { try Data("a\n".utf8).write(to: dir.appendingPathComponent(name)) }
+        }
+        Transcripts.removeSession(id, projects: projects)
+        for folder in ["-project", "-project-App"] {
+            let left = Set(try files.contentsOfDirectory(atPath: projects.appendingPathComponent(folder).path))
+            #expect(left == [other, "\(other).jsonl", "\(id).jsonl.bak"])
+        }
+        // Nothing that isn't a plain id is taken as one.
+        Transcripts.removeSession("", projects: projects)
+        Transcripts.removeSession("../-project", projects: projects)
+        #expect(files.fileExists(atPath: projects.appendingPathComponent("-project").path))
+    }
+
     @Test func aTranscriptLeftInAnotherFolderStartsANewConversation() {
         #expect(Transcripts.start(inFolder: true, elsewhere: true) == .resume)
         #expect(Transcripts.start(inFolder: true, elsewhere: false) == .resume)

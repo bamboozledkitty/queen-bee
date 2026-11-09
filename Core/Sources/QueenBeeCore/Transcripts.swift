@@ -63,6 +63,20 @@ public enum Transcripts {
         }
     }
 
+    /// Deletes session `id`'s transcript, `<id>.jsonl`, and the folder of files Claude Code keeps beside it, `<id>/`,
+    /// from every folder under `projects`, and nothing else. For a session whose id this app made and that must leave
+    /// no trace, as a stand-in in a rehearsal outside git, which works in the project's real folder.
+    public static func removeSession(_ id: String,
+                                     projects: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")) {
+        // An id is a name, never a path.
+        guard !id.isEmpty, !id.contains("/"), !id.hasPrefix(".") else { return }
+        let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
+        for folder in folders {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(id).jsonl"))
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(id, isDirectory: true))
+        }
+    }
+
     /// How a session should be started, given where its transcript is.
     public enum Start: Equatable, Sendable {
         /// The transcript is in the folder the session starts in: carry on with it.
