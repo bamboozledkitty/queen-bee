@@ -19,6 +19,9 @@ struct RunCompareSheet: View {
         }
     }
 
+    /// The runs that can be compared: the real ones. A rehearsal isn't set beside them, as on the Mac.
+    static func comparable(_ runs: [RunRecord]) -> [RunRecord] { runs.filter { !$0.isRehearsal } }
+
     /// A picked run, while it is still kept. One that has since dropped out of the kept runs goes back to the
     /// default, so the sheet never asks for a run it no longer has.
     private static func kept(_ id: String?, in runs: [RunRecord]) -> String? {
@@ -27,7 +30,7 @@ struct RunCompareSheet: View {
 
     var body: some View {
         let snapshot = client.mirror.snapshot
-        let runs = snapshot?.runs ?? []
+        let runs = Self.comparable(snapshot?.runs ?? [])
         let first = Self.kept(pickedFirst, in: runs) ?? runs.dropLast().last?.id ?? ""
         let second = Self.kept(pickedSecond, in: runs) ?? runs.last?.id ?? ""
         let comparison = snapshot.flatMap { snapshot in

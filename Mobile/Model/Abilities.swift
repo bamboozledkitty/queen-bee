@@ -27,6 +27,8 @@ nonisolated enum Press: Hashable, Sendable {
     case startOrchestrator
     /// An item of the run bar's Restart menu.
     case restart(RemoteRestart)
+    /// Rehearse, in the Run button's menu: from the Start card given, or the one Run uses.
+    case rehearse(startCardID: String?)
 
     /// The command this press sends. `note` is what the person said when rejecting.
     func command(flowID: String, note: String = "") -> RemoteCommand {
@@ -44,6 +46,7 @@ nonisolated enum Press: Hashable, Sendable {
         case .revert(let cardID): .revertSettings(flowID: flowID, cardID: cardID)
         case .startOrchestrator: .startSession(flowID: flowID, cardID: Remote.orchestratorKey)
         case .restart(let which): .restartAgents(flowID: flowID, which: which)
+        case .rehearse(let startCardID): .rehearse(flowID: flowID, startCardID: startCardID)
         }
     }
 
@@ -52,9 +55,11 @@ nonisolated enum Press: Hashable, Sendable {
     func isBusy(among waiting: [RemoteCommand]) -> Bool {
         waiting.contains { sent in
             switch (self, sent) {
-            // Only one run can start, whichever button starts it.
+            // Only one run can start, whichever button starts it, a rehearsal's too.
             case (.run, .run), (.run, .runFrom), (.run, .runFromStart), (.run, .retry), (.runFromStart, .run), (.runFromStart, .runFromStart),
                  (.runFromStart, .runFrom), (.runFromStart, .retry), (.retry, .run), (.retry, .runFromStart), (.retry, .retry), (.retry, .runFrom),
+                 (.rehearse, .run), (.rehearse, .runFrom), (.rehearse, .runFromStart), (.rehearse, .retry), (.rehearse, .rehearse),
+                 (.run, .rehearse), (.runFromStart, .rehearse), (.retry, .rehearse),
                  (.stop, .stop), (.startAgents, .openOnMac): true
             case (.revert(let id), .revertSettings(_, let other)): id == other
             case (.startOrchestrator, .startSession(_, let other)): other == Remote.orchestratorKey
@@ -113,6 +118,10 @@ nonisolated struct Abilities: Equatable {
     var typing: [String: Typing] = [:]
     /// The run bar's list of Start cards, "Run from X", when the flow has more than one. Empty otherwise.
     var runMenu: [PressButton] = []
+    /// Rehearse, in the Run button's menu as on the Mac: offered by a Mac that rehearses, while no run is going.
+    var rehearse: PressButton?
+    /// The run going is a rehearsal. Run stays on offer then, beside Stop, and asks first: running for real stops it.
+    var isRehearsing = false
     /// "Run from This Start" on each Start card, by card id, while no run is going.
     var starts: [String: PressButton] = [:]
     /// Retry, on each card the last run stopped at with a message to give it again, by card id.
@@ -130,7 +139,8 @@ nonisolated struct Abilities: Equatable {
 
     /// - Parameter viewed: the earlier run on show, or nil for the latest.
     /// - Parameter waiting: the commands sent and not yet answered.
-    init(canControl: Bool, isConnected: Bool, snapshot: RemoteFlowSnapshot?, viewed: RunRecord?, waiting: [RemoteCommand]) {
+    /// - Parameter macRehearses: the Mac takes Rehearse. See `RemoteFeature.rehearsals`.
+    init(canControl: Bool, isConnected: Bool, snapshot: RemoteFlowSnapshot?, viewed: RunRecord?, waiting: [RemoteCommand], macRehearses: Bool = false) {
         guard let snapshot else { return }
         let flow = snapshot.flow, run = snapshot.run
         let held = run.holds.filter { $0.kind == .approval || $0.needsAllow }
@@ -156,7 +166,8 @@ nonisolated struct Abilities: Equatable {
         func canStart(_ card: Card) -> Bool {
             card.kind == .start && !(card.command ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !flow.links(from: card.id).isEmpty
         }
-        if run.isRunning {
+        let rehearsing = run.isRunning && run.rehearsal == true
+        if run.isRunning, !rehearsing {
             bar = [button("Stop", .stop, hint: "Stops the run on your Mac.")]
         } else {
             let canRun = flow.cards.contains(where: canStart)
@@ -172,12 +183,25 @@ nonisolated struct Abilities: Equatable {
                     starts[card.id].map { PressButton(title: "Run from \(card.name)", press: $0.press, isEnabled: $0.isEnabled, hint: $0.hint) }
                 }
             }
-            var runButton = button("Run", .run, main: true, hint: "Runs the flow on your Mac from its Start card.")
+            var runButton = button("Run", .run, main: true, hint: rehearsing ? "Stops the rehearsal and runs the flow on your Mac for real."
+                                   : "Runs the flow on your Mac from its Start card.")
             if !canRun {
                 runButton.isEnabled = false
                 barNote = startCards.isEmpty ? Self.noStartCard : Self.nothingToRun
             }
-            bar = [runButton]
+            if rehearsing {
+                // As the Mac has it: Stop, and Run beside it, which asks before it stops the rehearsal.
+                isRehearsing = true
+                bar = [button("Stop", .stop, hint: "Stops the rehearsal on your Mac."), runButton]
+            } else {
+                bar = [runButton]
+                if macRehearses {
+                    var rehearse = button("Rehearse", .rehearse(startCardID: nil),
+                                          hint: "Runs the whole flow on your Mac on Haiku at low effort, by throwaway copies of its agents, in a throwaway copy of the project.")
+                    if !canRun { rehearse.isEnabled = false }
+                    self.rehearse = rehearse
+                }
+            }
         }
         let startAll = button("Start its agents", .startAgents, hint: "Starts this flow's sessions on your Mac.")
         if keys.contains(where: { (run.sessions[$0] ?? .notStarted) == .notStarted }) { bar.insert(startAll, at: 0) }
@@ -308,6 +332,8 @@ nonisolated enum Ask: Hashable, Identifiable, Sendable {
     case restartOrchestrator(isWorking: Bool)
     /// Restarting several agents from the run bar's menu, when some of them are in the middle of a task: their names.
     case restartAgents(RemoteRestart, busy: [String])
+    /// Run, or Run from a Start card, during a rehearsal: running for real stops the rehearsal. The press is the run asked for.
+    case runForReal(Press)
 
     var id: Self { self }
 
@@ -315,7 +341,7 @@ nonisolated enum Ask: Hashable, Identifiable, Sendable {
     var isSheet: Bool {
         switch self {
         case .allow, .reject: true
-        case .stop, .restart, .restartOrchestrator, .restartAgents: false
+        case .stop, .restart, .restartOrchestrator, .restartAgents, .runForReal: false
         }
     }
 }
@@ -444,7 +470,7 @@ extension RemoteClient {
     /// What may be done from here now. See `Abilities`.
     var abilities: Abilities {
         Abilities(canControl: mirror.canControl, isConnected: state == .connected, snapshot: mirror.snapshot,
-                  viewed: canvas.viewedRun, waiting: Array(mirror.waiting.values))
+                  viewed: canvas.viewedRun, waiting: Array(mirror.waiting.values), macRehearses: mirror.macRehearses)
     }
 
     /// A control was pressed. What stops work, runs a command or wants a note is asked about first, and
@@ -487,7 +513,14 @@ extension RemoteClient {
             } else {
                 controls.ask(.restartAgents(which, busy: busy), in: flowID)
             }
-        case .run, .startAgents, .approve, .dontRun, .runFromStart, .retry, .revert:
+        case .run, .runFromStart:
+            // During a rehearsal the Mac asks first too: running for real stops the rehearsal.
+            if snapshot.run.isRunning, snapshot.run.rehearsal == true {
+                controls.ask(.runForReal(press), in: flowID)
+            } else {
+                Task { await perform(press, in: flowID) }
+            }
+        case .startAgents, .approve, .dontRun, .retry, .revert, .rehearse:
             Task { await perform(press, in: flowID) }
         }
     }
@@ -515,6 +548,7 @@ extension RemoteClient {
         case .reject(let holdID, _, _, _): .reject(holdID: holdID)
         case .restartOrchestrator: .startOrchestrator
         case .restartAgents(let which, _): .restart(which)
+        case .runForReal(let press): press
         }
         Task { await perform(press, note: note, in: flowID) }
     }
