@@ -2254,6 +2254,22 @@ final class FlowController: ToolHost {
             pending.needsAllow = !ScriptRunner.isAllowed(pending.command, scope: allowScope, cardID: card.id)
             if pending.needsAllow, isFromDevice(pending.command, cardID: card.id) { pending.allowOnMac = true }
         }
+        // In a rehearsal a Script card passes on its last real output, unless the person let it run in rehearsals.
+        // One that runs goes the usual way below, asking first if its command is new.
+        if let state = rehearsal, hold.kind == .script {
+            let step = Rehearsal.scriptStep(for: card, lastOutput: scriptOutputs[card.id], readOnly: state.readOnly)
+            append(Rehearsal.scriptLine(cardName: card.name, step: step))
+            if case .passOn(let text, _) = step {
+                holds.append(pending)
+                return resolve(pending.id, port: "pass", text: text)
+            }
+        }
+        // And a Delay passes the message on at once.
+        if rehearsal != nil, hold.kind == .delay {
+            append(Rehearsal.delayLine(cardName: card.name, minutes: Int(DelayTime.wait(for: card).components.seconds / 60)))
+            holds.append(pending)
+            return resolve(pending.id, port: "out", text: nil)
+        }
         if hold.kind == .flow {
             let inner = innerFlow(of: card)
             pending.command = inner?.flow.name ?? ""
@@ -2275,11 +2291,12 @@ final class FlowController: ToolHost {
             answerIfUnanswered(pending.id, after: wait, lasting: lasts)
         }
         holds.append(pending)
+        let prefix = rehearsal != nil ? "Rehearsal: " : ""
         if pending.kind == .approval {
-            Notifier.post(title: "\(card.name) needs your approval", body: String(hold.text.prefix(200)), flowID: flow.id, cardID: card.id)
+            Notifier.post(title: "\(prefix)\(card.name) needs your approval", body: String(hold.text.prefix(200)), flowID: flow.id, cardID: card.id)
         } else if pending.needsAllow {
             append("\(card.name) is waiting for you to let its command run")
-            Notifier.post(title: "\(card.name) needs you", body: "It wants to run a command you haven't seen: \(pending.command.prefix(160))", flowID: flow.id, cardID: card.id)
+            Notifier.post(title: "\(prefix)\(card.name) needs you", body: "It wants to run a command you haven't seen: \(pending.command.prefix(160))", flowID: flow.id, cardID: card.id)
         } else {
             runScript(pending)
         }
@@ -2383,7 +2400,8 @@ final class FlowController: ToolHost {
         }
         holdTasks[hold.id] = Task {
             // Cancelling this stops the inner run, if it has begun: see `runToEnd`.
-            let answer = await inner.runToEnd(command: hold.text, levelsLeft: levels, inside: inside, forHold: hold.id)
+            // A rehearsal's Flow card rehearses the flow it runs too, in the same copy.
+            let answer = await inner.runToEnd(command: hold.text, levelsLeft: levels, inside: inside, forHold: hold.id, rehearse: self.rehearsal)
             guard !Task.isCancelled else { return }
             self.holdTasks[hold.id] = nil
             self.resolve(hold.id, port: answer.finished ? "done" : "fail", text: answer.text)
@@ -2688,10 +2706,14 @@ final class FlowController: ToolHost {
     /// Runs the flow for a Flow card and waits for the run to end. The answer is what reached its End cards.
     /// A flow has one run at a time: this waits its turn behind other Flow cards running it, and behind a run
     /// started some other way. Cancelling it gives up its place, or stops the run it began.
-    func runToEnd(command: String, levelsLeft: Int, inside: Set<String>, forHold holdID: String? = nil) async -> (finished: Bool, text: String) {
+    /// `rehearse` is the rehearsal of the flow above, which this run rehearses in too, in its copy.
+    func runToEnd(command: String, levelsLeft: Int, inside: Set<String>, forHold holdID: String? = nil,
+                  rehearse: RehearsalState? = nil) async -> (finished: Bool, text: String) {
+        // A real run always wins over a rehearsal of this flow, rather than wait its turn behind it.
+        if rehearse == nil { await stopRehearsalForRealRun() }
         guard await subflowTurns.take(whenFree: { !self.isRunning && !self.isStartingRun }) else { return (false, "The run was stopped.") }
         defer { subflowTurns.release() }
-        let started = await start(command: command, levelsLeft: levelsLeft, inside: inside)
+        let started = await start(command: command, levelsLeft: levelsLeft, inside: inside, rehearse: rehearse != nil, lentCopy: rehearse)
         guard started.began, let id = started.runID else { return (false, started.status) }
         runForHold = holdID
         defer { if runForHold == holdID { runForHold = nil } }
