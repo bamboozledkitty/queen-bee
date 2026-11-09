@@ -334,6 +334,7 @@ public struct CardPatch: Equatable, Sendable {
     public var template: String?
     public var saveTo: String?
     public var failsRun: Bool?
+    public var runsInRehearsals: Bool?
     public var text: String?
     public var flowRef: String?
 

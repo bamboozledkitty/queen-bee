@@ -30,6 +30,9 @@ import Testing
         ]
         for card in Capabilities.cards {
             for setting in card.settings {
+                // Only the person may turn this one on, so there is no value the tools take that changes it.
+                // RehearsalTests checks it.
+                if setting.key == "runs_in_rehearsals" { continue }
                 let sample = try #require(samples[setting.key], "No sample value for \(setting.key): add one to this test.")
                 let host = FakeHost()
                 _ = await Tools.call(name: "add_card", arguments: ["kind": .string(card.kind.rawValue), "name": "C"], host: host)

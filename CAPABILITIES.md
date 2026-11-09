@@ -115,6 +115,8 @@ Runs a shell command in the project folder, with the message on its standard inp
 - Size when added: 240 by 120 points
 - Setting `command` (text): The shell command to run.
 - Setting `wait_minutes` (whole number, 0 to 10080): How many minutes the person has to allow a command they haven't allowed before, up to 10,080. With no answer by then it goes out fail without running. 0, the default, waits for good.
+- Setting `runs_in_rehearsals` (true or false): false skips this card's command in a rehearsal, the default: it passes on its output from the last real run instead. Only the person can turn it on, in the card's settings on their Mac.
+- In a rehearsal the command is skipped, and the card passes on its last real output or a note, unless the person has turned on runs_in_rehearsals.
 - The person is asked to allow a command they did not type themselves the first time a run reaches it.
 - A command that hasn't finished after 10 minutes is stopped and goes out fail.
 - Only the last 20,000 characters of what it printed are passed on.

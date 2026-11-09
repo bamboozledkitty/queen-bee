@@ -524,6 +524,8 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
     public var saveTo: String?
     /// True ends the run as failed when a message reaches the card.
     public var failsRun: Bool?
+    /// Script: only off may be sent from a device. See `problem`.
+    public var runsInRehearsals: Bool?
     // Note, Approval
     public var text: String?
     // Approval, Script
@@ -560,6 +562,7 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
         patch.template = template
         patch.saveTo = saveTo
         patch.failsRun = failsRun
+        patch.runsInRehearsals = runsInRehearsals
         patch.text = text
         patch.flowRef = flowRef
         patch.waitMinutes = waitMinutes
@@ -601,6 +604,7 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
     /// Why this patch can't be made whatever card it is for. Nil when it is fine.
     public var problem: String? {
         if isEmpty { return "There is nothing to change." }
+        if runsInRehearsals == true { return Rehearsal.turningOnRefusal }
         for short in [name, model, effort, permissionMode, role, flowRef, whenNoAnswer] + (branches ?? []) {
             if let short, !Remote.fitsName(short) { return RemoteCommand.nameTooLong }
         }

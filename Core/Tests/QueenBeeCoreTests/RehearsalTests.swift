@@ -100,6 +100,41 @@ import Testing
     }
 }
 
+/// The "Runs in rehearsals" setting on a Script card, and who may turn it on.
+@Suite struct RunsInRehearsalsTests {
+    @Test func aScriptCardCanBeSetToRunInRehearsals() throws {
+        var flow = Flow(name: "Test")
+        try flow.addCard(kind: .script, name: "Tests")
+        var patch = CardPatch()
+        patch.runsInRehearsals = true
+        #expect(try flow.updateCard("Tests", patch: patch).runsInRehearsals == true)
+        patch.runsInRehearsals = false
+        // Off is left out of the file.
+        #expect(try flow.updateCard("Tests", patch: patch).runsInRehearsals == nil)
+    }
+
+    @Test func theOrchestratorCantTurnOnRunsInRehearsals() async throws {
+        let host = FakeHost()
+        _ = await Tools.call(name: "add_card", arguments: ["kind": "script", "name": "Tests"], host: host)
+        let on = await Tools.call(name: "update_card", arguments: ["card": "Tests", "runs_in_rehearsals": true], host: host)
+        #expect(on.isError && on.text.contains(Rehearsal.turningOnRefusal))
+        #expect(try #require(await host.flow.resolveCard("Tests")).runsInRehearsals == nil)
+        // Off is allowed.
+        let off = await Tools.call(name: "update_card", arguments: ["card": "Tests", "runs_in_rehearsals": false], host: host)
+        #expect(!off.isError)
+    }
+
+    @Test func aDeviceCantTurnOnRunsInRehearsals() {
+        var on = RemoteCardPatch()
+        on.runsInRehearsals = true
+        #expect(on.problem == Rehearsal.turningOnRefusal)
+        var off = RemoteCardPatch()
+        off.runsInRehearsals = false
+        #expect(off.problem == nil)
+        #expect(off.cardPatch.runsInRehearsals == false)
+    }
+}
+
 extension Array where Element == String {
     /// Whether `pair` appears side by side, in that order.
     func containsInOrder(_ pair: [String]) -> Bool {

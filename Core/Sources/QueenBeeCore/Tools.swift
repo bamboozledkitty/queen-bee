@@ -211,7 +211,10 @@ public enum Tools {
                 fields["has_last_reply"] = .bool(!(status?.lastReply ?? "").isEmpty)
             case .start, .script:
                 fields["command"] = text(card.command)
-                if card.kind == .script { fields["wait_minutes"] = .number(Double(card.waitMinutes ?? 0)) }
+                if card.kind == .script {
+                    fields["wait_minutes"] = .number(Double(card.waitMinutes ?? 0))
+                    fields["runs_in_rehearsals"] = .bool(card.runsInRehearsals == true)
+                }
                 if card.kind == .start, let trigger = card.trigger {
                     fields["schedule"] = .string(trigger.summary)
                     fields["schedule_on"] = .bool(snapshot.armedStartIDs.contains(card.id))
@@ -480,6 +483,8 @@ private struct Arguments: Sendable {
         patch.template = try string("template")
         patch.saveTo = try string("save_to")
         patch.failsRun = try bool("fails_run")
+        patch.runsInRehearsals = try bool("runs_in_rehearsals")
+        if patch.runsInRehearsals == true { throw FlowError.invalid(Rehearsal.turningOnRefusal) }
         patch.text = try string("text")
         return patch
     }

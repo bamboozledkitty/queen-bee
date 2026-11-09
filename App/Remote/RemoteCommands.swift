@@ -863,6 +863,7 @@ enum RemoteCommands {
             (patch.maxTries != nil, "number of tries"), (patch.branches != nil, "branches"), (patch.template != nil, "template"),
             (patch.saveTo != nil, "file to save to"), (patch.text != nil, "text"), (patch.flowRef != nil, "flow"),
             (patch.browser != nil, "browser"), (patch.failsRun != nil, "whether it fails the run"),
+            (patch.runsInRehearsals != nil, "whether it runs in rehearsals"),
         ]
         return named.filter(\.0).map(\.1)
     }
