@@ -167,6 +167,14 @@ Holds the message for wait_minutes, then passes it on out unchanged, still from 
 - A run ends when nothing is left to do. The person sees how it ended: finished with an answer, ended without an answer, gave up (a Loop ran out of tries with nothing on gave-up), stopped at the hand-off limit, stopped at the spending limit, failed, or stopped.
 - An agent the run isn't waiting on can be restarted, or stop, without stopping the run. If the run is waiting on it, the run stops.
 
+## Rehearsals
+
+- rehearse_flow runs the whole flow on Haiku at low effort, by throwaway copies of its agents that don't remember their real conversations, in a throwaway git copy of the project that is deleted afterwards. Outside git the copies can only look.
+- The copies have no browser, none of the person's other tool servers, and can't git push. Other commands, such as curl, still really run.
+- Script cards are skipped and pass on their last real output, unless the person turned on runs_in_rehearsals. Delay cards pass on at once. Approvals ask the person as usual. Files End cards save go into the copy.
+- A rehearsal never starts while a run is going. A real run stops a rehearsal.
+- Rehearsals are kept apart from real runs (the 5 latest) and can't be kept for good.
+
 ## Flow settings
 
 Set with update_flow. get_flow gives each one's value now.
@@ -200,4 +208,4 @@ What the browser can't do:
 
 ## Your tools
 
-The orchestrator builds and runs a flow with: `get_flow`, `add_card`, `update_card`, `remove_card`, `add_link`, `remove_link`, `update_flow`, `run_flow`, `stop_flow`, `read_agent`, `create_subflow`, `get_run_log`. Each one's own description says how to call it.
+The orchestrator builds and runs a flow with: `get_flow`, `add_card`, `update_card`, `remove_card`, `add_link`, `remove_link`, `update_flow`, `run_flow`, `rehearse_flow`, `stop_flow`, `read_agent`, `create_subflow`, `get_run_log`. Each one's own description says how to call it.

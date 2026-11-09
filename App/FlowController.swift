@@ -3025,6 +3025,10 @@ final class FlowController: ToolHost {
         await run(command: command)
     }
 
+    func rehearseFlow(command: String?) async throws -> String {
+        throw FlowError.invalid("Rehearsals aren't ready yet.")
+    }
+
     func stopFlow() async {
         await stop()
     }

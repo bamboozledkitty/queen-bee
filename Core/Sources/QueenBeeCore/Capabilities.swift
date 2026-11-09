@@ -302,6 +302,14 @@ public enum Capabilities {
         lines.append("- \(runLimit)")
         lines.append("- A run ends when nothing is left to do. The person sees how it ended: finished with an answer, ended without an answer, gave up (a Loop ran out of tries with nothing on gave-up), stopped at the hand-off limit, stopped at the spending limit, failed, or stopped.")
         lines.append("- An agent the run isn't waiting on can be restarted, or stop, without stopping the run. If the run is waiting on it, the run stops.")
+        lines += ["", "## Rehearsals", ""]
+        lines += [
+            "- rehearse_flow runs the whole flow on Haiku at low effort, by throwaway copies of its agents that don't remember their real conversations, in a throwaway git copy of the project that is deleted afterwards. Outside git the copies can only look.",
+            "- The copies have no browser, none of the person's other tool servers, and can't git push. Other commands, such as curl, still really run.",
+            "- Script cards are skipped and pass on their last real output, unless the person turned on runs_in_rehearsals. Delay cards pass on at once. Approvals ask the person as usual. Files End cards save go into the copy.",
+            "- A rehearsal never starts while a run is going. A real run stops a rehearsal.",
+            "- Rehearsals are kept apart from real runs (the \(Rehearsal.keptLatest) latest) and can't be kept for good.",
+        ]
         lines += ["", "## Flow settings", ""]
         lines.append("Set with update_flow. get_flow gives each one's value now.")
         for setting in flowSettings {

@@ -13,6 +13,7 @@ actor FakeHost: ToolHost {
     var runError: String?
     private(set) var commands: [String?] = []
     private(set) var stops = 0
+    private(set) var rehearsed: [String?] = []
 
     init(flow: Flow = Flow(name: "Review")) { self.flow = flow }
 
@@ -32,6 +33,8 @@ actor FakeHost: ToolHost {
         flow = edited
         return result
     }
+
+    func rehearseFlow(command: String?) async throws -> String { rehearsed.append(command); return "Rehearsal started" }
 
     func runFlow(command: String?) async throws -> String {
         if let runError { throw Refused(description: runError) }
@@ -68,7 +71,7 @@ actor FakeHost: ToolHost {
     @Test func everyToolIsDefinedWithAnObjectSchema() {
         #expect(Tools.definitions.map(\.name) == [
             "get_flow", "add_card", "update_card", "remove_card", "add_link", "remove_link",
-            "update_flow", "run_flow", "stop_flow", "read_agent", "create_subflow", "get_run_log",
+            "update_flow", "run_flow", "rehearse_flow", "stop_flow", "read_agent", "create_subflow", "get_run_log",
         ])
         for tool in Tools.definitions {
             #expect(!tool.description.isEmpty)
@@ -280,6 +283,14 @@ actor FakeHost: ToolHost {
         #expect(await host.flow.links.count == count - 1)
         let again = await Tools.call(name: "remove_link", arguments: ["link": .string(link.id)], host: host)
         #expect(again.isError && again.text.contains(link.id))
+    }
+
+    @Test func rehearseFlowStartsARehearsal() async throws {
+        let host = FakeHost(flow: try sample())
+        let said = await Tools.call(name: "rehearse_flow", arguments: ["command": "Try it"], host: host)
+        #expect(await host.rehearsed == ["Try it"])
+        #expect(!said.isError)
+        #expect(!said.text.isEmpty)
     }
 
     @Test func runAndStop() async throws {
