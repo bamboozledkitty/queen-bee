@@ -47,6 +47,9 @@ public struct RunProgress: Equatable, Sendable {
         public var loopBack: LoopBack?
         /// For a Flow card whose flow is running: how far that run has got, from 0 to 1.
         public var inner: Double?
+
+        /// The run got here: it is here now, has been, or ended here.
+        public var isReached: Bool { state != .notYet && state != .skipped }
     }
 
     /// Why the person is needed at a card.

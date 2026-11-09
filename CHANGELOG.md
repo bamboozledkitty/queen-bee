@@ -10,6 +10,14 @@ All notable changes to Queen Bee are listed here. The format follows
 
 - Keep a run for good. On the Mac, pick a run on the Runs page and choose Keep this run; on an iPhone or iPad, touch and hold it on the flow's Runs page. A kept run stays whole, with what its agents said, however many newer runs go by, so new runs can always be compared with it. Kept runs are marked in the lists and don't take one of a flow's 20 places for runs. A flow can keep 10 runs. Clearing the log leaves them. Stop keeping a run and it is let go like any other once newer runs come.
 
+### Changed
+
+- When a run's line of stops is longer than its panel, the cut edges fade, round arrows page along, and a count says how many stops are out of view, such as "5 more". Stop names wrap to two lines, so two names that start or end alike still read differently, and pointing at a stop shows its whole name.
+
+### Fixed
+
+- The green on a run's line is now all one colour between two stops: green where the run reached both, grey otherwise. Before, the line between two stops the run was at together was half grey and half green, and a stop the run hadn't reached could sit on green.
+
 ## [0.10.1] - 2026-11-08
 
 ### Fixed
