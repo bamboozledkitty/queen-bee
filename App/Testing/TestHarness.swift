@@ -188,6 +188,12 @@ enum TestHarness {
             // What the person types into the terminal on show: in a rehearsal, the card's stand-in.
             controller.shownSession(forCard: cardID).send(text)
             return [:]
+        case "keys":
+            // Keys pressed in the terminal on show, straight to Claude Code as the Mac's keyboard sends them: for a
+            // question it asks before its prompt is up, such as whether to trust a folder.
+            guard let cardID, let text = payload["text"]?.stringValue else { return ["error": "keys needs card and text"] }
+            controller.shownSession(forCard: cardID).type(Data(text.utf8))
+            return [:]
         case "kill":
             // What a crash looks like from outside: the process is gone without a goodbye.
             guard let cardID, let pid = controller.shownSessionIfAny(forCard: cardID)?.view.process.shellPid, pid > 0 else { return ["error": "no process"] }

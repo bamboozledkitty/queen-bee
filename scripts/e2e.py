@@ -5464,7 +5464,6 @@ def rehearsal_in_a_copy(app):
     rid = REHEARSE["id"]
     ids = {c["name"]: c["id"] for c in REHEARSE["cards"]}
     writer, echo = ids["Writer"], ids["Echo"]
-    # Inside the scratch project, which Claude Code already trusts, so neither the Writer nor its stand-in is asked to.
     repo = os.path.join(app.project, "rehearsal-repo")
     rehearsals = os.path.join(repo, ".queenbee", "rehearsals")
     os.makedirs(repo)
@@ -5480,7 +5479,28 @@ def rehearsal_in_a_copy(app):
                      " ".join(m.stderr.strip() for m in made)[:300]):
             return
         app.op("app", "remote-project", path=repo, add=True)
-        app.open_flow(REHEARSE)
+        # Claude Code asks whether to trust a git repository it hasn't seen, even inside a folder it trusts, as it
+        # does a person's new project. The Writer's card shows the question, and it is answered as a person would.
+        # The rehearsal's copy is a worktree inside the repository, which isn't asked again: the stand-in shows that.
+        deadline = time.time() + 30
+        while "sessions" not in app.state(rid):
+            if time.time() > deadline:
+                raise RuntimeError("the app never loaded the flow Rehearse")
+            time.sleep(0.5)
+        app.op(rid, "select")
+        asked, ready, deadline = False, False, time.time() + 150
+        while time.time() < deadline and not ready:
+            ready = app.state(rid)["sessions"]["Writer"]["state"] == "idle"
+            if not ready and not asked and "trust this folder" in " ".join(app.op(rid, "terminal", card="Writer").get("screen", [])).lower():
+                # The question starts on "No, exit", so Return alone would quit: down to "Yes, I trust this folder" first.
+                app.op(rid, "keys", card="Writer", text="\x1b[B")
+                time.sleep(0.5)
+                app.op(rid, "keys", card="Writer", text="\r")
+                asked = True
+            time.sleep(1)
+        if not check("the Writer's card asks whether to trust the new repository, and the Writer starts once that is answered",
+                     asked and ready, f"asked {asked}, ready {ready}"):
+            return
 
         # A real run first, so that Echo has a real output for a rehearsal to pass on.
         app.op(rid, "run")
@@ -5591,6 +5611,9 @@ def rehearsal_in_a_copy(app):
         check("and it can't be compared with a real run", r.get("error") == "a rehearsal can't be compared", str(r))
     finally:
         app.op(rid, "close")
+        # Back to the gates flow before the repository's project goes. Taking out the project on screen can crash the
+        # app as its canvas catches up, which is a bug of its own, not a rehearsal's.
+        app.op(GATES["id"], "select")
         app.op("app", "remote-project", path=repo, add=False)
         shutil.rmtree(repo, ignore_errors=True)
 
