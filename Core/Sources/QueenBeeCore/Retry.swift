@@ -14,8 +14,9 @@ public enum Retry {
         guard viewed == nil else { return false }
         // Cleared with none kept: the canvas still holds the last run's marks and messages.
         guard let last = runs.last else { return true }
-        // A run filed before runs were numbered can only be the last if it is the newest there is.
-        guard let number = last.number else { return true }
+        // A run filed before runs were numbered is older than any numbered one, so it is the last to end only when
+        // the flow has numbered none. Otherwise Clear let the newer runs go and left it, kept.
+        guard let number = last.number else { return highestNumber == 0 }
         return number >= highestNumber
     }
 

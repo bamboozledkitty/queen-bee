@@ -44,7 +44,7 @@ import Testing
         #expect(!Retry.lastRunIsOnShow(viewed: nil, runs: runs, highestNumber: 3))
     }
 
-    @Test func notAfterClearingARehearsalThatEndedLast() {
+    @Test func notOnAKeptRunLeftAfterClearingARehearsalThatEndedLast() {
         // A rehearsal can't be kept, so Clear lets it go and puts an older kept run on show.
         let runs = RunKeeping.afterClear([run(1, kept: true), run(2, rehearsal: true)])
         #expect(!Retry.lastRunIsOnShow(viewed: nil, runs: runs, highestNumber: 2))
@@ -52,6 +52,7 @@ import Testing
 
     @Test func runsFromBeforeNumbersStillCanBeRetried() {
         #expect(Retry.lastRunIsOnShow(viewed: nil, runs: [run(nil)], highestNumber: 0))
-        #expect(Retry.lastRunIsOnShow(viewed: nil, runs: [run(nil)], highestNumber: 4))
+        // Once a run has been numbered, an unnumbered one is older: Clear left it, kept.
+        #expect(!Retry.lastRunIsOnShow(viewed: nil, runs: [run(nil, kept: true)], highestNumber: 4))
     }
 }
