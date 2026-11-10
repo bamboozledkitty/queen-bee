@@ -29,6 +29,8 @@ import Testing
         .runFromStart(flowID: "f", startCardID: "s"),
         .retry(flowID: "f", cardID: "a"),
         .clearLog(flowID: "f"),
+        .keepRun(flowID: "f", runID: "r", on: true),
+        .keepRun(flowID: "f", runID: "r", on: false),
         .dismissBanner(flowID: "f"),
         .stopAgents(flowID: "f"),
         .revertSettings(flowID: "f", cardID: "a"),
@@ -107,6 +109,7 @@ import Testing
         // Turning a schedule on is not an edit: an edit from a device turns schedules off.
         let others: [RemoteCommand] = [
             .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "a"), .clearLog(flowID: "f"),
+            .keepRun(flowID: "f", runID: "r", on: true),
             .dismissBanner(flowID: "f"), .stopAgents(flowID: "f"), .armSchedule(flowID: "f", cardID: "s", on: true),
             .pin(flowID: "f", on: true), .updateRole(roleID: "r", flowID: "f", cardID: "a"),
         ] + apart

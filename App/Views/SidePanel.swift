@@ -74,7 +74,7 @@ struct SidePanel: View {
                     Button("Clear") { controller.clearLog() }
                         .buttonStyle(.panel(.quiet))
                         .padding(.trailing, DS.Space.s)
-                        .help("Clear the log and the list of earlier runs")
+                        .help("Clear the log and the list of earlier runs, but for the runs you keep")
                 }
             }
             .frame(minHeight: DS.Size.tabRow - 4)
@@ -161,7 +161,7 @@ struct RunPicker: View {
             ForEach(controller.runs.reversed()) { run in
                 let isShown = controller.viewedRunID == run.id || (controller.viewedRunID == nil && run.id == controller.runs.last?.id)
                 Toggle(isOn: Binding(get: { isShown }, set: { _ in controller.view(run: run.id) })) {
-                    Text("\(run.number.map { "Run \($0) · " } ?? "")\(Self.label(for: run.started)) · \(run.summary) · \(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")")
+                    Text("\(run.number.map { "Run \($0) · " } ?? "")\(Self.label(for: run.started)) · \(run.summary) · \(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")\(run.isKept ? " · Kept" : "")")
                     Text(run.command)
                 }
             }

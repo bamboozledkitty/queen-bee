@@ -307,7 +307,7 @@ enum DebugLaunch {
         state["results"] = Dictionary(run.results.map { (names[$0.key] ?? $0.key, $0.value) }) { first, _ in first }
         state["runs"] = RunRow.all(in: snapshot, viewed: viewed).map {
             ["id": $0.id, "started": $0.started, "outcome": $0.outcome.rawValue, "length": $0.length, "command": $0.command,
-             "cost": $0.cost ?? NSNull(), "onShow": $0.isOnShow] as [String: Any]
+             "cost": $0.cost ?? NSNull(), "onShow": $0.isOnShow, "kept": $0.isKept, "spoken": $0.spoken] as [String: Any]
         }
         state["viewedRun"] = viewed?.id ?? NSNull()
         state["compare"] = compared ?? NSNull()

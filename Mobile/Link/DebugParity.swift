@@ -27,6 +27,7 @@ import QueenBeeCore
 ///   openSub:<card>                        a Flow card's Open
 ///   backTo                                "Back to" the flow that runs the open one
 ///   clearLog                              the log's Clear, once its question is answered yes
+///   keepRun:<id or number>:on|off         a run's Keep for Good or Stop Keeping, in the Runs page's menu for it
 ///   pin:<flow>:on|off | askStopAgents:<flow> | stopAgents:<flow>
 ///   find:<text>                           write in Find over the list of flows
 ///   findGo:<flow>[/<card>]                tap what Find found
@@ -166,6 +167,11 @@ enum DebugParity {
             }
         case "clearLog":
             return { await client.clearLog() }
+        case "keepRun":
+            return {
+                guard parts.count > 2, let run = client.mirror.snapshot?.runs.first(where: { $0.id == parts[1] || $0.number.map(String.init) == parts[1] }) else { return noSuch }
+                return await client.keepRun(run.id, on: parts[2] == "on")
+            }
         case "pin":
             return {
                 guard parts.count > 2, let found = listed(parts[1]) else { return noSuch }

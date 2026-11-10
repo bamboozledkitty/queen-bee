@@ -270,6 +270,13 @@ struct RunsList: View {
                         .frame(width: DS.Size.runNumberColumn, alignment: .leading)
                     outcomeMark(entry.record)
                     Text(entry.controller.flow.name).foregroundStyle(Palette.text.color).lineLimit(1)
+                    if entry.record?.isKept == true {
+                        Image(systemName: "bookmark.fill")
+                            .dsIcon(DS.IconSize.s, .semibold)
+                            .foregroundStyle(Palette.textFaint.color)
+                            .help("Kept for good")
+                            .accessibilityLabel("Kept")
+                    }
                     Text(detail(entry)).foregroundStyle(Palette.textMuted.color).lineLimit(1)
                     Spacer(minLength: DS.Space.s)
                     if let record = entry.record, !record.cost.isZero {
@@ -346,6 +353,7 @@ private struct RunPeek: View {
                 HStack(spacing: DS.Space.tight) {
                     StatusPill(record.summary, tone: record.outcome == .finished ? .pass : record.outcome == .failed ? .fail : .neutral)
                     if !record.cost.isZero { StatusPill(record.cost.price, tone: .neutral, dot: false) }
+                    if record.isKept { StatusPill("Kept", tone: .neutral, dot: false) }
                 }
             }
             .padding(DS.Space.l)
@@ -368,6 +376,7 @@ private struct RunPeek: View {
             }
             DSDivider()
             VStack(spacing: DS.Space.s) {
+                keepButton
                 compareMenu
                 Button {
                     services.show(controller)
@@ -385,13 +394,27 @@ private struct RunPeek: View {
         }
     }
 
+    /// Keeps the run whole for good, or stops keeping it. A flow can keep only so many.
+    private var keepButton: some View {
+        let full = !record.isKept && !RunKeeping.canKeepAnother(controller.runs)
+        return Button {
+            controller.setKept(!record.isKept, run: record.id)
+        } label: { Text(record.isKept ? "Stop keeping this run" : "Keep this run").frame(maxWidth: .infinity) }
+            .buttonStyle(.ds(.secondary, wide: true))
+            .disabled(full)
+            .help(full ? RunKeeping.limitReached
+                  : record.isKept ? "Let this run go like any other run as newer runs come. It can go, with what its links carried, as soon as the next run ends"
+                  : record.messages.isEmpty ? "Keep this run, so it isn't let go as newer runs come. What its links carried is no longer kept, so its path, decisions and cost are what stay"
+                  : "Keep this run whole, so it isn't let go as newer runs come and new runs can always be compared with it")
+    }
+
     /// The flow's other kept runs, newest first, to set beside this one.
     @ViewBuilder
     private var compareMenu: some View {
         let others = controller.runs.reversed().filter { $0.id != record.id }
         Menu {
             ForEach(others) { other in
-                Button("\(other.number.map { "Run \($0) · " } ?? "")\(RunPicker.label(for: other.started)) · \(other.summary)") { comparedWith = other }
+                Button("\(other.number.map { "Run \($0) · " } ?? "")\(RunPicker.label(for: other.started)) · \(other.summary)\(other.isKept ? " · Kept" : "")") { comparedWith = other }
             }
         } label: { Text("Compare with…").frame(maxWidth: .infinity) }
             .menuStyle(.button)

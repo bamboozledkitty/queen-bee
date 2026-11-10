@@ -137,6 +137,19 @@ extension RemoteClient {
         return await perform(command: command)
     }
 
+    /// A run's Keep: the run stays whole for good on the Mac, or goes back to the usual rules. Offered when this
+    /// device may control the Mac and the Mac takes it: see `RemoteFeature.keepRuns`. Unlike the other controls, it
+    /// is offered while a run is going and while an earlier run is on show, as on the Mac's Runs page.
+    var canKeepRuns: Bool { state == .connected && mirror.canControl && mirror.macKeepsRuns }
+
+    func keepRunCommand(_ runID: String, on: Bool) -> RemoteCommand? { forOpenFlow { .keepRun(flowID: $0, runID: runID, on: on) } }
+
+    @discardableResult
+    func keepRun(_ runID: String, on: Bool) async -> String? {
+        guard canKeepRuns, let command = keepRunCommand(runID, on: on) else { return Self.notConnected }
+        return await perform(command: command)
+    }
+
     func dismissBannerCommand() -> RemoteCommand? { forOpenFlow { .dismissBanner(flowID: $0) } }
 
     /// Closes the message at the top of the flow, on the Mac as well as here.

@@ -230,6 +230,7 @@ Task {
     case "runFromStart": return .runFromStart(flowID: flow, startCardID: text("card"))
     case "retry": return .retry(flowID: flow, cardID: text("card"))
     case "clearLog": return .clearLog(flowID: flow)
+    case "keepRun": return .keepRun(flowID: flow, runID: text("run"), on: flag("on"))
     case "dismissBanner": return .dismissBanner(flowID: flow)
     case "stopAgents": return .stopAgents(flowID: flow)
     case "revertSettings": return .revertSettings(flowID: flow, cardID: text("card"))

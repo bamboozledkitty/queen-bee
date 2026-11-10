@@ -119,9 +119,6 @@ final class FlowController: ToolHost {
     /// The card whose "run from here" box is open in the settings panel.
     var runFromCardID: String?
     @ObservationIgnored private var currentRun: (id: String, started: Date, command: String)?
-    /// How many runs are kept, and for how many of them what links carried. How much of each message is kept is
-    /// `CarriedMessages`'s to say.
-    private static let keptRuns = 20, runsWithMessages = RunComparison.runsWithMessages
     /// The whole text of the messages in `messages` that are kept there cut short, by message id: what Retry and
     /// "run from here" give a card again.
     @ObservationIgnored private var wholeMessages: [UUID: String] = [:]
@@ -620,9 +617,9 @@ final class FlowController: ToolHost {
                                number: nextRunNumber)
         highestRunNumber = record.number ?? highestRunNumber
         runs.append(record)
-        if runs.count > Self.keptRuns { runs.removeFirst(runs.count - Self.keptRuns) }
-        // The messages a link carried are kept for the newest few runs only; older runs keep their path and answers.
-        for index in runs.indices.dropLast(Self.runsWithMessages) where !runs[index].messages.isEmpty { runs[index].messages = [:] }
+        // Which runs stay, and which keep what their links carried, is `RunKeeping`'s to say. How much of each
+        // message is kept is `CarriedMessages`'s.
+        runs = RunKeeping.trimmed(runs)
         recordUsage(forRun: run.id)
         endWaiters.removeValue(forKey: run.id)?.forEach { $0.resume(returning: record) }
     }
@@ -643,11 +640,24 @@ final class FlowController: ToolHost {
         noteFromDevice("\(device) cleared the log")
     }
 
-    /// Empties the log. Answers and run marks stay until the next run replaces them.
+    /// Keeps a run for good, so it isn't let go as newer runs come, or stops keeping it. Nil when that was done;
+    /// otherwise why not, in words to show.
+    @discardableResult
+    func setKept(_ on: Bool, run id: String) -> String? {
+        if let problem = RunKeeping.setKept(on, run: id, in: &runs) { return problem }
+        saveHistory()
+        return nil
+    }
+
+    /// Empties the log, and the earlier runs but for those kept for good. With none kept, the last run's answers and
+    /// marks stay on the canvas until the next run replaces them. With some kept, the newest of them goes on show,
+    /// so the canvas is the run the run picker and a device mark as on show.
     func clearLog() {
         log.removeAll()
-        runs.removeAll()
+        runs = RunKeeping.afterClear(runs)
         viewedRunID = nil
+        // A kept run left is now the latest, so the canvas shows it, as the run picker and a device say.
+        if !runs.isEmpty { view(run: runs.last?.id) }
         runLogStart = 0
         saveHistory()
     }
