@@ -45,6 +45,8 @@ public protocol ToolHost: Sendable {
     func mutate<T: Sendable>(_ body: @Sendable (inout Flow) throws -> T) async throws -> T
     /// Starts a run and returns a short status line.
     func runFlow(command: String?) async throws -> String
+    /// Starts a rehearsal and returns a short status line.
+    func rehearseFlow(command: String?) async throws -> String
     func stopFlow() async
     func runLog() async -> [String]
     /// The same tools for one of the sub-flows below this flow, by its name. A flow above or beside this one is refused.
@@ -155,6 +157,9 @@ public enum Tools {
         case "run_flow":
             return try await host.runFlow(command: try arguments.string("command"))
 
+        case "rehearse_flow":
+            return try await host.rehearseFlow(command: try arguments.string("command"))
+
         case "stop_flow":
             guard await host.snapshot().isRunning else { return "No run is going." }
             await host.stopFlow()
@@ -211,7 +216,10 @@ public enum Tools {
                 fields["has_last_reply"] = .bool(!(status?.lastReply ?? "").isEmpty)
             case .start, .script:
                 fields["command"] = text(card.command)
-                if card.kind == .script { fields["wait_minutes"] = .number(Double(card.waitMinutes ?? 0)) }
+                if card.kind == .script {
+                    fields["wait_minutes"] = .number(Double(card.waitMinutes ?? 0))
+                    fields["runs_in_rehearsals"] = .bool(card.runsInRehearsals == true)
+                }
                 if card.kind == .start, let trigger = card.trigger {
                     fields["schedule"] = .string(trigger.summary)
                     fields["schedule_on"] = .bool(snapshot.armedStartIDs.contains(card.id))
@@ -342,6 +350,15 @@ public enum Tools {
             agent's reply then travels its links. Pass command to use it in place of the Start card's own command \
             for this run. Only one run can go at a time. This returns once the run has started, not when it ends: \
             follow it with get_run_log and read_agent.
+            """,
+            inputSchema: schema(["command": ["type": "string", "description": "What to send in place of the Start card's command."]])),
+        ToolDefinition(
+            name: "rehearse_flow",
+            description: """
+            Start a rehearsal: a run of the whole flow on Haiku at low effort, by throwaway copies of its agents, \
+            in a throwaway copy of the project. Use it to check a flow's routing after you change it. It returns once \
+            the rehearsal has started: follow it with get_run_log. What a rehearsal does at each card is in the \
+            capabilities reference.
             """,
             inputSchema: schema(["command": ["type": "string", "description": "What to send in place of the Start card's command."]])),
         ToolDefinition(
@@ -480,6 +497,8 @@ private struct Arguments: Sendable {
         patch.template = try string("template")
         patch.saveTo = try string("save_to")
         patch.failsRun = try bool("fails_run")
+        patch.runsInRehearsals = try bool("runs_in_rehearsals")
+        if patch.runsInRehearsals == true { throw FlowError.invalid(Rehearsal.turningOnRefusal) }
         patch.text = try string("text")
         return patch
     }

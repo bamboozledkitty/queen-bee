@@ -40,7 +40,7 @@ enum WireSamples {
         RemoteRunState(isRunning: true, marks: ["c1": mark], linkPasses: ["l1": 1], liveLinkIDs: ["l1"], handOffs: 1,
                        holds: [PendingHold(id: "h1", cardID: "c1", kind: .script, text: "t", from: "A", command: "ls", needsAllow: true, allowOnMac: true)],
                        results: ["c1": "r"], usage: ["c1": usage], sessions: ["c1": .working], awaitingAnswer: ["c1"], banner: "b",
-                       awaitingRestart: ["c1": ["model"]], orchestratorNeedsRestart: true, runUsage: ["c1": usage], workplace: "main · worktree")
+                       awaitingRestart: ["c1": ["model"]], orchestratorNeedsRestart: true, runUsage: ["c1": usage], workplace: "main · worktree", rehearsal: true)
     }
 
     static var overview: RemoteOverview {
@@ -116,7 +116,7 @@ enum WireSamples {
             .foldGroup(flowID: "f", groupID: "g", folded: true), .patchCard(flowID: "f", cardID: "c", patch: patch),
             .setFlowOption(flowID: "f", option: .subflowLimit(levels: 2)), .setFlowOption(flowID: "f", option: .notifyOrchestrator(on: true)),
             .newFlow(projectID: "p", name: "n"), .renameFlow(flowID: "f", name: "n"), .deleteFlow(flowID: "f"), .undo(flowID: "f"), .redo(flowID: "f"),
-            .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "c"), .clearLog(flowID: "f"), .keepRun(flowID: "f", runID: "r", on: true), .dismissBanner(flowID: "f"),
+            .runFromStart(flowID: "f", startCardID: "s"), .rehearse(flowID: "f", startCardID: nil), .rehearse(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "c"), .clearLog(flowID: "f"), .keepRun(flowID: "f", runID: "r", on: true), .dismissBanner(flowID: "f"),
             .stopAgents(flowID: "f"), .revertSettings(flowID: "f", cardID: "c"), .armSchedule(flowID: "f", cardID: "c", on: true),
             .armSchedule(flowID: "f", cardID: "c", on: true, shown: "s"),
             .restartAgents(flowID: "f", which: .all(withOrchestrator: false)), .restartAgents(flowID: "f", which: .cards(["c"])),
@@ -172,8 +172,17 @@ enum WireSamples {
     // Version 5 grew a message and a command, both sent only to an app that has said `RemoteFeature.overview`, and
     // `RemoteRunState.workplace`, which is optional: an app from before reads all of it as it did. Then `shown` in
     // `RemoteCommand.armSchedule` and `RemoteEditState.scheduleFingerprints`, both optional, for
-    // `RemoteFeature.scheduleCheck`.
-    static let fingerprints: [Int: String] = [5: "84b18748c0b17acda28442d8"]
+    // `RemoteFeature.scheduleCheck`. Then `RemoteCommand.rehearse` and `RemoteRunState.rehearsal`, the command sent only to a Mac
+    // that has said `RemoteFeature.rehearsals` and the field optional.
+    static let fingerprints: [Int: String] = [5: "1b78871f0bfba6c8e5c3cc2b"]
+
+    @Test func aRunStateFromBeforeRehearsalsIsReal() throws {
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(WireSamples.run)) as? [String: Any])
+        #expect(object["rehearsal"] as? Bool == true)
+        object["rehearsal"] = nil
+        let back = try JSONDecoder().decode(RemoteRunState.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(back.rehearsal == nil)
+    }
 
     @Test func theWireFormatMatchesItsVersion() throws {
         let now = try WireSamples.fingerprint()

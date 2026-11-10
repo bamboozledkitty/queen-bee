@@ -50,6 +50,54 @@ public enum Transcripts {
         return name.hasPrefix(String(full.prefix(longestFolderName)) + "-")
     }
 
+    /// How much of a directory's own name must come before the cut in a long folder name for the folder to be told
+    /// apart by it. A rehearsal copy's name is an id, so this much of it is enough.
+    static let enoughOfTheName = 16
+
+    /// Deletes Claude Code's folders of transcripts for sessions that worked in `directory` or in a folder inside it,
+    /// as for a rehearsal's copy once it is gone, and the transcripts of `sessions` wherever they are. `directory` is
+    /// given with its links followed, as Claude Code names folders. A folder inside it is named with the directory's
+    /// name, a "-" and more, so a folder whose own name merely starts the same way would go too: only use this for a
+    /// directory with a name of its own, such as an id.
+    ///
+    /// A long path's folder is cut short and ends in a hash this can't work out, so it is matched on the part before
+    /// the cut, as `isFolder` does, but only when enough of the directory's own name is in that part. Otherwise the
+    /// part before the cut could be the parent's alone, which is shared with the person's own folders, and only the
+    /// transcripts of `sessions` go.
+    public static func removeFolder(for directory: String, sessions: [String] = [],
+                                    projects: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")) {
+        sessions.forEach { removeSession($0, projects: projects) }
+        let full = folderName(for: directory)
+        let matches: (String) -> Bool
+        if full.count <= longestFolderName {
+            matches = { $0 == full || $0.hasPrefix(full + "-") }
+        } else {
+            let parent = folderName(for: (directory as NSString).deletingLastPathComponent)
+            // The parent's name, then the "-" that stood for the "/", then as much of this directory's own name as fits.
+            guard longestFolderName - (parent.count + 1) >= enoughOfTheName else { return }
+            let start = String(full.prefix(longestFolderName)) + "-"
+            matches = { $0.hasPrefix(start) }
+        }
+        let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
+        for folder in folders where matches(folder.lastPathComponent) {
+            try? FileManager.default.removeItem(at: folder)
+        }
+    }
+
+    /// Deletes session `id`'s transcript, `<id>.jsonl`, and the folder of files Claude Code keeps beside it, `<id>/`,
+    /// from every folder under `projects`, and nothing else. For a session whose id this app made and that must leave
+    /// no trace, as a stand-in in a rehearsal outside git, which works in the project's real folder.
+    public static func removeSession(_ id: String,
+                                     projects: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")) {
+        // An id is a name, never a path.
+        guard !id.isEmpty, !id.contains("/"), !id.hasPrefix(".") else { return }
+        let folders = (try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
+        for folder in folders {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(id).jsonl"))
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(id, isDirectory: true))
+        }
+    }
+
     /// How a session should be started, given where its transcript is.
     public enum Start: Equatable, Sendable {
         /// The transcript is in the folder the session starts in: carry on with it.

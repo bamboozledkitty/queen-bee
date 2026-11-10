@@ -277,6 +277,13 @@ struct RunsList: View {
                             .help("Kept for good")
                             .accessibilityLabel("Kept")
                     }
+                    if entry.record?.isRehearsal == true || (entry.record == nil && entry.controller.isRehearsing) {
+                        Image(systemName: "theatermasks")
+                            .dsIcon(DS.IconSize.s, .semibold)
+                            .foregroundStyle(Palette.textFaint.color)
+                            .help("A rehearsal, on Haiku")
+                            .accessibilityLabel("Rehearsal")
+                    }
                     Text(detail(entry)).foregroundStyle(Palette.textMuted.color).lineLimit(1)
                     Spacer(minLength: DS.Space.s)
                     if let record = entry.record, !record.cost.isZero {
@@ -318,7 +325,9 @@ struct RunsList: View {
     }
 
     private func detail(_ entry: Entry) -> String {
-        guard let record = entry.record else { return "Running" + Self.handOffs(entry.controller.handOffs) }
+        guard let record = entry.record else {
+            return (entry.controller.isRehearsing ? "Rehearsing" : "Running") + Self.handOffs(entry.controller.handOffs)
+        }
         return record.summary + Self.handOffs(record.handOffs)
     }
 
@@ -354,6 +363,7 @@ private struct RunPeek: View {
                     StatusPill(record.summary, tone: record.outcome == .finished ? .pass : record.outcome == .failed ? .fail : .neutral)
                     if !record.cost.isZero { StatusPill(record.cost.price, tone: .neutral, dot: false) }
                     if record.isKept { StatusPill("Kept", tone: .neutral, dot: false) }
+                    if record.isRehearsal { StatusPill("Rehearsal", tone: .neutral, dot: false) }
                 }
             }
             .padding(DS.Space.l)
@@ -376,8 +386,11 @@ private struct RunPeek: View {
             }
             DSDivider()
             VStack(spacing: DS.Space.s) {
-                keepButton
-                compareMenu
+                // A rehearsal can't be kept for good, and isn't set beside real runs.
+                if !record.isRehearsal {
+                    keepButton
+                    compareMenu
+                }
                 Button {
                     services.show(controller)
                     controller.view(run: record.id)
@@ -411,7 +424,7 @@ private struct RunPeek: View {
     /// The flow's other kept runs, newest first, to set beside this one.
     @ViewBuilder
     private var compareMenu: some View {
-        let others = controller.runs.reversed().filter { $0.id != record.id }
+        let others = controller.runs.reversed().filter { $0.id != record.id && !$0.isRehearsal }
         Menu {
             ForEach(others) { other in
                 Button("\(other.number.map { "Run \($0) · " } ?? "")\(RunPicker.label(for: other.started)) · \(other.summary)\(other.isKept ? " · Kept" : "")") { comparedWith = other }

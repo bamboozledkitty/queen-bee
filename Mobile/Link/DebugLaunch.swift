@@ -307,8 +307,11 @@ enum DebugLaunch {
         state["results"] = Dictionary(run.results.map { (names[$0.key] ?? $0.key, $0.value) }) { first, _ in first }
         state["runs"] = RunRow.all(in: snapshot, viewed: viewed).map {
             ["id": $0.id, "started": $0.started, "outcome": $0.outcome.rawValue, "length": $0.length, "command": $0.command,
-             "cost": $0.cost ?? NSNull(), "onShow": $0.isOnShow, "kept": $0.isKept, "spoken": $0.spoken] as [String: Any]
+             "cost": $0.cost ?? NSNull(), "onShow": $0.isOnShow, "kept": $0.isKept, "spoken": $0.spoken,
+             "rehearsal": $0.isRehearsal, "canKeep": client.canKeepRuns && $0.canKeep] as [String: Any]
         }
+        // The run going is a rehearsal, as the run bar says.
+        state["rehearsing"] = snapshot.run.isRunning && snapshot.run.rehearsal == true
         state["viewedRun"] = viewed?.id ?? NSNull()
         state["compare"] = compared ?? NSNull()
         state["workplace"] = snapshot.run.workplace ?? NSNull()
@@ -364,6 +367,7 @@ enum DebugLaunch {
         case "retry": return card.map { (.retry(cardID: $0.id), "") }
         case "revert": return card.map { (.revert(cardID: $0.id), "") }
         case "orchestrator": return (.startOrchestrator, "")
+        case "rehearse": return (.rehearse(startCardID: card?.id), "")
         // The Restart menu's items, by what they restart: restart:all | restart:allExcept | restart:selected | restart:awaiting
         case "restart":
             guard let menu = client.restartMenu else { return nil }
@@ -648,6 +652,7 @@ enum DebugLaunch {
         case .reject(_, let name, _, _): "reject:\(name)"
         case .restartOrchestrator: "restart:orchestrator"
         case .restartAgents(_, let busy): "restartAgents:\(busy.joined(separator: ","))"
+        case .runForReal: "runForReal"
         }
         let all = abilities.bar + abilities.cards.values.joined() + abilities.details.values.joined()
         return [
@@ -656,6 +661,9 @@ enum DebugLaunch {
             "hint": abilities.hint ?? NSNull(),
             "bar": titles(abilities.bar),
             "barNote": abilities.barNote ?? NSNull(),
+            // Rehearse in the Run button's menu, and the bar's "Rehearsal" while one goes.
+            "rehearse": abilities.rehearse.map { $0.isEnabled ? $0.title : "\($0.title) (off)" } ?? NSNull(),
+            "rehearsing": abilities.isRehearsing,
             "cards": byName(abilities.cards),
             // The buttons of each waiting card the banner points to; the banner itself only goes to the card.
             "banner": Dictionary(waitingCards.compactMap { card in abilities.cards[card.id].map { (card.name, titles($0)) } }) { first, _ in first },

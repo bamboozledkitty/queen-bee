@@ -4,14 +4,45 @@ import Testing
 
 /// Which runs a flow keeps, how much of each, and the runs kept for good.
 @Suite struct RunKeepingTests {
-    private func run(_ number: Int, kept: Bool = false) -> RunRecord {
+    private func run(_ number: Int, kept: Bool = false, rehearsal: Bool = false) -> RunRecord {
         let started = Date(timeIntervalSince1970: TimeInterval(number) * 60)
         var record = RunRecord(id: "run-\(number)", started: started, ended: started.addingTimeInterval(30), outcome: .finished,
                                command: "Go", log: [], results: [:], marks: [:], linkPasses: [:],
                                messages: ["link": [LinkMessage(date: started, from: "Writer", text: "Reply \(number)")]],
                                handOffs: 1, number: number)
         if kept { record.kept = true }
+        if rehearsal { record.rehearsal = true }
         return record
+    }
+
+    @Test func rehearsalsKeepTheirOwnFiveLatest() {
+        // 25 real runs, then 7 rehearsals.
+        let runs = RunKeeping.trimmed((1...25).map { run($0) } + (26...32).map { run($0, rehearsal: true) })
+        #expect(numbers(runs.filter { !$0.isRehearsal }) == Array(6...25))
+        #expect(numbers(runs.filter(\.isRehearsal)) == Array(28...32))
+        // Messages go by age across all runs, as before.
+        #expect(runs.filter { !$0.messages.isEmpty }.compactMap(\.number) == [30, 31, 32])
+    }
+
+    @Test func rehearsalsNeverPushARealRunOut() {
+        let runs = RunKeeping.trimmed((1...20).map { run($0) } + (21...30).map { run($0, rehearsal: true) })
+        #expect(runs.filter { !$0.isRehearsal }.count == 20)
+    }
+
+    @Test func aRehearsalCantBeKept() throws {
+        var runs = [run(1), run(2, rehearsal: true)]
+        let problem = try #require(RunKeeping.setKept(true, run: "run-2", in: &runs))
+        #expect(problem == Rehearsal.cantKeep)
+        #expect(!runs[1].isKept)
+    }
+
+    @Test func aRunFromBeforeRehearsalsIsReal() throws {
+        let plain = try #require(String(data: JSONEncoder().encode(run(3)), encoding: .utf8))
+        #expect(!plain.contains("rehearsal"))
+        let marked = try #require(String(data: JSONEncoder().encode(run(4, rehearsal: true)), encoding: .utf8))
+        #expect(marked.contains("\"rehearsal\":true"))
+        let back = try JSONDecoder().decode(RunRecord.self, from: Data(plain.utf8))
+        #expect(!back.isRehearsal)
     }
 
     private func numbers(_ runs: [RunRecord]) -> [Int] { runs.compactMap(\.number) }

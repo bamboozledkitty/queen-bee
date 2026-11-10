@@ -161,7 +161,7 @@ struct RunPicker: View {
             ForEach(controller.runs.reversed()) { run in
                 let isShown = controller.viewedRunID == run.id || (controller.viewedRunID == nil && run.id == controller.runs.last?.id)
                 Toggle(isOn: Binding(get: { isShown }, set: { _ in controller.view(run: run.id) })) {
-                    Text("\(run.number.map { "Run \($0) · " } ?? "")\(Self.label(for: run.started)) · \(run.summary) · \(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")\(run.isKept ? " · Kept" : "")")
+                    Text("\(run.number.map { "Run \($0) · " } ?? "")\(Self.label(for: run.started)) · \(run.summary) · \(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")\(run.isKept ? " · Kept" : "")\(run.isRehearsal ? " · Rehearsal" : "")")
                     Text(run.command)
                 }
             }

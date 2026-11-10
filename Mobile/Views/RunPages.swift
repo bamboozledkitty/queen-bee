@@ -177,7 +177,8 @@ struct RunsPage: View {
                         .foregroundStyle(Theme.inkSecondary.ui)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if snapshot.runs.count >= 2 {
+                // Rehearsals aren't set beside real runs, as on the Mac.
+                if RunCompareSheet.comparable(snapshot.runs).count >= 2 {
                     Button("Compare two runs") { compares = true }
                         .buttonStyle(.panel(wide: true))
                         .accessibilityHint("Sets two of this flow's runs side by side: where each went and what it cost.")
@@ -187,11 +188,11 @@ struct RunsPage: View {
                     Button { if !isRunning { client.show(run: row.id) } } label: { RunRowView(row: row) }
                         .buttonStyle(.plain)
                         .opacity(isRunning ? 0.6 : 1)
-                        .contextMenu { if client.canKeepRuns { keepButton(row) } }
+                        .contextMenu { if client.canKeepRuns, row.canKeep { keepButton(row) } }
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(row.spoken)
                         .accessibilityAddTraits(isRunning ? (row.isOnShow ? [.isSelected] : []) : row.isOnShow ? [.isButton, .isSelected] : [.isButton])
-                        .accessibilityActions { if client.canKeepRuns { keepButton(row) } }
+                        .accessibilityActions { if client.canKeepRuns, row.canKeep { keepButton(row) } }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -238,6 +239,14 @@ private struct RunRowView: View {
                 Text("\(row.length) · \(row.handOffs)").textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
                 Spacer(minLength: Theme.Space.s)
                 // On the bottom line, where there is room, so the date above never wraps for it.
+                if row.isRehearsal {
+                    HStack(spacing: DS.Space.xxs) {
+                        Image(systemName: "theatermasks").dsIcon(DS.IconSize.s, .bold).accessibilityHidden(true)
+                        Text("Rehearsal")
+                    }
+                    .textRole(.footnoteLabel)
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                }
                 if row.isKept {
                     HStack(spacing: DS.Space.xxs) {
                         Image(systemName: "bookmark.fill").dsIcon(DS.IconSize.s, .bold).accessibilityHidden(true)

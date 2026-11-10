@@ -711,6 +711,17 @@ final class AppServices {
         return made
     }
 
+    /// Secrets of sessions that have been told to quit. What they send is refused, never taken as another session's.
+    @ObservationIgnored private var retiredCredentials: Set<String> = []
+
+    /// Ends the secret of session `key`, which has been told to quit, so the next session started with that key gets
+    /// one of its own. For a rehearsal's stand-ins, every one of which for a card has the same key.
+    func retireCredential(for key: String) {
+        guard let secret = credentials.removeValue(forKey: key) else { return }
+        credentialOwners[secret] = nil
+        retiredCredentials.insert(secret)
+    }
+
     private func startServer() {
         let path = socketPath
         unlink(path)
@@ -744,6 +755,10 @@ final class AppServices {
         // Mac's own account can reach the socket, whose folder no one else may open.
         if request.kind == "run" { return await runFromCommandLine(request.payload) }
         var parts = request.session.split(separator: "/", maxSplits: 1).map(String.init)
+        // A session that has been told to quit does nothing more: it hands nothing on and messages nobody.
+        if retiredCredentials.contains(request.session) {
+            return request.kind == "may-send" ? ["allowed": false, "reason": "This session has ended."] : fallback(for: request)
+        }
         if request.kind != "test" {
             // Who is asking comes from the secret, never from the name the request gives itself.
             guard let owner = credentialOwners[request.session] else { return fallback(for: request) }

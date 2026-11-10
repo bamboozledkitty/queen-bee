@@ -142,8 +142,10 @@ public enum Capabilities {
                 settings: [
                     SettingCapability("command", "The shell command to run."),
                     SettingCapability("wait_minutes", waitSchema, "How many minutes the person has to allow a command they haven't allowed before, up to \(grouped(HoldTimeLimit.longestMinutes)). With no answer by then it goes out fail without running. 0, the default, waits for good."),
+                    SettingCapability("runs_in_rehearsals", ["type": "boolean"], "false skips this card's command in a rehearsal, the default: it passes on its output from the last real run instead. Only the person can turn it on, in the card's settings on their Mac."),
                 ],
                 notes: [
+                    "In a rehearsal the command is skipped, and the card passes on its last real output or a note, unless the person has turned on runs_in_rehearsals.",
                     "The person is asked to allow a command they did not type themselves the first time a run reaches it.",
                     "A command that hasn't finished after \(minutes(scriptTimeout)) minutes is stopped and goes out fail.",
                     "Only the last \(grouped(scriptOutputLimit)) characters of what it printed are passed on.",
@@ -300,6 +302,14 @@ public enum Capabilities {
         lines.append("- \(runLimit)")
         lines.append("- A run ends when nothing is left to do. The person sees how it ended: finished with an answer, ended without an answer, gave up (a Loop ran out of tries with nothing on gave-up), stopped at the hand-off limit, stopped at the spending limit, failed, or stopped.")
         lines.append("- An agent the run isn't waiting on can be restarted, or stop, without stopping the run. If the run is waiting on it, the run stops.")
+        lines += ["", "## Rehearsals", ""]
+        lines += [
+            "- rehearse_flow runs the whole flow on Haiku at low effort, by throwaway copies of its agents that don't remember their real conversations, in a throwaway git copy of the project that is deleted afterwards. Outside git the copies can only look.",
+            "- The copies have no browser, none of the person's other tool servers, and can't git push. Other commands, such as curl, still really run.",
+            "- Script cards are skipped and pass on their last real output, unless the person turned on runs_in_rehearsals. Delay cards pass on at once. Approvals ask the person as usual. Files End cards save go into the copy.",
+            "- A rehearsal never starts while a run is going. A real run stops a rehearsal.",
+            "- Rehearsals are kept apart from real runs (the \(Rehearsal.keptLatest) latest) and can't be kept for good.",
+        ]
         lines += ["", "## Flow settings", ""]
         lines.append("Set with update_flow. get_flow gives each one's value now.")
         for setting in flowSettings {

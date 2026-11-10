@@ -15,6 +15,9 @@ import QueenBeeCore
 ///   5  that run is stopped on the Mac, and the agent's session has ended
 ///   6  the flow's sessions are closed on the Mac, so none has been started
 ///
+/// Asked to rehearse, it starts a rehearsal that ends by itself after `rehearsalLength` and is filed as one. Stop
+/// files it as stopped, and a real run asked for while it goes stops it first, as the real Mac does.
+///
 /// With `-qbControl 1` the made-up Mac lets the device control it, and answers each command roughly as a
 /// real one would: it changes the run, or refuses in the real Mac's words. With `-qbSilent 1` it never answers.
 /// What is typed for a session that is running shows up in that session's terminal, as it would once the
@@ -34,6 +37,10 @@ enum DebugCannedRun {
     private(set) static var isPlayed = false
     /// The run as the made-up Mac has it now, for it to answer commands from.
     private static var current: RemoteRunState?
+    /// When the rehearsal going began, and which one it is, so the one that ends by itself is the one still going.
+    private static var rehearsal: (began: Date, id: Int)?
+    /// How long a made-up rehearsal goes before it ends by itself.
+    static let rehearsalLength: Duration = .seconds(6)
     /// The flow as the made-up Mac has it now, with its Undo and Redo.
     private static var edits: MadeUpEdits?
     /// What the device was last sent of those, so it is only sent what has changed.
@@ -192,7 +199,8 @@ enum DebugCannedRun {
         client.debugTake(.welcome(RemoteWelcome(version: Remote.version, macName: "Example Mac", canControl: UserDefaults.standard.bool(forKey: "qbControl"),
                                                     // `-qbOldMac 1` is a Mac from before the lists across flows, the Restart menu, the branch chip
                                                     // and checking a schedule turned on against what was shown.
-                                                    features: UserDefaults.standard.bool(forKey: "qbOldMac") ? nil : [RemoteFeature.overview, RemoteFeature.scheduleCheck, RemoteFeature.keepRuns])))
+                                                    features: UserDefaults.standard.bool(forKey: "qbOldMac") ? nil : [RemoteFeature.overview, RemoteFeature.scheduleCheck, RemoteFeature.keepRuns,
+                                                                                                                                    RemoteFeature.rehearsals])))
         var summary = RemoteFlowSummary(id: flowID, name: flow.name, isSubflow: false, activity: .needsYou)
         // Others beside it, so the list of flows has every kind of row. Only the first can be opened, unless `-qbParity 1`.
         func other(_ n: Int, _ name: String, _ activity: FlowActivity = .quiet, isSubflow: Bool = false) -> RemoteFlowSummary {
@@ -381,11 +389,28 @@ enum DebugCannedRun {
             let gone = "That is no longer waiting for an answer."
             let running = "A run is already going. Stop it before starting another."
             func held(_ id: String, _ kind: CardKind) -> Bool { run.holds.contains { $0.id == id && $0.kind == kind && (kind == .approval || $0.needsAllow) } }
+            var beginsRehearsal = false
+            /// A rehearsal going ends, and is filed with the runs as a rehearsal.
+            @MainActor func endRehearsal(_ outcome: RunRecord.Outcome) {
+                guard run.isRunning, run.rehearsal == true else { return }
+                keptRuns = filed(outcome, run: run, in: client)
+                run.isRunning = false
+                run.rehearsal = nil
+                run.holds = []
+                rehearsal = nil
+            }
+            /// A real run always wins over a rehearsal: it stops the rehearsal, and says so.
+            @MainActor func stopRehearsalForRealRun() {
+                guard run.isRunning, run.rehearsal == true else { return }
+                endRehearsal(.stopped)
+                logLines.append(([LogLine(date: Date(), text: Rehearsal.stoppedForRealRun)], false))
+            }
             if !client.mirror.canControl {
                 refusal = Remote.watchOnlyRefusal
             } else {
                 switch command {
                 case .run, .runFrom:
+                    stopRehearsalForRealRun()
                     if run.isRunning { refusal = "A run is already going. Stop it before starting another." }
                     run.isRunning = true
                     run.marks = [:]
@@ -393,6 +418,7 @@ enum DebugCannedRun {
                     run.results = [:]
                 case .stop:
                     if !run.isRunning { refusal = "No run is going." }
+                    endRehearsal(.stopped)
                     run.isRunning = false
                     run.holds = []
                 case .approve(_, let holdID, _), .reject(_, let holdID, _):
@@ -408,6 +434,7 @@ enum DebugCannedRun {
                     if cardID == orchestrator { run.orchestratorNeedsRestart = false } else { edits?.startedSession(cardID) }
                 case .runFromStart(_, let cardID):
                     let flow = edits?.flow
+                    stopRehearsalForRealRun()
                     if run.isRunning {
                         refusal = running
                     } else if let card = flow?.card(cardID), card.kind == .start {
@@ -422,9 +449,31 @@ enum DebugCannedRun {
                     } else {
                         refusal = "Only a Start card starts a run."
                     }
+                case .rehearse(_, let startCardID):
+                    let flow = edits?.flow
+                    if run.isRunning {
+                        refusal = Rehearsal.busyRefusal
+                    } else if let startCardID, flow?.card(startCardID)?.kind != .start {
+                        refusal = "Only a Start card starts a rehearsal."
+                    } else {
+                        run.isRunning = true
+                        run.rehearsal = true
+                        run.marks = startCardID.map { [$0: RunMark()] } ?? [:]
+                        run.linkPasses = [:]
+                        run.results = [:]
+                        run.holds = []
+                        run.handOffs = 0
+                        logLines.append(([LogLine(date: Date(), text: Rehearsal.firstLine(readOnly: false, scriptsThatRun: [])),
+                                          LogLine(date: Date(), text: "\(DeviceIdentity.deviceName) started a rehearsal")], false))
+                        beginsRehearsal = true
+                    }
                 case .retry(_, let cardID):
                     let name = edits?.flow.card(cardID)?.name ?? "a card"
-                    if run.isRunning {
+                    // As the Mac: never during a rehearsal or after one, whose message was a stand-in's.
+                    let afterRehearsal = !run.isRunning && client.mirror.snapshot?.runs.last?.isRehearsal == true
+                    if run.rehearsal == true || afterRehearsal {
+                        refusal = Rehearsal.noRetry
+                    } else if run.isRunning {
                         refusal = running
                     } else if run.marks[cardID]?.failed != true {
                         refusal = "The last run didn't stop at \(name), so there is nothing to retry."
@@ -493,6 +542,14 @@ enum DebugCannedRun {
                 }
             }
             if refusal == nil {
+                if beginsRehearsal {
+                    let mine = (rehearsal?.id ?? 0) + 1
+                    rehearsal = (Date(), mine)
+                    Task {
+                        try? await Task.sleep(for: rehearsalLength)
+                        endRehearsalByItself(client, id: mine)
+                    }
+                }
                 if let mac = edits { run.awaitingRestart = mac.awaitingRestart(run.sessions) }
                 current = run
                 client.debugTake(.run(id: openID, state: run))
@@ -504,6 +561,34 @@ enum DebugCannedRun {
             }
             client.debugTake(.answer(id: id, refusal: refusal))
         }
+    }
+
+    /// The record a made-up rehearsal is filed with: marked as a rehearsal, so it can't be kept or compared.
+    private static func rehearsalRecord(_ outcome: RunRecord.Outcome, run: RemoteRunState, after runs: [RunRecord]) -> RunRecord {
+        let began = rehearsal?.began ?? Date()
+        return RunRecord(id: "rehe\(String(format: "%04d", (rehearsal?.id ?? 0) % 10_000))", started: began, ended: Date(), outcome: outcome,
+                         command: command, log: [LogLine(date: began, text: Rehearsal.firstLine(readOnly: false, scriptsThatRun: []))],
+                         results: run.results, marks: run.marks, linkPasses: run.linkPasses, messages: [:], handOffs: run.handOffs,
+                         usage: [writer: Usage(cost: 0.02, input: 900, output: 310)], number: RunRecord.nextNumber(after: runs), rehearsal: true)
+    }
+
+    /// The runs with a rehearsal filed among them, kept as the Mac keeps them.
+    private static func filed(_ outcome: RunRecord.Outcome, run: RemoteRunState, in client: RemoteClient) -> [RunRecord] {
+        let runs = client.mirror.snapshot?.runs ?? []
+        return RunKeeping.trimmed(runs + [rehearsalRecord(outcome, run: run, after: runs)])
+    }
+
+    /// The made-up rehearsal comes to its end, unless it was stopped, or another began, in the meantime.
+    private static func endRehearsalByItself(_ client: RemoteClient, id: Int) {
+        guard rehearsal?.id == id, var run = current, run.isRunning, run.rehearsal == true else { return }
+        let runs = filed(.finished, run: run, in: client)
+        run.isRunning = false
+        run.rehearsal = nil
+        rehearsal = nil
+        current = run
+        client.debugTake(.run(id: openID, state: run))
+        client.debugTake(.log(id: openID, lines: [LogLine(date: Date(), text: "Rehearsal finished")], reset: false))
+        client.debugTake(.history(id: openID, runs: runs))
     }
 
     /// What the made-up Mac makes of an edit. It is made at once, so the steps of a drag are made in the

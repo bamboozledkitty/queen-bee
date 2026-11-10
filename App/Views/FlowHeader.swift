@@ -62,6 +62,19 @@ struct FlowHeader: View {
         .padding(.trailing, DS.Space.m)
         .frame(height: DS.Size.header)
         .movesToTrash($deleting)
+        // Run during a rehearsal, from the button, its menu or ⌘R.
+        .confirmationDialog("Stop the rehearsal and run for real?",
+                            isPresented: Binding(get: { controller?.realRunAsked != nil }, set: { if !$0 { controller?.realRunAsked = nil } }),
+                            titleVisibility: .visible, presenting: controller?.realRunAsked) { asked in
+            Button("Run for Real") {
+                guard let controller else { return }
+                // Starting a real run stops the rehearsal first.
+                Task { await controller.run(startCardID: asked.startCardID) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The rehearsal stops where it is, and the flow runs with its own agents.")
+        }
     }
 
     // MARK: Where you are
@@ -141,7 +154,7 @@ struct FlowHeader: View {
             .buttonStyle(.plain)
             .help("Go to the card that is waiting on you")
         } else if controller.isRunning {
-            StatusPill("Running" + RunsList.handOffs(controller.handOffs), tone: .live)
+            StatusPill((controller.isRehearsing ? "Rehearsing" : "Running") + RunsList.handOffs(controller.handOffs), tone: .live)
         }
         // The branch the flow works on, or its worktree's: one place for the whole flow.
         if let chip = controller.workplaceChip {
@@ -152,36 +165,44 @@ struct FlowHeader: View {
         if controller.isRunning {
             Button { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
                 .buttonStyle(.ds(.live))
-                .help("Stop the run (⌘.)")
-        } else {
+                .help(controller.isRehearsing ? "Stop the rehearsal (⌘.)" : "Stop the run (⌘.)")
+        }
+        // During a rehearsal Run stays on offer: running for real stops the rehearsal, once the person says so.
+        if !controller.isRunning || controller.isRehearsing {
             let several = controller.startCards.count > 1
             HStack(spacing: 0) {
-                Button { Task { await controller.run() } } label: { Label("Run", systemImage: "play.fill") }
-                    .buttonStyle(.ds(.primary, joined: several ? .trailing : .none))
+                Button { controller.askToRun() } label: { Label("Run", systemImage: "play.fill") }
+                    .buttonStyle(.ds(.primary, joined: .trailing))
                     .disabled(!controller.canRun)
                     .help(runHelp(controller))
-                if several {
-                    // Several Start cards: say which one. A plain click on Run uses the selected one, or the first.
-                    // The arrow is the other half of the Run button, as the Restart button's arrow is inside it.
-                    Menu {
+                // The arrow is the other half of the Run button, as the Restart button's arrow is inside it. With
+                // several Start cards it says which one: a plain click on Run uses the selected one, or the first.
+                Menu {
+                    if several {
                         ForEach(controller.startCards) { start in
-                            Button("Run from \(start.name)") { Task { await controller.run(startCardID: start.id) } }
+                            Button("Run from \(start.name)") { controller.askToRun(startCardID: start.id) }
                         }
-                    } label: { Image(systemName: "chevron.down").dsIcon(DS.IconSize.xs, .semibold) }
-                        .menuStyle(.button)
-                        .menuIndicator(.hidden)
-                        .buttonStyle(.ds(.primary, joined: .leading))
-                        .fixedSize()
-                        .disabled(!controller.canRun)
-                        .accessibilityLabel("Run from…")
-                        .help("This flow has \(controller.startCards.count) Start cards. Choose which one to run from.")
-                }
+                        Divider()
+                    }
+                    Button("Rehearse") { Task { _ = await controller.start(rehearse: true) } }
+                        .disabled(controller.isRunning || controller.isStartingRun || !controller.canRun)
+                        .help("Run the whole flow on Haiku at low effort, by throwaway copies of its agents, in a throwaway copy of the project")
+                } label: { Image(systemName: "chevron.down").dsIcon(DS.IconSize.xs, .semibold) }
+                    .menuStyle(.button)
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.ds(.primary, joined: .leading))
+                    .fixedSize()
+                    .disabled(!controller.canRun)
+                    .accessibilityLabel(several ? "Run from…" : "More ways to run")
+                    .help(several ? "This flow has \(controller.startCards.count) Start cards. Choose which one to run from, or rehearse the flow."
+                          : "Rehearse the flow: a cheap run on Haiku that leaves your files and your agents' conversations alone")
             }
         }
         RestartMenuButton(controller: controller)
     }
 
     private func runHelp(_ controller: FlowController) -> String {
+        if controller.canRun, controller.isRehearsing { return "Stop the rehearsal and run the flow for real (⌘R)" }
         if controller.canRun { return "Run the flow from its Start card (⌘R)" }
         return controller.flow.isSubflow == true
             ? "To try this sub-flow by itself, give its Input something to start with and link it to a card"

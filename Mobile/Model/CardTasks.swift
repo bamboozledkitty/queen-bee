@@ -150,6 +150,19 @@ extension RemoteClient {
         return await perform(command: command)
     }
 
+    /// Rehearse, in the Run button's menu: a cheap run on Haiku by throwaway copies of the agents. Offered only by a
+    /// Mac that takes it, while no run is going: see `Abilities.rehearse`.
+    var canRehearse: Bool { abilities.rehearse?.isEnabled == true }
+
+    func rehearseCommand(startCardID: String?) -> RemoteCommand? { forOpenFlow { .rehearse(flowID: $0, startCardID: startCardID) } }
+
+    /// Starts a rehearsal on the Mac, from the Start card given or the one Run uses.
+    @discardableResult
+    func rehearse(startCardID: String? = nil) async -> String? {
+        guard canRehearse, let command = rehearseCommand(startCardID: startCardID) else { return Self.notConnected }
+        return await perform(command: command)
+    }
+
     func dismissBannerCommand() -> RemoteCommand? { forOpenFlow { .dismissBanner(flowID: $0) } }
 
     /// Closes the message at the top of the flow, on the Mac as well as here.

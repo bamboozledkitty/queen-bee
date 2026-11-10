@@ -28,6 +28,7 @@ import QueenBeeCore
 ///   backTo                                "Back to" the flow that runs the open one
 ///   clearLog                              the log's Clear, once its question is answered yes
 ///   keepRun:<id or number>:on|off         a run's Keep for Good or Stop Keeping, in the Runs page's menu for it
+///   rehearse[:<start card>]               Rehearse, in the Run button's menu, from a Start card by name or id, or the one Run uses
 ///   pin:<flow>:on|off | askStopAgents:<flow> | stopAgents:<flow>
 ///   find:<text>                           write in Find over the list of flows
 ///   findGo:<flow>[/<card>]                tap what Find found
@@ -172,6 +173,21 @@ enum DebugParity {
                 guard parts.count > 2, let run = client.mirror.snapshot?.runs.first(where: { $0.id == parts[1] || $0.number.map(String.init) == parts[1] }) else { return noSuch }
                 return await client.keepRun(run.id, on: parts[2] == "on")
             }
+        case "rehearse":
+            return {
+                var startID: String?
+                if !rest.isEmpty {
+                    if let byID = flow()?.card(rest) {
+                        startID = byID.id
+                    } else {
+                        guard let byName = await card(rest) else { return noSuch }
+                        startID = byName.id
+                    }
+                }
+                let refusal = await client.rehearse(startCardID: startID)
+                await settle()
+                return refusal
+            }
         case "pin":
             return {
                 guard parts.count > 2, let found = listed(parts[1]) else { return noSuch }
@@ -227,6 +243,7 @@ enum DebugParity {
             "map": canvas.showsMap,
             "visible": rect(canvas.view?.visible),
             "runMenu": abilities.runMenu.map(button),
+            "rehearse": abilities.rehearse.map(button) ?? NSNull(),
             "starts": Dictionary(abilities.starts.map { (name($0.key), button($0.value)) }) { first, _ in first },
             "retry": abilities.retry.keys.map(name).sorted(),
             "orchestrator": abilities.orchestrator.map(button) ?? NSNull(),

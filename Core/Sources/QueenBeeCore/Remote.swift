@@ -125,6 +125,8 @@ public enum RemoteFeature {
     /// The Mac takes `RemoteCommand.keepRun`, so a device can keep a run for good. A device never sends it to a Mac
     /// that hasn't said this.
     public static let keepRuns = "keepRuns"
+    /// The Mac can rehearse a flow for a device: `RemoteCommand.rehearse`.
+    public static let rehearsals = "rehearsals"
 }
 
 /// The first thing a device sends on a new connection.
@@ -342,15 +344,17 @@ public struct RemoteRunState: Codable, Equatable, Sendable {
     /// Where the flow works, in the words of the Mac's branch chip: a branch, or "branch · worktree". Nil outside a git
     /// repository, and from a Mac from before the chip. A device only shows it: it is changed on the Mac.
     public var workplace: String?
+    /// True while the run going is a rehearsal. Nil from a Mac before rehearsals, and for a real run.
+    public var rehearsal: Bool?
 
     public init(isRunning: Bool, marks: [String: RunMark], linkPasses: [String: Int], liveLinkIDs: [String], handOffs: Int,
                 holds: [PendingHold], results: [String: String], usage: [String: Usage], sessions: [String: SessionState],
                 awaitingAnswer: [String], banner: String?, awaitingRestart: [String: [String]] = [:],
-                orchestratorNeedsRestart: Bool = false, runUsage: [String: Usage] = [:], workplace: String? = nil) {
+                orchestratorNeedsRestart: Bool = false, runUsage: [String: Usage] = [:], workplace: String? = nil, rehearsal: Bool? = nil) {
         self.isRunning = isRunning; self.marks = marks; self.linkPasses = linkPasses; self.liveLinkIDs = liveLinkIDs
         self.handOffs = handOffs; self.holds = holds; self.results = results; self.usage = usage; self.sessions = sessions
         self.awaitingAnswer = awaitingAnswer; self.banner = banner; self.awaitingRestart = awaitingRestart
-        self.orchestratorNeedsRestart = orchestratorNeedsRestart; self.runUsage = runUsage; self.workplace = workplace
+        self.orchestratorNeedsRestart = orchestratorNeedsRestart; self.runUsage = runUsage; self.workplace = workplace; self.rehearsal = rehearsal
     }
 }
 
@@ -524,6 +528,8 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
     public var saveTo: String?
     /// True ends the run as failed when a message reaches the card.
     public var failsRun: Bool?
+    /// Script: only off may be sent from a device. See `problem`.
+    public var runsInRehearsals: Bool?
     // Note, Approval
     public var text: String?
     // Approval, Script
@@ -560,6 +566,7 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
         patch.template = template
         patch.saveTo = saveTo
         patch.failsRun = failsRun
+        patch.runsInRehearsals = runsInRehearsals
         patch.text = text
         patch.flowRef = flowRef
         patch.waitMinutes = waitMinutes
@@ -601,6 +608,7 @@ public struct RemoteCardPatch: Codable, Equatable, Sendable {
     /// Why this patch can't be made whatever card it is for. Nil when it is fine.
     public var problem: String? {
         if isEmpty { return "There is nothing to change." }
+        if runsInRehearsals == true { return Rehearsal.turningOnRefusal }
         for short in [name, model, effort, permissionMode, role, flowRef, whenNoAnswer] + (branches ?? []) {
             if let short, !Remote.fitsName(short) { return RemoteCommand.nameTooLong }
         }
@@ -722,6 +730,9 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
 
     /// A Start card's own Run, or "Run from This Start" in its menu: the flow with several Start cards runs from this one.
     case runFromStart(flowID: String, startCardID: String)
+    /// Rehearse the flow: a run on Haiku by stand-ins, in a throwaway copy. From the given Start card, or the usual one.
+    /// Only to a Mac that has said `RemoteFeature.rehearsals`.
+    case rehearse(flowID: String, startCardID: String?)
     /// The settings panel's Retry, on a card the last run stopped at: it is given the message it was given, again.
     /// See `RemoteFlowSnapshot.canRetry(_:)` for when the Mac offers it.
     case retry(flowID: String, cardID: String)
@@ -804,7 +815,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
              .resizeCard(let id, _, _, _), .deleteItems(let id, _, _), .addLink(let id, _, _, _), .setLinkLimit(let id, _, _),
              .duplicate(let id, _), .tidy(let id), .group(let id, _, _), .ungroup(let id, _), .renameGroup(let id, _, _),
              .foldGroup(let id, _, _), .patchCard(let id, _, _), .setFlowOption(let id, _), .renameFlow(let id, _),
-             .deleteFlow(let id), .undo(let id), .redo(let id), .runFromStart(let id, _), .retry(let id, _), .clearLog(let id),
+             .deleteFlow(let id), .undo(let id), .redo(let id), .runFromStart(let id, _), .rehearse(let id, _), .retry(let id, _), .clearLog(let id),
              .keepRun(let id, _, _), .dismissBanner(let id), .stopAgents(let id), .revertSettings(let id, _), .armSchedule(let id, _, _, _), .restartAgents(let id, _), .paste(let id, _, _),
              .addRoleCard(let id, _, _, _), .newSubflow(let id, _, _), .pin(let id, _), .saveRole(let id, _, _), .updateRole(_, let id, _),
              .browser(let id, _, _): id
@@ -821,7 +832,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     public var isEdit: Bool {
         switch self {
         case .openOnMac, .run, .runFrom, .stop, .approve, .reject, .allowScript, .refuseScript, .startSession, .prompt, .keys,
-             .runFromStart, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .armSchedule, .restartAgents, .pin, .updateRole, .deleteRole,
+             .runFromStart, .rehearse, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .armSchedule, .restartAgents, .pin, .updateRole, .deleteRole,
              .clearBrowserData, .installBrowser, .restartBrowser, .browser: false
         case .addCard, .moveCards, .resizeCard, .deleteItems, .addLink, .setLinkLimit, .duplicate, .tidy, .group, .ungroup,
              .renameGroup, .foldGroup, .patchCard, .setFlowOption, .newFlow, .renameFlow, .deleteFlow, .undo, .redo,
@@ -888,7 +899,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
         case .browser(let id, let cardID, let action): .browser(flowID: id, cardID: cardID, action: action.cleaned)
         case .openOnMac, .stop, .allowScript, .refuseScript, .startSession, .keys, .addCard, .moveCards, .resizeCard,
              .deleteItems, .setLinkLimit, .duplicate, .tidy, .ungroup, .foldGroup, .setFlowOption, .deleteFlow, .undo, .redo,
-             .runFromStart, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .restartAgents, .addRoleCard, .pin,
+             .runFromStart, .rehearse, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .restartAgents, .addRoleCard, .pin,
              .updateRole, .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: self
         }
     }
@@ -897,7 +908,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     /// stopping one waits its turn behind that. The Mac goes on reading what else the device sends meanwhile.
     public var canTakeTime: Bool {
         switch self {
-        case .run, .runFrom, .stop, .runFromStart, .retry: true
+        case .run, .runFrom, .stop, .runFromStart, .rehearse, .retry: true
         default: false
         }
     }
@@ -964,7 +975,7 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
         case .restartAgents(_, let which):
             if case .cards(let ids) = which, ids.count > Remote.cardLimit { return Self.tooMany }
             return nil
-        case .runFromStart, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .pin, .updateRole,
+        case .runFromStart, .rehearse, .retry, .clearLog, .keepRun, .dismissBanner, .stopAgents, .revertSettings, .armSchedule, .pin, .updateRole,
              .deleteRole, .clearBrowserData, .installBrowser, .restartBrowser: return nil
         case .browser(_, _, let action): return action.problem
         }

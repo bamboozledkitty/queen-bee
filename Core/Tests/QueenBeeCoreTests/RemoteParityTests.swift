@@ -27,6 +27,8 @@ import Testing
 
     private let flowCommands: [RemoteCommand] = [
         .runFromStart(flowID: "f", startCardID: "s"),
+        .rehearse(flowID: "f", startCardID: nil),
+        .rehearse(flowID: "f", startCardID: "s"),
         .retry(flowID: "f", cardID: "a"),
         .clearLog(flowID: "f"),
         .keepRun(flowID: "f", runID: "r", on: true),
@@ -110,6 +112,7 @@ import Testing
         let others: [RemoteCommand] = [
             .runFromStart(flowID: "f", startCardID: "s"), .retry(flowID: "f", cardID: "a"), .clearLog(flowID: "f"),
             .keepRun(flowID: "f", runID: "r", on: true),
+            .rehearse(flowID: "f", startCardID: nil), .rehearse(flowID: "f", startCardID: "s"),
             .dismissBanner(flowID: "f"), .stopAgents(flowID: "f"), .armSchedule(flowID: "f", cardID: "s", on: true),
             .pin(flowID: "f", on: true), .updateRole(roleID: "r", flowID: "f", cardID: "a"),
         ] + apart
@@ -119,6 +122,7 @@ import Testing
     @Test func runningFromAStartAndRetryingCanTakeTime() {
         #expect(RemoteCommand.runFromStart(flowID: "f", startCardID: "s").canTakeTime)
         #expect(RemoteCommand.retry(flowID: "f", cardID: "a").canTakeTime)
+        #expect(RemoteCommand.rehearse(flowID: "f", startCardID: nil).canTakeTime)
         #expect(!RemoteCommand.stopAgents(flowID: "f").canTakeTime)
         #expect(!RemoteCommand.armSchedule(flowID: "f", cardID: "s", on: true).canTakeTime)
         #expect(!RemoteCommand.clearBrowserData(projectID: "/p").canTakeTime)
@@ -327,6 +331,39 @@ import Testing
         #expect(!snapshot.canRetry(agent.id))
         snapshot.run.isRunning = false
         snapshot.messages = [:]
+        #expect(!snapshot.canRetry(agent.id))
+    }
+
+    @Test func retryIsNeverOfferedAfterARehearsal() throws {
+        var flow = Flow(name: "Demo")
+        let start = try flow.addCard(kind: .start, x: 0, y: 0)
+        let agent = try flow.addCard(kind: .agent, x: 300, y: 0)
+        let link = try flow.addLink(from: start.id, to: agent.id)
+        var failed = RunMark()
+        failed.failed = true
+        func record(_ id: String, rehearsal: Bool?) -> RunRecord {
+            RunRecord(id: id, started: Date(timeIntervalSince1970: 1), ended: Date(timeIntervalSince1970: 2), outcome: .failed,
+                      command: "go", log: [], results: [:], marks: [agent.id: failed], linkPasses: [:], messages: [:], handOffs: 0,
+                      rehearsal: rehearsal)
+        }
+        let run = RemoteRunState(isRunning: false, marks: [agent.id: failed], linkPasses: [:], liveLinkIDs: [], handOffs: 0, holds: [],
+                                 results: [:], usage: [:], sessions: [:], awaitingAnswer: [], banner: nil)
+        var snapshot = RemoteFlowSnapshot(flow: flow, run: run, log: [],
+                                          messages: [link.id: [LinkMessage(date: Date(timeIntervalSince1970: 1), from: "Start", text: "go")]],
+                                          runs: [record("real", rehearsal: nil)])
+        #expect(!snapshot.latestRunIsRehearsal)
+        #expect(snapshot.canRetry(agent.id))
+        // The last run filed was a rehearsal: its message was a stand-in's.
+        snapshot.runs.append(record("rehearsal", rehearsal: true))
+        #expect(snapshot.latestRunIsRehearsal)
+        #expect(!snapshot.canRetry(agent.id))
+        // A real run after it brings Retry back.
+        snapshot.runs.append(record("real again", rehearsal: nil))
+        #expect(snapshot.canRetry(agent.id))
+        // A rehearsal going: none, as for any run going, and the Mac says it is one.
+        snapshot.run.isRunning = true
+        snapshot.run.rehearsal = true
+        #expect(snapshot.latestRunIsRehearsal)
         #expect(!snapshot.canRetry(agent.id))
     }
 

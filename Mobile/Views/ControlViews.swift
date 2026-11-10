@@ -81,20 +81,29 @@ struct CanvasFoot: View {
 /// to change that is written. There are no run buttons.
 struct RunBar: View {
     @Environment(RemoteClient.self) private var client
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let abilities: Abilities
     let showSettings: () -> Void
 
     var body: some View {
         if let hint = abilities.hint {
-            HStack(spacing: Theme.Space.xs) {
-                Text("Watching only")
-                    .textRole(.caption)
-                    .foregroundStyle(Theme.inkSecondary.ui)
-                    .lineLimit(1)
-                    .padding(.leading, Theme.Space.s)
-                Button("Settings", action: showSettings)
-                    .buttonStyle(.panel(.quiet))
-                    .accessibilityHint(hint)
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                // A device that only watches is told of a rehearsal too, on a line of its own as for one that controls.
+                if abilities.isRehearsing {
+                    rehearsalBadge
+                        .padding(.horizontal, Theme.Space.xs)
+                        .padding(.top, Theme.Space.xs)
+                }
+                HStack(spacing: Theme.Space.xs) {
+                    Text("Watching only")
+                        .textRole(.caption)
+                        .foregroundStyle(Theme.inkSecondary.ui)
+                        .lineLimit(1)
+                        .padding(.leading, Theme.Space.s)
+                    Button("Settings", action: showSettings)
+                        .buttonStyle(.panel(.quiet))
+                        .accessibilityHint(hint)
+                }
             }
             .padding(Theme.Space.xs)
             .floatingPanel()
@@ -112,47 +121,107 @@ struct RunBar: View {
                     .padding(.horizontal, Theme.Space.s)
                     .padding(.top, Theme.Space.xs)
             }
-            HStack(spacing: Theme.Space.s) {
-                // Editing is a mode, and this is the way in. The way out is Done, on the bar that takes its place.
-                if let edit = client.editBar.first, edit.kind == .edit {
-                    Button(edit.title) { client.press(.edit) }
-                        .buttonStyle(.panel(.tool))
-                        .accessibilityHint(edit.hint)
-                    Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: Theme.Touch.target - Theme.Space.s).accessibilityHidden(true)
-                }
-                ForEach(abilities.bar) { button in
-                    if button.press == .run, !abilities.runMenu.isEmpty {
-                        // Several Start cards: the Mac's Run has a menu of them, "Run from X".
-                        Menu {
-                            ForEach(abilities.runMenu) { start in
-                                Button(start.title) { client.press(start.press) }.disabled(!start.isEnabled)
-                            }
-                        } label: {
-                            Label(button.title, systemImage: "play.fill")
-                        }
-                        .buttonStyle(.panel(.run))
-                        .disabled(!button.isEnabled && abilities.runMenu.allSatisfy { !$0.isEnabled })
-                        .accessibilityHint("This flow has \(abilities.runMenu.count) Start cards. Lists them, to run the flow on your Mac from one.")
-                    } else {
-                        Button { client.press(button.press) } label: {
-                            switch button.press {
-                            case .run: Label(button.title, systemImage: "play.fill")
-                            case .stop: Label(button.title, systemImage: "stop.fill")
-                            // Made a little smaller rather than cut short, on a phone's narrow bar.
-                            default: Text(button.title).lineLimit(1).minimumScaleFactor(0.75)
-                            }
-                        }
-                        .buttonStyle(.panel(button.press == .run ? .run : button.press == .stop ? .stop : .outline))
-                        .disabled(!button.isEnabled)
-                        .accessibilityHint(button.hint)
-                    }
-                }
-                if let menu = client.restartMenu { RestartMenuButton(menu: menu) }
+            // While a rehearsal goes, the bar says so on a line of its own, as the Mac's run pill does. Beside the buttons
+            // it would squeeze them on a phone.
+            if abilities.isRehearsing {
+                rehearsalBadge
+                    .padding(.horizontal, Theme.Space.xs)
+                    .padding(.top, Theme.Space.xs)
             }
+            // Stop and Run side by side in a rehearsal leave no room for Restart's name on a narrow canvas, so it is
+            // its arrow alone then, and no button's name is cut short.
+            buttons(compact: abilities.isRehearsing)
             }
             .padding(Theme.Space.xs)
             .floatingPanel()
         }
+    }
+
+    private var rehearsalBadge: some View {
+        Badge(text: "Rehearsal", symbol: "theatermasks", tone: .live)
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("A rehearsal is going")
+    }
+
+    /// On a phone, Run and Stop are their symbols alone when the bar has more than one of them, or Run's arrow for
+    /// Rehearse: their names don't fit beside each other. VoiceOver still reads the names.
+    private var symbolsOnly: Bool { sizeClass == .compact && (abilities.isRehearsing || abilities.rehearse != nil) }
+
+    private func buttons(compact: Bool) -> some View {
+        HStack(spacing: Theme.Space.s) {
+            // Editing is a mode, and this is the way in. The way out is Done, on the bar that takes its place.
+            if let edit = client.editBar.first, edit.kind == .edit {
+                Button(edit.title) { client.press(.edit) }
+                    .buttonStyle(.panel(.tool))
+                    // Beside Stop and Run in a rehearsal its name would be cut short to nothing: they are symbols then, and it is whole.
+                    .fixedSize(horizontal: compact, vertical: false)
+                    .accessibilityHint(edit.hint)
+                Rectangle().fill(Theme.hairline.ui).frame(width: 1, height: Theme.Touch.target - Theme.Space.s).accessibilityHidden(true)
+            }
+            ForEach(abilities.bar) { button in
+                if button.press == .run, !abilities.runMenu.isEmpty {
+                    // Several Start cards: the Mac's Run has a menu of them, "Run from X", and Rehearse under them.
+                    Menu {
+                        ForEach(abilities.runMenu) { start in
+                            Button(start.title) { client.press(start.press) }.disabled(!start.isEnabled)
+                        }
+                        if let rehearse = abilities.rehearse {
+                            Divider()
+                            rehearseItem(rehearse)
+                        }
+                    } label: {
+                        Label(button.title, systemImage: "play.fill")
+                    }
+                    .buttonStyle(.panel(.run))
+                    .disabled(!button.isEnabled && abilities.runMenu.allSatisfy { !$0.isEnabled })
+                    .accessibilityHint("This flow has \(abilities.runMenu.count) Start cards. Lists them, to run the flow on your Mac from one\(abilities.rehearse == nil ? "" : ", or to rehearse it").")
+                } else if button.press == .run, let rehearse = abilities.rehearse {
+                    // One Start card: Run, and an arrow beside it with Rehearse, the two halves of one button as on the Mac.
+                    HStack(spacing: 0) {
+                        Button { client.press(button.press) } label: { runLabel(button.title, systemImage: "play.fill") }
+                            .buttonStyle(.ds(.primary, joined: .trailing))
+                            .disabled(!button.isEnabled)
+                            .accessibilityHint(button.hint)
+                        Menu { rehearseItem(rehearse) } label: {
+                            Image(systemName: "chevron.down").dsIcon(DS.IconSize.s, .semibold)
+                        }
+                        .buttonStyle(.ds(.primary, joined: .leading))
+                        .disabled(!rehearse.isEnabled)
+                        .accessibilityLabel("More ways to run")
+                        .accessibilityHint("Rehearse the flow: a cheap run on Haiku that leaves your files and your agents' conversations alone.")
+                    }
+                } else {
+                    Button { client.press(button.press) } label: {
+                        switch button.press {
+                        case .run: runLabel(button.title, systemImage: "play.fill")
+                        case .stop: runLabel(button.title, systemImage: "stop.fill")
+                        // Made a little smaller rather than cut short, on a phone's narrow bar.
+                        default: Text(button.title).lineLimit(1).minimumScaleFactor(0.75)
+                        }
+                    }
+                    .buttonStyle(.panel(button.press == .run ? .run : button.press == .stop ? .stop : .outline))
+                    .disabled(!button.isEnabled)
+                    .accessibilityHint(button.hint)
+                }
+            }
+            if let menu = client.restartMenu { RestartMenuButton(menu: menu, iconOnly: compact) }
+        }
+    }
+
+    @ViewBuilder
+    private func runLabel(_ title: String, systemImage: String) -> some View {
+        if symbolsOnly {
+            Label(title, systemImage: systemImage).labelStyle(.iconOnly)
+        } else {
+            Label(title, systemImage: systemImage)
+        }
+    }
+
+    private func rehearseItem(_ rehearse: PressButton) -> some View {
+        Button(rehearse.title, systemImage: "theatermasks") { client.press(rehearse.press) }
+            .disabled(!rehearse.isEnabled)
+            .accessibilityHint(rehearse.hint)
     }
 }
 
@@ -163,6 +232,8 @@ struct RestartMenuButton: View {
     @Environment(RemoteClient.self) private var client
     @Environment(\.horizontalSizeClass) private var sizeClass
     let menu: RestartMenu
+    /// The arrow alone, with no name, where the bar is short of room. A phone's bar always is.
+    var iconOnly = false
 
     var body: some View {
         let isSending = client.mirror.waiting.values.contains { if case .restartAgents = $0 { true } else { false } }
@@ -176,9 +247,12 @@ struct RestartMenuButton: View {
             HStack(spacing: Theme.Space.xs) {
                 Image(systemName: "arrow.clockwise")
                 // A phone's bar is narrow: the arrow alone says it, and VoiceOver reads the name.
-                if sizeClass != .compact { Text("Restart").lineLimit(1) }
-                Image(systemName: "chevron.down").dsIcon(DS.IconSize.s, .semibold).foregroundStyle(Theme.inkSecondary.ui)
-                    .accessibilityHidden(true)
+                if sizeClass != .compact, !iconOnly { Text("Restart").lineLimit(1) }
+                // A phone short of room keeps the arrow that says what it is, and leaves out the one that says it opens a menu.
+                if !(iconOnly && sizeClass == .compact) {
+                    Image(systemName: "chevron.down").dsIcon(DS.IconSize.s, .semibold).foregroundStyle(Theme.inkSecondary.ui)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .buttonStyle(.panel(.outline))
@@ -499,7 +573,7 @@ private struct AsksBeforeActing: ViewModifier {
                 switch ask {
                 case .reject(_, let name, let from, let text): RejectSheet(ask: ask, name: name, from: from, text: text)
                 case .allow(_, let name, let command): AllowSheet(ask: ask, name: name, command: command)
-                case .stop, .restart, .restartOrchestrator, .restartAgents: EmptyView()
+                case .stop, .restart, .restartOrchestrator, .restartAgents, .runForReal: EmptyView()
                 }
             }
             .alert(alertTitle, isPresented: Binding { alert.wrappedValue != nil } set: { if !$0 { alert.wrappedValue = nil } },
@@ -507,6 +581,7 @@ private struct AsksBeforeActing: ViewModifier {
                 switch ask {
                 case .stop: Button("Stop", role: .destructive) { client.confirm(ask) }
                 case .restartOrchestrator, .restartAgents: Button("Restart") { client.confirm(ask) }
+                case .runForReal: Button("Run for Real") { client.confirm(ask) }
                 default: Button("Restart agent") { client.confirm(ask) }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -520,6 +595,8 @@ private struct AsksBeforeActing: ViewModifier {
                 case .restartAgents(_, let busy):
                     // The Mac's words for the same question.
                     Text("Restarting cuts short what \(busy.count == 1 ? "it is" : "they are") doing now, or a question \(busy.count == 1 ? "it is" : "they are") waiting on you to answer. Every agent keeps its conversation so far.")
+                // The Mac's words for the same question.
+                case .runForReal: Text("The rehearsal stops where it is, and the flow runs with its own agents.")
                 default: Text("")
                 }
             }
@@ -539,6 +616,7 @@ private struct AsksBeforeActing: ViewModifier {
         case .restart(_, let name, _): "Restart \(name)?"
         case .restartOrchestrator: "Restart the orchestrator?"
         case .restartAgents(_, let busy): "Restart while \(Self.list(busy)) \(busy.count == 1 ? "is" : "are") busy?"
+        case .runForReal: "Stop the rehearsal and run for real?"
         default: "Stop the run?"
         }
     }
@@ -555,6 +633,8 @@ extension Abilities {
         case .reject(let holdID, _, _, _): presses.contains(.reject(holdID: holdID))
         case .restartOrchestrator: presses.contains(.startOrchestrator)
         case .restartAgents: canAct
+        // Only while the rehearsal goes: once it ends, Run runs without asking.
+        case .runForReal: isRehearsing
         }
     }
 }
