@@ -649,8 +649,9 @@ final class FlowController: ToolHost {
         return nil
     }
 
-    /// Empties the log, and the earlier runs but for those kept for good. Answers and run marks stay until the next
-    /// run replaces them.
+    /// Empties the log, and the earlier runs but for those kept for good. With none kept, the last run's answers and
+    /// marks stay on the canvas until the next run replaces them. With some kept, the newest of them goes on show,
+    /// so the canvas is the run the run picker and a device mark as on show.
     func clearLog() {
         log.removeAll()
         runs = RunKeeping.afterClear(runs)

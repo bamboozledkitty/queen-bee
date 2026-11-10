@@ -725,8 +725,8 @@ public enum RemoteCommand: Codable, Equatable, Sendable {
     /// The settings panel's Retry, on a card the last run stopped at: it is given the message it was given, again.
     /// See `RemoteFlowSnapshot.canRetry(_:)` for when the Mac offers it.
     case retry(flowID: String, cardID: String)
-    /// The log's Clear: the log and the list of earlier runs are emptied, but for the lines that say what a device
-    /// did or that a schedule went on or off, which a device can't clear.
+    /// The log's Clear: the log and the list of earlier runs are emptied, but for the runs kept for good and the
+    /// lines that say what a device did or that a schedule went on or off, which a device can't clear.
     case clearLog(flowID: String)
     /// A run's Keep: the run stays whole for good, not let go as newer runs come, or goes back to the usual rules.
     /// A flow can keep only so many, which the Mac checks. Only to a Mac that has said `RemoteFeature.keepRuns`.

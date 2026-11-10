@@ -4437,6 +4437,13 @@ def scenario_parity():
         check("and stop keeping it", said(s) == [None, None] and not any(r.get("kept") for r in (s.get("panel") or {}).get("runs", [])), str(did(s)))
         s = play("keepRun:run00001:on;clearLog", *on, also=lambda s: len(did(s)) >= 2)
         check("clearing the log leaves a kept run", said(s) == [None, None] and [r["id"] for r in (s.get("panel") or {}).get("runs", [])] == ["run00001"], str((s.get("panel") or {}).get("runs")))
+        # Keep is offered where the run's other controls aren't: with an earlier run on show, and while a run is going.
+        s = play("pause;keepRun:run00002:on", *on, "-qbShow", "runs", "-qbViewRun", "1", also=lambda s: len(did(s)) >= 1)
+        check("a run can be kept with an earlier run on show", said(s) == [None] and (s.get("panel") or {}).get("viewedRun") == "run00002"
+              and [r["id"] for r in (s.get("panel") or {}).get("runs", []) if r.get("kept")] == ["run00002"], f"{did(s)} {(s.get('panel') or {}).get('runs')}")
+        s = play("keepRun:run00002:on", *on, "-qbShow", "runs", stage=4, also=lambda s: len(did(s)) >= 1)
+        check("and while a run is going", said(s) == [None] and [r["id"] for r in (s.get("panel") or {}).get("runs", []) if r.get("kept")] == ["run00002"],
+              f"{did(s)} {(s.get('panel') or {}).get('runs')}")
 
         # The log, costs, pins, agents and Find.
         s = play("clearLog", *on, also=lambda s: len((s.get("panel") or {}).get("log", [])) == 1)

@@ -148,12 +148,14 @@ struct RunsPage: View {
     @Environment(RemoteClient.self) private var client
     let snapshot: RemoteFlowSnapshot
     @State private var compares = false
-    @State private var keepProblem: String?
+    /// Why the Mac refused a Keep or a Stop Keeping, and which of the two it was.
+    @State private var keepRefusal: (keeping: Bool, problem: String)?
 
     /// Keep, or Stop Keeping. At the limit Keep stays on offer, and the Mac's answer says why it can't be done.
-    private func keepButton(_ row: RunRow, in rows: [RunRow]) -> some View {
+    private func keepButton(_ row: RunRow) -> some View {
         Button(row.isKept ? "Stop Keeping" : "Keep for Good", systemImage: row.isKept ? "bookmark.slash" : "bookmark") {
-            Task { keepProblem = await client.keepRun(row.id, on: !row.isKept) }
+            let keeping = !row.isKept
+            Task { if let problem = await client.keepRun(row.id, on: keeping) { keepRefusal = (keeping, problem) } }
         }
     }
 
@@ -168,8 +170,8 @@ struct RunsPage: View {
                         .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 } else {
-                    Text(isRunning ? "Earlier runs can be looked at once this one ends."
-                         : "Tap a run to see where it went, on the canvas and in the log. Only this device changes."
+                    Text((isRunning ? "Earlier runs can be looked at once this one ends."
+                          : "Tap a run to see where it went, on the canvas and in the log. Only this device changes.")
                          + (client.canKeepRuns ? " Touch and hold a run to keep it for good." : ""))
                         .textRole(.caption)
                         .foregroundStyle(Theme.inkSecondary.ui)
@@ -181,24 +183,25 @@ struct RunsPage: View {
                         .accessibilityHint("Sets two of this flow's runs side by side: where each went and what it cost.")
                 }
                 ForEach(rows) { row in
-                    Button { client.show(run: row.id) } label: { RunRowView(row: row) }
+                    // While a run is going only the tap is off: the row isn't disabled, so its Keep menu stays.
+                    Button { if !isRunning { client.show(run: row.id) } } label: { RunRowView(row: row) }
                         .buttonStyle(.plain)
-                        .disabled(isRunning)
                         .opacity(isRunning ? 0.6 : 1)
-                        .contextMenu { if client.canKeepRuns { keepButton(row, in: rows) } }
+                        .contextMenu { if client.canKeepRuns { keepButton(row) } }
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(row.spoken)
-                        .accessibilityAddTraits(row.isOnShow ? [.isButton, .isSelected] : [.isButton])
-                        .accessibilityActions { if client.canKeepRuns { keepButton(row, in: rows) } }
+                        .accessibilityAddTraits(isRunning ? (row.isOnShow ? [.isSelected] : []) : row.isOnShow ? [.isButton, .isSelected] : [.isButton])
+                        .accessibilityActions { if client.canKeepRuns { keepButton(row) } }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Theme.Space.l)
         }
         .sheet(isPresented: $compares) { RunCompareSheet() }
-        .alert("Can't keep this run", isPresented: Binding(get: { keepProblem != nil }, set: { if !$0 { keepProblem = nil } })) {
+        .alert(keepRefusal?.keeping == false ? "Can't stop keeping this run" : "Can't keep this run",
+               isPresented: Binding(get: { keepRefusal != nil }, set: { if !$0 { keepRefusal = nil } })) {
             Button("OK", role: .cancel) {}
-        } message: { Text(keepProblem ?? "") }
+        } message: { Text(keepRefusal?.problem ?? "") }
         #if DEBUG
         .onAppear { if DebugLaunch.opensCompare, snapshot.runs.count >= 2 { compares = true } }
         #endif

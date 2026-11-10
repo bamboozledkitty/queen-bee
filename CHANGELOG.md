@@ -8,7 +8,7 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Added
 
-- Keep a run for good. On the Mac, pick a run on the Runs page and choose Keep this run; on an iPhone or iPad, touch and hold it on the flow's Runs page. A kept run stays whole, with what its agents said, however many newer runs go by, so new runs can always be compared with it. Kept runs are marked in the lists and don't take one of a flow's 20 places for runs. A flow can keep 10 runs. Clearing the log leaves them. Stop keeping a run and it is let go like any other once newer runs come.
+- Keep a run for good. On the Mac, pick a run on the Runs page and choose Keep this run; on an iPhone or iPad, touch and hold it on the flow's Runs page. A kept run stays whole, with what its agents said, however many newer runs go by, so new runs can always be compared with it. Kept runs are marked in the lists and don't take one of a flow's 20 places for runs. A flow can keep 10 runs. Clearing the log leaves them, and the newest of them goes on show. Stop keeping a run and it is let go like any other once newer runs come.
 
 ## [0.10.2] - 2026-11-09
 

@@ -393,9 +393,10 @@ enum RemoteCommands {
             return nil
 
         case .keepRun(_, let runID, let on):
-            guard let run = controller.runs.first(where: { $0.id == runID }) else { return "That run is no longer kept." }
-            guard run.isKept != on else { return nil }
+            let run = controller.runs.first { $0.id == runID }
             if let problem = controller.setKept(on, run: runID) { return problem }
+            // Nothing is noted when it was so already.
+            guard let run, run.isKept != on else { return nil }
             // The person at the Mac didn't see it kept, or let go.
             let which = run.number.map { "run #\($0)" } ?? "a run"
             controller.noteFromDevice(on ? "\(name) kept \(which) for good" : "\(name) stopped keeping \(which)")
