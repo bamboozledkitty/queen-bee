@@ -334,6 +334,29 @@ import Testing
         #expect(!snapshot.canRetry(agent.id))
     }
 
+    @Test func retryIsNotOfferedWhileTheMacShowsAnOlderRun() throws {
+        var flow = Flow(name: "Demo")
+        let start = try flow.addCard(kind: .start, x: 0, y: 0)
+        let agent = try flow.addCard(kind: .agent, x: 300, y: 0)
+        let link = try flow.addLink(from: start.id, to: agent.id)
+        var failed = RunMark()
+        failed.failed = true
+        // The marks and messages the Mac sends are those of the run on its canvas.
+        let run = RemoteRunState(isRunning: false, marks: [agent.id: failed], linkPasses: [:], liveLinkIDs: [], handOffs: 0, holds: [],
+                                 results: [:], usage: [:], sessions: [:], awaitingAnswer: [], banner: nil, olderRunOnShow: true)
+        var snapshot = RemoteFlowSnapshot(flow: flow, run: run, log: [],
+                                          messages: [link.id: [LinkMessage(date: Date(timeIntervalSince1970: 1), from: "Start", text: "go")]], runs: [])
+        #expect(!snapshot.canRetry(agent.id))
+        // Back on the last run, or from a Mac that doesn't say.
+        snapshot.run.olderRunOnShow = nil
+        #expect(snapshot.canRetry(agent.id))
+        // It travels to the device.
+        let sent = try JSONDecoder().decode(RemoteRunState.self, from: JSONEncoder().encode(RemoteRunState(
+            isRunning: false, marks: [:], linkPasses: [:], liveLinkIDs: [], handOffs: 0, holds: [], results: [:], usage: [:],
+            sessions: [:], awaitingAnswer: [], banner: nil, olderRunOnShow: true)))
+        #expect(sent.olderRunOnShow == true)
+    }
+
     @Test func retryIsNeverOfferedAfterARehearsal() throws {
         var flow = Flow(name: "Demo")
         let start = try flow.addCard(kind: .start, x: 0, y: 0)

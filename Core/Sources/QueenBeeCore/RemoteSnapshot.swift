@@ -75,10 +75,12 @@ extension RemoteFlowSnapshot {
     }
 
     /// Whether the Mac offers Retry on a card: the last run stopped there, no run is going, it wasn't a rehearsal,
-    /// and a message reached the card in that run, which is what it is given again.
+    /// and a message reached the card in that run, which is what it is given again. Never while the Mac shows an
+    /// older run, whose marks are then the ones sent: see `Retry`.
     public func canRetry(_ cardID: String) -> Bool {
         // An End card that failed the run is where it ended, not something to try again.
         guard run.marks[cardID]?.failed == true, !run.isRunning, flow.card(cardID)?.kind != .end else { return false }
+        guard run.olderRunOnShow != true else { return false }
         // Retry is a real run, and a rehearsal's message was a stand-in's.
         guard !latestRunIsRehearsal else { return false }
         return flow.links(into: cardID).contains { !(messages[$0.id] ?? []).isEmpty }

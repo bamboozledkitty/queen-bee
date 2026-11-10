@@ -475,6 +475,8 @@ enum DebugCannedRun {
                         refusal = Rehearsal.noRetry
                     } else if run.isRunning {
                         refusal = running
+                    } else if run.olderRunOnShow == true {
+                        refusal = Retry.notLastRun
                     } else if run.marks[cardID]?.failed != true {
                         refusal = "The last run didn't stop at \(name), so there is nothing to retry."
                     } else {
