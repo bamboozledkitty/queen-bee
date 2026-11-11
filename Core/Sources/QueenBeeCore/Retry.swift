@@ -15,8 +15,10 @@ public enum Retry {
         // Cleared with none kept: the canvas still holds the last run's marks and messages.
         guard let last = runs.last else { return true }
         // A run filed before runs were numbered is older than any numbered one, so it is the last to end only when
-        // the flow has numbered none. Otherwise Clear let the newer runs go and left it, kept.
-        guard let number = last.number else { return highestNumber == 0 }
+        // the flow has numbered none. Even then, one kept for good may be what Clear left of several unnumbered runs,
+        // and nothing says whether it ended last, so Retry isn't offered on it. One that isn't kept is still listed,
+        // so no Clear has passed it: it ended last.
+        guard let number = last.number else { return highestNumber == 0 && !last.isKept }
         return number >= highestNumber
     }
 

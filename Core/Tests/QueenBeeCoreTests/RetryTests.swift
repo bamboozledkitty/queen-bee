@@ -55,4 +55,16 @@ import Testing
         // Once a run has been numbered, an unnumbered one is older: Clear left it, kept.
         #expect(!Retry.lastRunIsOnShow(viewed: nil, runs: [run(nil, kept: true)], highestNumber: 4))
     }
+
+    @Test func notOnAnUnnumberedKeptRunThatClearMayHaveLeft() {
+        // Several runs from before numbers, an older one kept: after Clear it is all that is left, and nothing says
+        // a later one didn't end after it.
+        var older = run(nil, kept: true)
+        older.ended = Date(timeIntervalSince1970: 10)
+        var later = run(nil)
+        later.ended = Date(timeIntervalSince1970: 20)
+        let runs = RunKeeping.afterClear([older, later])
+        #expect(runs.count == 1 && runs[0].isKept)
+        #expect(!Retry.lastRunIsOnShow(viewed: nil, runs: runs, highestNumber: 0))
+    }
 }
