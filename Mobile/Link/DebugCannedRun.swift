@@ -385,6 +385,7 @@ enum DebugCannedRun {
             var refusal: String?
             var logLines: [([LogLine], Bool)] = []
             var clearsHistory = false
+            var emptiesMessages = false
             var keptRuns: [RunRecord]?
             let gone = "That is no longer waiting for an answer."
             let running = "A run is already going. Stop it before starting another."
@@ -490,6 +491,16 @@ enum DebugCannedRun {
                     } else {
                         logLines.append(([LogLine(date: Date(), text: "\(DeviceIdentity.deviceName) cleared the log")], true))
                         clearsHistory = true
+                        // As the Mac: after a rehearsal with none kept, the canvas is emptied too.
+                        let keptLeft = !RunKeeping.afterClear(client.mirror.snapshot?.runs ?? []).isEmpty
+                        if Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: client.mirror.snapshot?.latestRunIsRehearsal == true,
+                                                        keptLeft: keptLeft, isRunning: run.isRunning) {
+                            run.marks = [:]
+                            run.linkPasses = [:]
+                            run.results = [:]
+                            run.handOffs = 0
+                            emptiesMessages = true
+                        }
                     }
                 case .keepRun(_, let runID, let on):
                     var runs = client.mirror.snapshot?.runs ?? []
@@ -557,6 +568,9 @@ enum DebugCannedRun {
                 client.debugTake(.run(id: openID, state: run))
                 for (lines, reset) in logLines { client.debugTake(.log(id: openID, lines: lines, reset: reset)) }
                 // As on the Mac, the runs kept for good stay.
+                if emptiesMessages {
+                    for link in client.mirror.snapshot?.messages.keys.sorted() ?? [] { client.debugTake(.messages(id: openID, link: link, all: [])) }
+                }
                 if clearsHistory { client.debugTake(.history(id: openID, runs: RunKeeping.afterClear(client.mirror.snapshot?.runs ?? []))) }
                 if let keptRuns { client.debugTake(.history(id: openID, runs: keptRuns)) }
                 tellFlow(client)

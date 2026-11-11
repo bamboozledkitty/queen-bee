@@ -654,6 +654,17 @@ final class FlowController: ToolHost {
 
     /// A run is about to begin: the canvas is cleared of the last one.
     private func clearForRun() {
+        emptyCanvas()
+        progressFloor = 0
+        progressDismissed = false
+        runLogStart = log.count
+        usageAtRunStart = usage
+        watchSpending()
+    }
+
+    /// Takes the last run's marks, answers, messages and progress off the canvas. Not what a run starts afresh,
+    /// such as where its log begins or what it has spent, which Clear leaves alone.
+    private func emptyCanvas() {
         results.removeAll()
         marks.removeAll()
         linkPasses.removeAll()
@@ -666,11 +677,6 @@ final class FlowController: ToolHost {
         endedAt = []
         liveSince.removeAll()
         lastEnding = nil
-        progressFloor = 0
-        progressDismissed = false
-        runLogStart = log.count
-        usageAtRunStart = usage
-        watchSpending()
     }
 
     /// How often a run's use is read while it goes on.
@@ -735,13 +741,20 @@ final class FlowController: ToolHost {
 
     /// Empties the log, and the earlier runs but for those kept for good. With none kept, the last run's answers and
     /// marks stay on the canvas until the next run replaces them. With some kept, the newest of them goes on show,
-    /// so the canvas is the run the run picker and a device mark as on show.
+    /// so the canvas is the run the run picker and a device mark as on show. After a rehearsal with none kept, the
+    /// canvas is emptied too: see `Rehearsal.clearEmptiesCanvas`.
     func clearLog() {
+        // Read before the runs go: once they have, nothing says the canvas is a rehearsal's.
+        let wasRehearsal = runOnShowIsRehearsal
         log.removeAll()
         runs = RunKeeping.afterClear(runs)
         viewedRunID = nil
         // A kept run left is now the latest, so the canvas shows it, as the run picker and a device say.
         if !runs.isEmpty { view(run: runs.last?.id) }
+        if Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: wasRehearsal, keptLeft: !runs.isEmpty,
+                                        isRunning: isRunning || currentRun != nil) {
+            emptyCanvas()
+        }
         runLogStart = 0
         saveHistory()
     }

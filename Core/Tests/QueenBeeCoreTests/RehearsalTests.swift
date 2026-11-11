@@ -61,6 +61,18 @@ import Testing
         #expect(Rehearsal.folder(forCard: "~/notes", projectRoot: project, copy: copy) == "/support/rehearsals/r1")
     }
 
+    @Test func clearEmptiesTheCanvasOnlyAfterARehearsalWithNothingKeptLeft() {
+        // The rehearsal's marks and messages would otherwise stay, and with no run left to say it was a rehearsal,
+        // Retry would come back and start a real run with a stand-in's message.
+        #expect(Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: true, keptLeft: false, isRunning: false))
+        // A kept run left goes on show in its place, and a kept run is never a rehearsal.
+        #expect(!Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: true, keptLeft: true, isRunning: false))
+        // A real run's canvas stays until the next run replaces it.
+        #expect(!Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: false, keptLeft: false, isRunning: false))
+        // Never while a run or rehearsal is going: the canvas is that run's.
+        #expect(!Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: true, keptLeft: false, isRunning: true))
+    }
+
     @Test func aScriptIsSkippedUnlessItsCardAllows() {
         #expect(Rehearsal.scriptStep(for: card(.script, command: "make test"), lastOutput: "ok", readOnly: false) == .passOn("ok", ranBefore: true))
         #expect(Rehearsal.scriptStep(for: card(.script, command: "make test"), lastOutput: nil, readOnly: false)

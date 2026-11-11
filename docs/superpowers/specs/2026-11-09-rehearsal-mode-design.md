@@ -33,6 +33,7 @@ build on it: the self-coaching flow and self-repairing runs test their suggested
   - A rehearsal can't be kept for good.
   - Rehearsals don't appear in Compare, and later features that learn from past runs leave them out.
   - Retry isn't offered after a rehearsal, on the Mac or a device, and "Run from here" starts with nothing filled in: the message a card was given came from a stand-in, and both start a real run.
+  - Clear after a rehearsal, with no run kept for good, empties the canvas too. Otherwise its marks and messages would stay with no run left to say they were a rehearsal's, and Retry would come back. With a kept run left, that run goes on show as usual, and a kept run is never a rehearsal.
 - The log's first line names the rehearsal. It says where it works (the copy, or read-only), and which Script cards will run for real.
 
 ## How each card behaves in a rehearsal
