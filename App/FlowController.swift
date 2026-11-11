@@ -2022,17 +2022,28 @@ final class FlowController: ToolHost {
     }
 
     /// Whether Retry is offered on a card: the last run stopped there, and a message reached it. Never after a
-    /// rehearsal: Retry is a real run, and the message was a stand-in's.
+    /// rehearsal: Retry is a real run, and the message was a stand-in's. Never while an older run is on show either,
+    /// whose messages may be cut short: see `Retry`.
     func canRetry(_ cardID: String) -> Bool {
         // An End card that failed the run is where it ended, not something to try again.
-        marks[cardID]?.failed == true && !isRunning && !runOnShowIsRehearsal && flow.card(cardID)?.kind != .end
+        marks[cardID]?.failed == true && !isRunning && !runOnShowIsRehearsal && lastRunIsOnShow && flow.card(cardID)?.kind != .end
             && lastMessage(into: cardID) != nil
+    }
+
+    /// The canvas shows the run that ended last: not an earlier one picked in the run picker, nor an older kept run
+    /// that Clear put on show. See `Retry.lastRunIsOnShow`.
+    var lastRunIsOnShow: Bool {
+        Retry.lastRunIsOnShow(viewed: viewedRunID, runs: runs, highestNumber: highestRunNumber)
     }
 
     /// Tries the card a run stopped at again, with the message it was given.
     func retry(_ cardID: String) {
         guard !runOnShowIsRehearsal else {
             banner = Rehearsal.noRetry
+            return
+        }
+        guard lastRunIsOnShow else {
+            banner = Retry.notLastRun
             return
         }
         guard let last = lastMessage(into: cardID) else {

@@ -403,7 +403,8 @@ final class RemoteSession {
             awaitingAnswer: controller.awaitingAnswer.sorted(), banner: controller.banner, awaitingRestart: awaiting,
             orchestratorNeedsRestart: controller.orchestratorNeedsRestart, runUsage: runUsage,
             workplace: controller.workplaceChip.map { RemoteOverview.cut(Remote.plainLine($0)) },
-            rehearsal: controller.isRehearsing ? true : nil)
+            rehearsal: controller.isRehearsing ? true : nil,
+            olderRunOnShow: controller.isRunning || controller.lastRunIsOnShow ? nil : true)
         // Read so that a schedule turned on or off at the Mac counts as a change: which are on is not in the flow.
         _ = controller.schedulesRevision
         let armed = controller.flow.cards.filter { $0.kind == .start && controller.isArmed($0) }.map(\.id)

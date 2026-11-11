@@ -346,15 +346,21 @@ public struct RemoteRunState: Codable, Equatable, Sendable {
     public var workplace: String?
     /// True while the run going is a rehearsal. Nil from a Mac before rehearsals, and for a real run.
     public var rehearsal: Bool?
+    /// True while the Mac's canvas shows a run other than the one that ended last, so the marks, answers and messages
+    /// sent are that run's: one picked in the Mac's run picker, or an older kept run that Clear put on show. Retry
+    /// isn't offered then: see `Retry`. Nil while the last run is on show, and from a Mac before it.
+    public var olderRunOnShow: Bool?
 
     public init(isRunning: Bool, marks: [String: RunMark], linkPasses: [String: Int], liveLinkIDs: [String], handOffs: Int,
                 holds: [PendingHold], results: [String: String], usage: [String: Usage], sessions: [String: SessionState],
                 awaitingAnswer: [String], banner: String?, awaitingRestart: [String: [String]] = [:],
-                orchestratorNeedsRestart: Bool = false, runUsage: [String: Usage] = [:], workplace: String? = nil, rehearsal: Bool? = nil) {
+                orchestratorNeedsRestart: Bool = false, runUsage: [String: Usage] = [:], workplace: String? = nil, rehearsal: Bool? = nil,
+                olderRunOnShow: Bool? = nil) {
         self.isRunning = isRunning; self.marks = marks; self.linkPasses = linkPasses; self.liveLinkIDs = liveLinkIDs
         self.handOffs = handOffs; self.holds = holds; self.results = results; self.usage = usage; self.sessions = sessions
         self.awaitingAnswer = awaitingAnswer; self.banner = banner; self.awaitingRestart = awaitingRestart
         self.orchestratorNeedsRestart = orchestratorNeedsRestart; self.runUsage = runUsage; self.workplace = workplace; self.rehearsal = rehearsal
+        self.olderRunOnShow = olderRunOnShow
     }
 }
 
