@@ -228,8 +228,11 @@ Task {
     case "undo": return .undo(flowID: flow)
     case "redo": return .redo(flowID: flow)
     case "runFromStart": return .runFromStart(flowID: flow, startCardID: text("card"))
+    // Without a card, from the Start card Run uses.
+    case "rehearse": return .rehearse(flowID: flow, startCardID: fields["card"] as? String)
     case "retry": return .retry(flowID: flow, cardID: text("card"))
     case "clearLog": return .clearLog(flowID: flow)
+    case "keepRun": return .keepRun(flowID: flow, runID: text("run"), on: flag("on"))
     case "dismissBanner": return .dismissBanner(flowID: flow)
     case "stopAgents": return .stopAgents(flowID: flow)
     case "revertSettings": return .revertSettings(flowID: flow, cardID: text("card"))
@@ -409,7 +412,7 @@ while true {
                                           "allowOnMac": $0.allowOnMac == true] as [String: Any] },
              "awaitingRestart": state.awaitingRestart, "orchestratorNeedsRestart": state.orchestratorNeedsRestart,
              "banner": state.banner ?? NSNull(), "failed": state.marks.filter(\.value.failed).keys.sorted(),
-             "workplace": state.workplace ?? NSNull()])
+             "workplace": state.workplace ?? NSNull(), "rehearsal": state.rehearsal ?? NSNull()])
     case .log(_, let lines, let reset):
         say(["type": "log", "lines": lines.count, "reset": reset])
     case .messages(_, let link, let all):

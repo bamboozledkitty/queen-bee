@@ -228,14 +228,21 @@ public struct RunRecord: Codable, Identifiable, Equatable, Sendable {
     /// The run's number in its flow, counting from 1 and never reused, so "#12" stays #12 after older runs are let go.
     /// Nil for a run kept before runs were numbered.
     public var number: Int?
+    /// True when the person kept the run for good, so it isn't let go as newer runs come. Nil otherwise, and for a
+    /// run kept before runs could be. See `RunKeeping`.
+    public var kept: Bool?
+    /// True for a rehearsal: a run on Haiku by stand-ins of the agents, in a throwaway copy. Nil for a real run,
+    /// which is how every run from before rehearsals reads.
+    public var rehearsal: Bool?
 
     public init(id: String, started: Date, ended: Date, outcome: Outcome, command: String, log: [LogLine],
                 results: [String: String], marks: [String: RunMark], linkPasses: [String: Int],
                 messages: [String: [LinkMessage]], handOffs: Int, usage: [String: Usage]? = nil, ending: RunEnding? = nil,
-                number: Int? = nil) {
+                number: Int? = nil, kept: Bool? = nil, rehearsal: Bool? = nil) {
         self.id = id; self.started = started; self.ended = ended; self.outcome = outcome; self.command = command
         self.log = log; self.results = results; self.marks = marks; self.linkPasses = linkPasses
         self.messages = messages; self.handOffs = handOffs; self.usage = usage; self.ending = ending; self.number = number
+        self.kept = kept; self.rehearsal = rehearsal
     }
 
     /// The number the next run of a flow gets, after `runs`: one past the highest so far, or past their count

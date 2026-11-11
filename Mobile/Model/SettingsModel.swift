@@ -301,6 +301,7 @@ nonisolated struct EditForm: Equatable {
     static let scheduleOffLine = "A schedule set here starts switched off. Turn it on once it is set."
     static let switchedOff = "This schedule is switched off. It stays off until you turn it on."
     static let scheduleOnLine = "This schedule is on. A change to what this flow does, made from a device, turns it off again."
+    static let runsInRehearsalsLine = "In a rehearsal this command runs for real, in the rehearsal's throwaway copy. Change this in the card's settings on your Mac."
     static let branchLine = "A link from a branch that is renamed or removed goes with it."
     static let editing = "Editing. Changes go to your Mac as you make them."
     static let pressEdit = "Press Edit to change these from here."
@@ -442,6 +443,11 @@ nonisolated struct EditForm: Equatable {
             add(.command, "Command", .text(placeholder: "A command to run in the project's folder", isMono: true))
             caution(Self.scriptLine)
             add(.waitMinutes, "Wait to be allowed", Self.waitChoices(card))
+            // Shown, not set: only the person at the Mac can turn it on.
+            if card.runsInRehearsals == true {
+                rows.append(.item(DetailItem(style: .row, label: "Runs in rehearsals", value: "On")))
+                note(Self.runsInRehearsalsLine)
+            }
             note("Runs this command in the project's folder, as if you had typed it in Terminal. If the command succeeds, the run carries on from Pass. If it fails, from Fail. Whatever the command prints is what gets passed on.")
         case .delay:
             add(.waitMinutes, "Wait", Self.delayChoices(card))

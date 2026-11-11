@@ -381,7 +381,8 @@ final class RemoteHost {
         sessions.append(session)
         let began = Date()
         session.send(.welcome(RemoteWelcome(version: Remote.version, macName: macName, canControl: device.canControl,
-                                            features: [RemoteFeature.commandMemory, RemoteFeature.overview, RemoteFeature.scheduleCheck], memoryID: Self.memoryID)))
+                                            features: [RemoteFeature.commandMemory, RemoteFeature.overview, RemoteFeature.scheduleCheck,
+                                                                                                       RemoteFeature.keepRuns, RemoteFeature.rehearsals], memoryID: Self.memoryID)))
         session.send(.library(library()))
         if session.hasOverview { session.send(.overview(overview())) }
         noteForTest("device \(device.id.prefix(4)): welcomed, list and overview made in \(Int(Date().timeIntervalSince(began) * 1000)) ms")

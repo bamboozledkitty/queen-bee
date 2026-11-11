@@ -31,6 +31,8 @@ nonisolated struct RunOnShow: Equatable {
     /// What each card used in this run, by card id. While a run is going, what it has used so far, when the Mac
     /// says. Nil for a moment after it ends: the Mac works a run's share out once the run is over.
     var usage: [String: Usage]?
+    /// The run on show is a rehearsal. See `FlowController.runOnShowIsRehearsal`.
+    var isRehearsal = false
 
     /// The Mac's `shownLog`, `view(run:)` and `runUsage(forCard:)`.
     init(_ snapshot: RemoteFlowSnapshot, viewed: RunRecord?) {
@@ -43,6 +45,14 @@ nonisolated struct RunOnShow: Equatable {
         marks = viewed?.marks ?? run.marks
         holds = viewed == nil ? run.holds : []
         usage = isRunning ? (run.runUsage.isEmpty ? nil : run.runUsage) : (viewed ?? snapshot.runs.last)?.usage
+        isRehearsal = viewed?.isRehearsal ?? snapshot.latestRunIsRehearsal
+    }
+
+    /// The Mac's `lastMessage(into:)`: what "Run from here" starts with. Nothing after a rehearsal, whose message
+    /// was a stand-in's.
+    func startingMessage(into cardID: String, in flow: Flow) -> String {
+        guard !isRehearsal else { return "" }
+        return flow.links(into: cardID).compactMap { messages[$0.id]?.last }.max { $0.date < $1.date }?.text ?? ""
     }
 }
 
@@ -243,6 +253,7 @@ nonisolated struct Details: Equatable {
         case .script:
             add(.code, "Command", said(card.command))
             if let line = EditForm.waitLine(card) { add(.row, "If nobody allows it", line) }
+            if card.runsInRehearsals == true { add(.row, "Runs in rehearsals", "On") }
             add(.note, "Runs this command in the project's folder, as if you had typed it in Terminal. If the command succeeds, the run carries on from Pass. If it fails, from Fail. Whatever the command prints is what gets passed on.")
             if let hold {
                 if hold.needsAllow {
@@ -351,6 +362,13 @@ nonisolated struct RunRow: Equatable, Identifiable {
     var cost: String?
     /// It is the run the canvas and the panels are showing.
     var isOnShow: Bool
+    /// The person kept it for good on the Mac.
+    var isKept = false
+    /// It was a rehearsal: a cheap run on Haiku by throwaway copies of the agents.
+    var isRehearsal = false
+
+    /// Whether Keep for Good is on offer for it: a rehearsal can't be kept, as on the Mac.
+    var canKeep: Bool { !isRehearsal }
 
     /// Every kept run, newest first.
     static func all(in snapshot: RemoteFlowSnapshot, viewed: RunRecord?) -> [RunRow] {
@@ -359,13 +377,14 @@ nonisolated struct RunRow: Equatable, Identifiable {
         return snapshot.runs.reversed().map { run in
             RunRow(id: run.id, number: run.number, started: Clock.run(run.started), outcome: run.outcome, length: Clock.length(from: run.started, to: run.ended),
                    command: run.command, handOffs: "\(run.handOffs) \(run.handOffs == 1 ? "hand-off" : "hand-offs")",
-                   cost: run.usage == nil ? nil : run.cost.price, isOnShow: run.id == shown)
+                   cost: run.usage == nil ? nil : run.cost.price, isOnShow: run.id == shown, isKept: run.isKept,
+                   isRehearsal: run.isRehearsal)
         }
     }
 
     /// Read out as one sentence.
     var spoken: String {
-        "Run \(number.map { "\($0) " } ?? "")from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? ""). \(command)\(isOnShow ? ". On show." : "")"
+        "Run \(number.map { "\($0) " } ?? "")from \(started), \(outcome.rawValue), took \(length), \(handOffs)\(cost.map { ", cost \($0)" } ?? "")\(isRehearsal ? ", rehearsal" : "")\(isKept ? ", kept" : ""). \(command)\(isOnShow ? ". On show." : "")"
     }
 }
 

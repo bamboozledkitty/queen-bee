@@ -128,6 +128,9 @@ public struct Card: Codable, Identifiable, Equatable, Sendable {
     public var saveTo: String?
     /// True ends the run as failed when a message reaches the card, stopping whatever else the run is doing.
     public var failsRun: Bool?
+    /// True runs the card's command for real in a rehearsal, in the rehearsal's copy. Nil skips it there.
+    /// Only the person turns it on, on the Mac.
+    public var runsInRehearsals: Bool?
 
     // Note
     public var text: String?
@@ -331,6 +334,7 @@ public struct CardPatch: Equatable, Sendable {
     public var template: String?
     public var saveTo: String?
     public var failsRun: Bool?
+    public var runsInRehearsals: Bool?
     public var text: String?
     public var flowRef: String?
 

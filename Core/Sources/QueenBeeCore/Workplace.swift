@@ -28,6 +28,9 @@ public struct Workplace: Codable, Equatable, Sendable {
 
     /// Where worktrees live: inside the project's own `.queenbee` folder, which git ignores.
     public static let worktreesFolder = ".queenbee/worktrees"
+    /// Where rehearsals' throwaway copies live, one folder per rehearsal. Inside the project, so Claude Code
+    /// trusts a copy as it trusts the project, and its stand-ins never stop to ask.
+    public static let rehearsalsFolder = ".queenbee/rehearsals"
 
     // MARK: Branch names
 

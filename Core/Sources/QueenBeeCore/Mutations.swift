@@ -245,6 +245,7 @@ extension Flow {
         case .start, .script:
             if let command = patch.command { card.command = command }
             if card.kind == .script, let minutes = patch.waitMinutes { card.waitMinutes = Self.waitOrCleared(minutes) }
+            if card.kind == .script, let runs = patch.runsInRehearsals { card.runsInRehearsals = runs ? true : nil }
         case .ifElse, .loop:
             if let check = patch.check { card.check = check }
             if let value = patch.value { card.value = value }

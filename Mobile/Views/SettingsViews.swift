@@ -90,7 +90,7 @@ struct EditDetails: View {
                 if !start.isEmpty || abilities.runFrom.contains(card.id) {
                     Hairline()
                     CardActions(card: card, buttons: start, canRunFrom: abilities.runFrom.contains(card.id),
-                                lastMessage: flow.links(into: card.id).compactMap { run.messages[$0.id]?.last }.max { $0.date < $1.date }?.text ?? "")
+                                lastMessage: run.startingMessage(into: card.id, in: flow))
                 }
             }
             if !form.actions.isEmpty {

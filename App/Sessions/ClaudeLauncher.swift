@@ -244,6 +244,20 @@ enum ClaudeLauncher {
                     services: services, environment: environment)
     }
 
+    /// A rehearsal's stand-in for an agent card: a fresh session on Haiku at low effort with the card's instructions,
+    /// in `folder`, known to the app by the stand-in's key, never the card's. See `Rehearsal`.
+    static func standIn(flow: Flow, card: Card, sessionID: String, folder: String, readOnly: Bool, services: AppServices,
+                        environment: ResolvedEnvironment) -> LaunchSpec? {
+        guard let claude = environment.claude else { return nil }
+        let stand = Rehearsal.standInCard(card)
+        // The id is new, so this starts a session and never resumes one.
+        var args = common(sessionID: sessionID, directory: folder, name: "\(card.name) (rehearsal)",
+                          systemPrompt: agentPrompt(flow: flow, card: stand), services: services)
+        args += Rehearsal.standInArguments(permissionMode: card.permissionMode, readOnly: readOnly)
+        return spec(claude: claude, args: args, cwd: folder, key: "\(flow.id)/\(Rehearsal.standInKey(for: card.id))",
+                    sessionID: sessionID, services: services, environment: environment)
+    }
+
     static func orchestrator(flow: Flow, sessionID: String, projectRoot: URL, workRoot: URL? = nil, services: AppServices,
                              environment: ResolvedEnvironment) -> LaunchSpec? {
         guard let claude = environment.claude else { return nil }

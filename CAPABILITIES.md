@@ -115,6 +115,8 @@ Runs a shell command in the project folder, with the message on its standard inp
 - Size when added: 240 by 120 points
 - Setting `command` (text): The shell command to run.
 - Setting `wait_minutes` (whole number, 0 to 10080): How many minutes the person has to allow a command they haven't allowed before, up to 10,080. With no answer by then it goes out fail without running. 0, the default, waits for good.
+- Setting `runs_in_rehearsals` (true or false): false skips this card's command in a rehearsal, the default: it passes on its output from the last real run instead. Only the person can turn it on, in the card's settings on their Mac.
+- In a rehearsal the command is skipped, and the card passes on its last real output or a note, unless the person has turned on runs_in_rehearsals.
 - The person is asked to allow a command they did not type themselves the first time a run reaches it.
 - A command that hasn't finished after 10 minutes is stopped and goes out fail.
 - Only the last 20,000 characters of what it printed are passed on.
@@ -165,6 +167,14 @@ Holds the message for wait_minutes, then passes it on out unchanged, still from 
 - A run ends when nothing is left to do. The person sees how it ended: finished with an answer, ended without an answer, gave up (a Loop ran out of tries with nothing on gave-up), stopped at the hand-off limit, stopped at the spending limit, failed, or stopped.
 - An agent the run isn't waiting on can be restarted, or stop, without stopping the run. If the run is waiting on it, the run stops.
 
+## Rehearsals
+
+- rehearse_flow runs the whole flow on Haiku at low effort, by throwaway copies of its agents that don't remember their real conversations, in a throwaway git copy of the project that is deleted afterwards. Outside git the copies can only look.
+- The copies have no browser, none of the person's other tool servers, and can't git push. Other commands, such as curl, still really run.
+- Script cards are skipped and pass on their last real output, unless the person turned on runs_in_rehearsals. Delay cards pass on at once. Approvals ask the person as usual. Files End cards save go into the copy.
+- A rehearsal never starts while a run is going. A real run stops a rehearsal.
+- Rehearsals are kept apart from real runs (the 5 latest) and can't be kept for good.
+
 ## Flow settings
 
 Set with update_flow. get_flow gives each one's value now.
@@ -198,4 +208,4 @@ What the browser can't do:
 
 ## Your tools
 
-The orchestrator builds and runs a flow with: `get_flow`, `add_card`, `update_card`, `remove_card`, `add_link`, `remove_link`, `update_flow`, `run_flow`, `stop_flow`, `read_agent`, `create_subflow`, `get_run_log`. Each one's own description says how to call it.
+The orchestrator builds and runs a flow with: `get_flow`, `add_card`, `update_card`, `remove_card`, `add_link`, `remove_link`, `update_flow`, `run_flow`, `rehearse_flow`, `stop_flow`, `read_agent`, `create_subflow`, `get_run_log`. Each one's own description says how to call it.

@@ -227,7 +227,7 @@ private struct DetailsView: View {
                     Hairline()
                     CardActions(card: card, buttons: start, canRunFrom: abilities.runFrom.contains(card.id),
                                 // The Mac's `lastMessage(into:)`: what "Run from here" starts with.
-                                lastMessage: flow.links(into: card.id).compactMap { run.messages[$0.id]?.last }.max { $0.date < $1.date }?.text ?? "")
+                                lastMessage: run.startingMessage(into: card.id, in: flow))
                 }
             }
             // A device that may control the Mac is told how at the foot of the page, where Edit is.

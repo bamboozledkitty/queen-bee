@@ -33,7 +33,7 @@ struct LogPage: View {
         .confirmationDialog("Clear the log?", isPresented: $asksToClear, titleVisibility: .visible) {
             Button("Clear", role: .destructive) { Task { await client.clearLog() } }
         } message: {
-            Text("The log and the list of earlier runs are emptied on your Mac. This can't be undone.")
+            Text("The log and the list of earlier runs are emptied on your Mac, but for the runs you keep. This can't be undone.")
         }
     }
 
@@ -148,6 +148,16 @@ struct RunsPage: View {
     @Environment(RemoteClient.self) private var client
     let snapshot: RemoteFlowSnapshot
     @State private var compares = false
+    /// Why the Mac refused a Keep or a Stop Keeping, and which of the two it was.
+    @State private var keepRefusal: (keeping: Bool, problem: String)?
+
+    /// Keep, or Stop Keeping. At the limit Keep stays on offer, and the Mac's answer says why it can't be done.
+    private func keepButton(_ row: RunRow) -> some View {
+        Button(row.isKept ? "Stop Keeping" : "Keep for Good", systemImage: row.isKept ? "bookmark.slash" : "bookmark") {
+            let keeping = !row.isKept
+            Task { if let problem = await client.keepRun(row.id, on: keeping) { keepRefusal = (keeping, problem) } }
+        }
+    }
 
     var body: some View {
         let rows = RunRow.all(in: snapshot, viewed: client.canvas.viewedRun)
@@ -160,31 +170,39 @@ struct RunsPage: View {
                         .textRole(.body)
                         .foregroundStyle(Theme.inkSecondary.ui)
                 } else {
-                    Text(isRunning ? "Earlier runs can be looked at once this one ends."
-                         : "Tap a run to see where it went, on the canvas and in the log. Only this device changes.")
+                    Text((isRunning ? "Earlier runs can be looked at once this one ends."
+                          : "Tap a run to see where it went, on the canvas and in the log. Only this device changes.")
+                         + (client.canKeepRuns ? " Touch and hold a run to keep it for good." : ""))
                         .textRole(.caption)
                         .foregroundStyle(Theme.inkSecondary.ui)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if snapshot.runs.count >= 2 {
+                // Rehearsals aren't set beside real runs, as on the Mac.
+                if RunCompareSheet.comparable(snapshot.runs).count >= 2 {
                     Button("Compare two runs") { compares = true }
                         .buttonStyle(.panel(wide: true))
                         .accessibilityHint("Sets two of this flow's runs side by side: where each went and what it cost.")
                 }
                 ForEach(rows) { row in
-                    Button { client.show(run: row.id) } label: { RunRowView(row: row) }
+                    // While a run is going only the tap is off: the row isn't disabled, so its Keep menu stays.
+                    Button { if !isRunning { client.show(run: row.id) } } label: { RunRowView(row: row) }
                         .buttonStyle(.plain)
-                        .disabled(isRunning)
                         .opacity(isRunning ? 0.6 : 1)
+                        .contextMenu { if client.canKeepRuns, row.canKeep { keepButton(row) } }
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(row.spoken)
-                        .accessibilityAddTraits(row.isOnShow ? [.isButton, .isSelected] : [.isButton])
+                        .accessibilityAddTraits(isRunning ? (row.isOnShow ? [.isSelected] : []) : row.isOnShow ? [.isButton, .isSelected] : [.isButton])
+                        .accessibilityActions { if client.canKeepRuns, row.canKeep { keepButton(row) } }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Theme.Space.l)
         }
         .sheet(isPresented: $compares) { RunCompareSheet() }
+        .alert(keepRefusal?.keeping == false ? "Can't stop keeping this run" : "Can't keep this run",
+               isPresented: Binding(get: { keepRefusal != nil }, set: { if !$0 { keepRefusal = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(keepRefusal?.problem ?? "") }
         #if DEBUG
         .onAppear { if DebugLaunch.opensCompare, snapshot.runs.count >= 2 { compares = true } }
         #endif
@@ -220,6 +238,23 @@ private struct RunRowView: View {
             HStack(spacing: Theme.Space.s) {
                 Text("\(row.length) · \(row.handOffs)").textRole(.footnote).foregroundStyle(Theme.inkSecondary.ui)
                 Spacer(minLength: Theme.Space.s)
+                // On the bottom line, where there is room, so the date above never wraps for it.
+                if row.isRehearsal {
+                    HStack(spacing: DS.Space.xxs) {
+                        Image(systemName: "theatermasks").dsIcon(DS.IconSize.s, .bold).accessibilityHidden(true)
+                        Text("Rehearsal")
+                    }
+                    .textRole(.footnoteLabel)
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                }
+                if row.isKept {
+                    HStack(spacing: DS.Space.xxs) {
+                        Image(systemName: "bookmark.fill").dsIcon(DS.IconSize.s, .bold).accessibilityHidden(true)
+                        Text("Kept")
+                    }
+                    .textRole(.footnoteLabel)
+                    .foregroundStyle(Theme.inkSecondary.ui)
+                }
                 if row.isOnShow { Text("On show").textRole(.footnoteLabel).foregroundStyle(Theme.select.ui) }
             }
         }

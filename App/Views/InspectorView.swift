@@ -162,6 +162,15 @@ private struct CardSettings: View {
                     .help("For scripts that need it: the incoming message is in $QB_MESSAGE and on standard input, and the sender's name is in $QB_FROM.")
                 note("Runs this command in the project's folder, as if you had typed it in Terminal. If the command succeeds, the run carries on from Pass. If it fails, from Fail. Whatever the command prints is what gets passed on.")
                 WaitSettings(card: card, patch: patch)
+                // Only here: the orchestrator and paired devices can turn it off, never on.
+                Toggle("Runs in rehearsals", isOn: Binding(get: { card.runsInRehearsals == true }, set: { on in patch { $0.runsInRehearsals = on } }))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(Theme.select.ui)
+                    .help("For a command that is safe to run while you try the flow out, such as tests.")
+                note(card.runsInRehearsals == true
+                     ? "In a rehearsal this command runs for real, in the rehearsal's throwaway copy. In a project that isn't in git it is skipped."
+                     : "In a rehearsal this command is skipped and its last real output is passed on. Turn this on to run it for real, in the rehearsal's throwaway copy.")
                 if let hold = controller.holds.first(where: { $0.cardID == card.id }) {
                     ScriptReview(controller: controller, hold: hold)
                         .id(hold.id)
@@ -311,7 +320,16 @@ private struct CardSettings: View {
                       selection: card.effort ?? "") { v in patch { $0.effort = v } }
                 .help("Claude Code's effort level: how hard the agent thinks before it answers. Higher is slower and uses more.")
         }
-        if let all = controller.usage[card.id], !all.isZero {
+        if controller.runOnShowIsRehearsal {
+            // A rehearsal's figure is its stand-in's alone, which says nothing of what the real agent has used.
+            if let run = controller.runUsage(forCard: card.id), !run.isZero {
+                row("Cost") {
+                    Text("\(run.price) this rehearsal")
+                        .textRole(.captionLabel)
+                        .help("An estimate of what this agent's stand-in used in the rehearsal, if you paid Anthropic by usage (\(run.tokenCount)). On a Claude subscription you don't pay this.")
+                }
+            }
+        } else if let all = controller.usage[card.id], !all.isZero {
             row("Cost") {
                 let run = controller.runUsage(forCard: card.id)
                 Text(run.map { $0.isZero ? "\(all.price) in all" : "\($0.price) this run · \(all.price) in all" } ?? "\(all.price) in all")
@@ -781,7 +799,8 @@ private struct RunFromHere: View {
                 .padding(.top, DS.Space.xxs)
             }
         }
-        .onAppear { draft = controller.lastMessage(into: card.id)?.text ?? "" }
+        // After a rehearsal the last message was a stand-in's, so a real run from here starts with nothing filled in.
+        .onAppear { draft = controller.runOnShowIsRehearsal ? "" : controller.lastMessage(into: card.id)?.text ?? "" }
     }
 }
 
