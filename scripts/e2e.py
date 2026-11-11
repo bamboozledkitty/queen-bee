@@ -5639,6 +5639,22 @@ def rehearsal_in_a_copy(app):
               and app.state(rid)["runs"][-1]["kept"] is False, str(r))
         r = app.op(rid, "compare", runs=[s["runs"][-2]["id"], new.get("id")])
         check("and it can't be compared with a real run", r.get("error") == "a rehearsal can't be compared", str(r))
+
+        # Clear with no run kept: nothing is left to say the canvas is a rehearsal's, so the canvas is emptied too.
+        # Left as it was, Retry would give the Writer the stand-in's message again, in a real run.
+        app.op(rid, "clearLog")
+        s = app.state(rid)
+        check("Clear after a rehearsal, with no run kept, empties the canvas",
+              s["runs"] == [] and s["marks"] == {} and s["results"] == {} and s["messages"] == 0,
+              f"{len(s['runs'])} runs, marks {s['marks']}, results {s['results']}, {s['messages']} messages")
+        app.op(rid, "retry", card="Writer")
+        time.sleep(3)
+        s = app.state(rid)
+        started = s["isRunning"] or len(s["runs"]) > 0
+        if started:
+            app.op(rid, "stop")
+        check("and Retry then starts no real run with the stand-in's message",
+              not started and s["banner"] == "There is no message to give this card again.", f"started {started}, banner {s['banner']}")
     finally:
         app.op(rid, "close")
         # Back to the gates flow before the repository's project goes. Taking out the project on screen can crash the
