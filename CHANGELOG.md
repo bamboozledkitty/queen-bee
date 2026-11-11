@@ -13,6 +13,7 @@ All notable changes to Queen Bee are listed here. The format follows
 
 ### Fixed
 
+- Retry is only offered on the run that ended last. Before, picking an earlier run in the run picker could offer Retry where that run stopped, and Retry then started a real run with that old run's message, which could be cut short. The same goes for an older kept run that Clear puts on show. An iPhone or iPad no longer offers Retry while the Mac shows an older run, and the Mac turns one sent then away.
 - Choosing Remove from This List for a project whose flow was on the canvas can no longer crash the app.
 
 ## [0.10.2] - 2026-11-09

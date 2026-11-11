@@ -399,6 +399,8 @@ enum RemoteCommands {
             // Not during a rehearsal or after one: the message to give again was a stand-in's. See `FlowController.canRetry`.
             guard !controller.isRehearsing, !controller.runOnShowIsRehearsal else { return Rehearsal.noRetry }
             guard !controller.isRunning else { return alreadyRunning }
+            // Not while an older run is on show at the Mac, whose marks and messages are the ones a device was sent.
+            guard controller.lastRunIsOnShow else { return Retry.notLastRun }
             // Retry is only offered on a card the last run stopped at.
             guard controller.marks[cardID]?.failed == true else { return "The last run didn't stop at \(called(cardID)), so there is nothing to retry." }
             guard controller.flow.card(cardID)?.kind != .end else { return "\(called(cardID)) ended the run as failed, so there is nothing to retry there." }
