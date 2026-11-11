@@ -113,6 +113,18 @@ import Testing
         #expect(numbers(RunKeeping.afterClear(runs)) == [2, 4])
     }
 
+    @Test func clearEmptiesTheCanvasUnlessItShowsTheLastRealRun() {
+        // A rehearsal, or an earlier run picked in the run picker, would otherwise stay with no run left to say what
+        // it was, and Retry would come back with a stand-in's message or one cut short.
+        #expect(RunKeeping.clearEmptiesCanvas(showsLastRealRun: false, keptLeft: false, isRunning: false))
+        // The last real run stays until the next run replaces it, with Retry: its messages are whole.
+        #expect(!RunKeeping.clearEmptiesCanvas(showsLastRealRun: true, keptLeft: false, isRunning: false))
+        // A kept run left goes on show in its place.
+        #expect(!RunKeeping.clearEmptiesCanvas(showsLastRealRun: false, keptLeft: true, isRunning: false))
+        // Never while a run or rehearsal is going: the canvas is that run's.
+        #expect(!RunKeeping.clearEmptiesCanvas(showsLastRealRun: false, keptLeft: false, isRunning: true))
+    }
+
     @Test func aRunFromBeforeKeepingIsNotKept() throws {
         let old = try JSONEncoder().encode(run(1))
         var object = try #require(JSONSerialization.jsonObject(with: old) as? [String: Any])

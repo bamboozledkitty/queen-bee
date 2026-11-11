@@ -491,10 +491,10 @@ enum DebugCannedRun {
                     } else {
                         logLines.append(([LogLine(date: Date(), text: "\(DeviceIdentity.deviceName) cleared the log")], true))
                         clearsHistory = true
-                        // As the Mac: after a rehearsal with none kept, the canvas is emptied too.
+                        // As the Mac: with none kept and a rehearsal or an older run on show, the canvas is emptied too.
                         let keptLeft = !RunKeeping.afterClear(client.mirror.snapshot?.runs ?? []).isEmpty
-                        if Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: client.mirror.snapshot?.latestRunIsRehearsal == true,
-                                                        keptLeft: keptLeft, isRunning: run.isRunning) {
+                        let showsLastRealRun = run.olderRunOnShow != true && client.mirror.snapshot?.latestRunIsRehearsal != true
+                        if RunKeeping.clearEmptiesCanvas(showsLastRealRun: showsLastRealRun, keptLeft: keptLeft, isRunning: run.isRunning) {
                             run.marks = [:]
                             run.linkPasses = [:]
                             run.results = [:]
@@ -567,10 +567,10 @@ enum DebugCannedRun {
                 current = run
                 client.debugTake(.run(id: openID, state: run))
                 for (lines, reset) in logLines { client.debugTake(.log(id: openID, lines: lines, reset: reset)) }
-                // As on the Mac, the runs kept for good stay.
                 if emptiesMessages {
                     for link in client.mirror.snapshot?.messages.keys.sorted() ?? [] { client.debugTake(.messages(id: openID, link: link, all: [])) }
                 }
+                // As on the Mac, the runs kept for good stay.
                 if clearsHistory { client.debugTake(.history(id: openID, runs: RunKeeping.afterClear(client.mirror.snapshot?.runs ?? []))) }
                 if let keptRuns { client.debugTake(.history(id: openID, runs: keptRuns)) }
                 tellFlow(client)

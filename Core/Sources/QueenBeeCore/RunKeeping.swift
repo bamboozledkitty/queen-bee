@@ -52,6 +52,18 @@ public enum RunKeeping {
     /// The runs left when the log is cleared: the ones kept for good.
     public static func afterClear(_ runs: [RunRecord]) -> [RunRecord] { runs.filter(\.isKept) }
 
+    /// Whether Clear also empties the canvas. With none kept, Clear leaves the last real run on the canvas, and
+    /// Retry with it, since that run's messages are whole. Anything else on show would be left with no run to say
+    /// what it was: a rehearsal, whose messages were a stand-in's, or an earlier run picked in the run picker, whose
+    /// messages are cut short. So then the canvas is emptied. A kept run left goes on show in its place instead.
+    /// Never while a run or rehearsal is going: the canvas is that run's.
+    ///
+    /// - Parameter showsLastRealRun: before Clear, the canvas showed the run that ended last, and it wasn't a
+    ///   rehearsal. See `Retry.lastRunIsOnShow`.
+    public static func clearEmptiesCanvas(showsLastRealRun: Bool, keptLeft: Bool, isRunning: Bool) -> Bool {
+        !showsLastRealRun && !keptLeft && !isRunning
+    }
+
     public static let limitReached = "A flow can keep \(keptLimit) runs for good. Stop keeping one of them first."
 }
 

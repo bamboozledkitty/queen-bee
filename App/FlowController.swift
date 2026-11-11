@@ -741,18 +741,18 @@ final class FlowController: ToolHost {
 
     /// Empties the log, and the earlier runs but for those kept for good. With none kept, the last run's answers and
     /// marks stay on the canvas until the next run replaces them. With some kept, the newest of them goes on show,
-    /// so the canvas is the run the run picker and a device mark as on show. After a rehearsal with none kept, the
-    /// canvas is emptied too: see `Rehearsal.clearEmptiesCanvas`.
+    /// so the canvas is the run the run picker and a device mark as on show. With none kept and a rehearsal or an
+    /// earlier run on show, the canvas is emptied too: see `RunKeeping.clearEmptiesCanvas`.
     func clearLog() {
-        // Read before the runs go: once they have, nothing says the canvas is a rehearsal's.
-        let wasRehearsal = runOnShowIsRehearsal
+        // Read before the runs go: once they have, nothing says what the canvas shows.
+        let showsLastRealRun = lastRunIsOnShow && !runOnShowIsRehearsal
         log.removeAll()
         runs = RunKeeping.afterClear(runs)
         viewedRunID = nil
         // A kept run left is now the latest, so the canvas shows it, as the run picker and a device say.
         if !runs.isEmpty { view(run: runs.last?.id) }
-        if Rehearsal.clearEmptiesCanvas(runOnShowWasRehearsal: wasRehearsal, keptLeft: !runs.isEmpty,
-                                        isRunning: isRunning || currentRun != nil) {
+        if RunKeeping.clearEmptiesCanvas(showsLastRealRun: showsLastRealRun, keptLeft: !runs.isEmpty,
+                                         isRunning: isRunning || currentRun != nil) {
             emptyCanvas()
         }
         runLogStart = 0

@@ -122,14 +122,6 @@ public enum Rehearsal {
     public static let standInLabel = "Rehearsing on Haiku"
     /// Retry starts a real run with the message the card was given, which in a rehearsal was a stand-in's.
     public static let noRetry = "Retry isn't offered after a rehearsal. Run the flow for real, or rehearse it again."
-
-    /// Whether Clear also empties the canvas: when the run on show was a rehearsal and Clear leaves no run kept for
-    /// good to show in its place. Otherwise the rehearsal's marks and messages would stay with no run left to say
-    /// they were a rehearsal's, and Retry would come back with a stand-in's message. A kept run is never a
-    /// rehearsal, so one left goes on show as usual. Never while a run or rehearsal is going.
-    public static func clearEmptiesCanvas(runOnShowWasRehearsal: Bool, keptLeft: Bool, isRunning: Bool) -> Bool {
-        runOnShowWasRehearsal && !keptLeft && !isRunning
-    }
     public static let turningOnRefusal = "Only the person can turn on “Runs in rehearsals”, in the card's settings on their Mac."
     public static let saveLine = "In a rehearsal this was saved in the throwaway copy, so nothing was saved for real"
     /// An End card's save in a rehearsal of a project outside git, which has no copy to save into.
