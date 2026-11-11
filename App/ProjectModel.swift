@@ -8,6 +8,8 @@ final class ProjectModel {
     let root: URL
     @ObservationIgnored let store: FlowStore
     @ObservationIgnored private var watcher: FileWatcher?
+    /// Set once the project is taken out of the sidebar or the app quits. A file change already on its way is ignored then.
+    @ObservationIgnored private var isClosed = false
     private(set) var controllers: [FlowController] = []
     /// Every flow in the project by id and name, which is all a Flow card's reference is matched against.
     var flowNames: [(id: String, name: String)] { controllers.map { (id: $0.flow.id, name: $0.flow.name) } }
@@ -40,6 +42,7 @@ final class ProjectModel {
     /// Takes in flow files that have appeared in the folder since it was read. Flows already
     /// open are left exactly as they are.
     func rescan() {
+        guard !isClosed else { return }
         let loaded = store.loadAll()
         let known = Set(controllers.map { $0.fileURL.standardizedFileURL.path })
         var ids = Set(controllers.map(\.flow.id))
@@ -128,10 +131,14 @@ final class ProjectModel {
         return (try? FileManager.default.trashItem(at: url, resultingItemURL: nil)) != nil
     }
 
-    /// Stops every session this project started.
+    /// Stops every session this project started, and lets go of its flows. Each flow holds its project,
+    /// so this is what frees both once nothing else is showing them.
     func close() {
+        isClosed = true
         watcher?.stop()
         controllers.forEach { $0.shutDown(); AppServices.shared.unregister($0) }
+        // After unregistering, which looks for another open flow with the same id among every project's flows.
+        controllers = []
         browser.terminate()
     }
 }

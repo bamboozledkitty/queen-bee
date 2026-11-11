@@ -9,7 +9,7 @@ Claude Code sessions on Haiku, and checks what the app did.
     ./scripts/e2e.py guard loop                        # some of them
 
 Scenarios: guard, settings, remote, scroll, pan, fanout, switch, loop, exit, apifail, errors, ask, gates, unasked, subflow, timed, features, deep, browser,
-nobrowser, noclaude, filekeys.
+nobrowser, noclaude, unlist, filekeys.
 `mirror` is run only when named: it checks the copy of a terminal that a paired device is sent.
 `mobile` is run only when named: it runs the iPad app in the iOS Simulator against the test copy. Build it
 first with ./scripts/build-mobile.sh. Its screenshots go to the folder named by QB_E2E_SHOTS, or a new one.
@@ -6936,6 +6936,52 @@ def scenario_nobrowser(project):
         app.quit()
 
 
+GONE = flow("Gone", [card("start", "Start", 0, 0, command="hi"), card("end", "Done", 312, 0)], [("Start", "out", "Done", 3)])
+
+
+def scenario_unlist(project):
+    print("unlist: taking a project out of the sidebar while its flow is on the canvas", flush=True)
+    # Its canvas could still read the project after it was freed, which crashed the app. Without Claude Code
+    # nothing starts a session, so this costs nothing. It goes round a few times, as it was a race.
+    empty = tempfile.mkdtemp(prefix="qb-nohome-")
+    support = SUPPORT + "-ul"
+    app = App(project, support=support, env={"HOME": empty, "CFFIXED_USER_HOME": empty, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"})
+    other = tempfile.mkdtemp(prefix="qb-e2e-unlist-")
+    try:
+        deadline = time.time() + 30
+        while "sessions" not in app.state(GUARD["id"]):
+            if time.time() > deadline:
+                raise RuntimeError("the app never loaded the project's flows")
+            time.sleep(0.5)
+        write(other, 0, GONE)
+        files = os.path.join(other, ".queenbee", "flows")
+        rounds, alive_after, moved, forgotten, untouched = 4, 0, 0, 0, 0
+        for _ in range(rounds):
+            app.op("app", "remote-project", path=other, add=True)
+            app.op(GONE["id"], "select")
+            time.sleep(1.5)
+            app.op("app", "remote-project", path=other, add=False)
+            time.sleep(2)
+            if not alive(app.pid):
+                break
+            alive_after += 1
+            state = app.op("app", "remote-state")
+            moved += state.get("selected") not in (None, GONE["id"])
+            forgotten += "sessions" not in app.state(GONE["id"])
+            # Saving leaves a hidden .bak beside a flow's file, which isn't a flow.
+            untouched += [f for f in os.listdir(files) if f.endswith(".json") and not f.startswith(".")] == ["0-gone.json"]
+        check("the app is still running after each time", alive_after == rounds, f"{alive_after} of {rounds}")
+        check("and the canvas moves to a flow of a project still in the list", moved == rounds, f"{moved} of {rounds}")
+        check("and the project's flow can no longer be reached", forgotten == rounds, f"{forgotten} of {rounds}")
+        check("and no flow is made in its folder on the way out", untouched == rounds, f"{untouched} of {rounds}: {os.listdir(files)}")
+        app.op("app", "remote-project", path=other, add=True)
+        check("the folder can be added again, with its flow", "sessions" in app.state(GONE["id"]))
+    finally:
+        app.quit()
+        shutil.rmtree(other, ignore_errors=True)
+        shutil.rmtree(empty, ignore_errors=True)
+
+
 def scenario_noclaude(project):
     print("noclaude: the app says so when Claude Code isn't installed", flush=True)
     empty = tempfile.mkdtemp(prefix="qb-nohome-")
@@ -6978,7 +7024,7 @@ def scenario_filekeys(project):
 
 
 def main():
-    wanted = sys.argv[1:] or ["guard", "settings", "remote", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "errors", "ask", "gates", "unasked", "subflow", "timed", "features", "deep", "browser", "nobrowser", "noclaude", "filekeys"]
+    wanted = sys.argv[1:] or ["guard", "settings", "remote", "scroll", "pan", "fanout", "switch", "loop", "exit", "apifail", "errors", "ask", "gates", "unasked", "subflow", "timed", "features", "deep", "browser", "nobrowser", "noclaude", "unlist", "filekeys"]
     if not os.path.exists(APP):
         sys.exit("Build the app first: ./scripts/build.sh")
     sweep()
@@ -6992,7 +7038,7 @@ def main():
     print(f"project: {project}", flush=True)
 
     wanted = [w.replace("-", "_") if w in ("browser-remote", "browser-mobile") else w for w in wanted]
-    in_app = [w for w in wanted if w not in ("noclaude", "nobrowser", "filekeys", "terminals", "panels", "controls", "typing", "editing", "settings-edit", "parity",
+    in_app = [w for w in wanted if w not in ("noclaude", "unlist", "nobrowser", "filekeys", "terminals", "panels", "controls", "typing", "editing", "settings-edit", "parity",
                                              "browser-canned")]
     if in_app:
         app = App(project)
@@ -7064,6 +7110,11 @@ def main():
             scenario_noclaude(project)
         except Exception as e:
             check("noclaude ran to the end", False, f"{type(e).__name__}: {e}"[:500])
+    if "unlist" in wanted:
+        try:
+            scenario_unlist(project)
+        except Exception as e:
+            check("unlist ran to the end", False, f"{type(e).__name__}: {e}"[:500])
     if "filekeys" in wanted:
         try:
             scenario_filekeys(project)
